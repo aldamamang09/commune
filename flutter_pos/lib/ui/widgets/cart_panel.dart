@@ -143,7 +143,7 @@ class _CartPanelState extends State<CartPanel> {
                 : ListView.separated(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     itemCount: controller.cart.length,
-                    separatorBuilder: (_, _) => const Divider(height: 12),
+                    separatorBuilder: (context, index) => const Divider(height: 12),
                     itemBuilder: (context, index) {
                       final item = controller.cart[index];
                       return Row(

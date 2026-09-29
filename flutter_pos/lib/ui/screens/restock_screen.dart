@@ -334,7 +334,7 @@ class _RestockScreenState extends State<RestockScreen> {
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
                         itemCount: filteredRestocks.length,
-                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        separatorBuilder: (context, index) => const Divider(height: 1),
                         itemBuilder: (context, index) {
                           final r = filteredRestocks[index];
                           return Padding(

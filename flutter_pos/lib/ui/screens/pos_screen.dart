@@ -145,7 +145,7 @@ class _PosScreenState extends State<PosScreen> {
         initialChildSize: 0.85,
         minChildSize: 0.5,
         maxChildSize: 0.95,
-        builder: (_, _) => Column(
+        builder: (context, scrollController) => Column(
           children: [
             Container(
               margin: const EdgeInsets.only(top: 10, bottom: 4),
@@ -474,7 +474,7 @@ class _PosScreenState extends State<PosScreen> {
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: controller.categories.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 8),
+                    separatorBuilder: (context, index) => const SizedBox(width: 8),
                     itemBuilder: (context, index) {
                       final cat = controller.categories[index];
                       final isSelected = controller.selectedCategory == cat;
