@@ -8,6 +8,8 @@ class RestockRecord {
   final String date;
   bool isSynced;
 
+  String get createdAt => date;
+
   RestockRecord({
     required this.id,
     this.inventoryItemId,

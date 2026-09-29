@@ -384,6 +384,16 @@ class PosController extends ChangeNotifier {
     syncService.syncAll();
   }
 
+  Future<void> restockItem(String inventoryItemId, double qty, [String? notes]) async {
+    final item = inventory.where((i) => i.id == inventoryItemId).firstOrNull;
+    if (item == null) return;
+    await addRestockRecord(
+      inventoryItemId: inventoryItemId,
+      itemName: item.name,
+      quantityAdded: qty,
+    );
+  }
+
   // --- Shift Clock In / Out ---
   Future<void> punchShift(StaffUser staff, String type) async {
     final now = DateTime.now().toIso8601String();

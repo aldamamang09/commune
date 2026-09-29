@@ -327,7 +327,7 @@ class _StockScreenState extends State<StockScreen> {
                     return DataRow(
                       cells: [
                         DataCell(Text(item.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
-                        DataCell(Text('${item.openingStock.toStringAsFixed(2)} pcs', style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563)))),
+                        DataCell(Text('${(item.openingStock ?? item.stock).toStringAsFixed(2)} pcs', style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563)))),
                         DataCell(const Text('0.00 pcs', style: TextStyle(fontSize: 12, color: Color(0xFF4B5563)))),
                         DataCell(
                           Container(

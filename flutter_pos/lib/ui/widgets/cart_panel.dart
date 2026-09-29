@@ -189,7 +189,7 @@ class _CartPanelState extends State<CartPanel> {
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: const Center(
-                                      child: Icon(Icons.remove, size: 12, color: Colors.black82),
+                                      child: Icon(Icons.remove, size: 12, color: Color(0xFF374151)),
                                     ),
                                   ),
                                 ),
@@ -211,7 +211,7 @@ class _CartPanelState extends State<CartPanel> {
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: const Center(
-                                      child: Icon(Icons.add, size: 12, color: Colors.black82),
+                                      child: Icon(Icons.add, size: 12, color: Color(0xFF374151)),
                                     ),
                                   ),
                                 ),

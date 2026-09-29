@@ -31,7 +31,7 @@ class _RestockScreenState extends State<RestockScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<InventoryItem>(
-                  value: selectedItem,
+                  initialValue: selectedItem,
                   decoration: InputDecoration(
                     labelText: 'Select Item',
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
@@ -72,8 +72,12 @@ class _RestockScreenState extends State<RestockScreen> {
                   itemName: selectedItem!.name,
                   quantityAdded: qty,
                 );
-                Navigator.pop(ctx);
-                setState(() {});
+                if (ctx.mounted) {
+                  Navigator.pop(ctx);
+                }
+                if (mounted) {
+                  setState(() {});
+                }
               },
               child: const Text('Add Restock'),
             ),
@@ -247,7 +251,7 @@ class _RestockScreenState extends State<RestockScreen> {
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                             child: Row(
                               children: [
-                                Expanded(flex: 3, child: Text(r.createdAt.split('T').first, style: const TextStyle(fontSize: 13))),
+                                Expanded(flex: 3, child: Text(r.date.split('T').first, style: const TextStyle(fontSize: 13))),
                                 Expanded(flex: 4, child: Text(r.itemName, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
                                 Expanded(flex: 2, child: Text('+${r.quantityAdded}', style: const TextStyle(fontSize: 13, color: Color(0xFF16A34A), fontWeight: FontWeight.bold))),
                                 Expanded(flex: 2, child: Text(r.purchaseUnit ?? 'pcs', style: const TextStyle(fontSize: 13, color: Color(0xFF4B5563)))),
