@@ -855,6 +855,13 @@ function enqueue<T>(fn: () => Promise<T>): Promise<T> {
 
 export async function deleteOrderRecord(id: string): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (!memoryStore) memoryStore = normalizeStore(emptyStore());
+      memoryStore.orders = memoryStore.orders.filter((order) => order.id !== id);
+      memoryStore.usageLogs = memoryStore.usageLogs.filter((entry) => entry.orderId !== id);
+      memoryStore.printJobs = memoryStore.printJobs.filter((job) => job.orderId !== id);
+      return;
+    }
     const supabase = supabaseAdmin();
     // order_items.order_id and usage_logs.order_id are both
     // ON DELETE CASCADE, so deleting the order row alone removes its
@@ -911,6 +918,39 @@ export async function createOrderAtomic(input: {
   voidedBy?: string | null;
 }): Promise<{ ok: true; ticketNo: string } | { ok: false; error: string }> {
   return enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (!memoryStore) memoryStore = normalizeStore(emptyStore());
+      const { order, deductions } = input;
+      for (const deduction of deductions) {
+        const item = memoryStore.inventory.find((entry) => entry.id === deduction.inventoryItemId);
+        if (item && item.stock < deduction.amount) {
+          return { ok: false, error: `Not enough ${deduction.itemName} in stock.` };
+        }
+      }
+      if (!order.ticketNo) {
+        order.ticketNo = `#${String(memoryStore.orders.length + 1).padStart(3, "0")}`;
+      }
+      memoryStore.orders.push(order);
+      for (const deduction of deductions) {
+        const item = memoryStore.inventory.find((entry) => entry.id === deduction.inventoryItemId);
+        if (item) item.stock = Math.max(0, roundQty(item.stock - deduction.amount));
+      }
+      const now = memoryStore.usageLogs.filter((entry) => entry.orderId !== order.id);
+      for (const deduction of deductions) {
+        now.push({
+          id: `${order.id}-${deduction.inventoryItemId}-usage`,
+          orderId: order.id,
+          orderItemId: deduction.orderItemId ?? "",
+          inventoryItemId: deduction.inventoryItemId,
+          date: order.createdAt,
+          itemName: deduction.itemName,
+          usedAmount: deduction.amount,
+          unit: deduction.unit,
+        });
+      }
+      memoryStore.usageLogs = now;
+      return { ok: true, ticketNo: order.ticketNo };
+    }
     const supabase = supabaseAdmin();
     const { order, deductions } = input;
     const { data, error } = await supabase.rpc("create_order_atomic", {
@@ -972,6 +1012,28 @@ export async function voidOrderAtomic(
   voidedBy: string | null,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   return enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (!memoryStore) memoryStore = normalizeStore(emptyStore());
+      const order = memoryStore.orders.find((o) => o.id === orderId);
+      if (!order) return { ok: false, error: "Ticket not found." };
+      if (order.voided) return { ok: false, error: "Ticket is already voided." };
+      order.voided = true;
+      order.voidReason = reason;
+      const logs = memoryStore.usageLogs.filter((entry) => entry.orderId === orderId);
+      for (const log of logs) {
+        const item = memoryStore.inventory.find((entry) => entry.id === log.inventoryItemId || entry.name === log.itemName);
+        if (item) item.stock = roundQty(item.stock + log.usedAmount);
+      }
+      const updatedAt = new Date().toISOString();
+      for (const job of memoryStore.printJobs) {
+        if (job.orderId === orderId && (job.status === "pending" || job.status === "failed")) {
+          job.status = "cancelled";
+          job.updatedAt = updatedAt;
+          job.lastError = "Order was voided.";
+        }
+      }
+      return { ok: true };
+    }
     const supabase = supabaseAdmin();
     const { data, error } = await supabase.rpc("void_order_atomic", {
       p_order_id: orderId,
@@ -1007,6 +1069,22 @@ export async function voidOrderAtomic(
 
 export async function deleteOrderAtomic(orderId: string): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (memoryStore) {
+        const order = memoryStore.orders.find((o) => o.id === orderId);
+        if (order && !order.voided) {
+          const logs = memoryStore.usageLogs.filter((entry) => entry.orderId === orderId);
+          for (const log of logs) {
+            const item = memoryStore.inventory.find((entry) => entry.id === log.inventoryItemId || entry.name === log.itemName);
+            if (item) item.stock = roundQty(item.stock + log.usedAmount);
+          }
+        }
+        memoryStore.orders = memoryStore.orders.filter((o) => o.id !== orderId);
+        memoryStore.usageLogs = memoryStore.usageLogs.filter((entry) => entry.orderId !== orderId);
+        memoryStore.printJobs = memoryStore.printJobs.filter((job) => job.orderId !== orderId);
+      }
+      return;
+    }
     const supabase = supabaseAdmin();
     const { error } = await supabase.rpc("delete_order_atomic", { p_order_id: orderId });
     if (error) throw new Error(`Unable to delete order: ${error.message}`);
@@ -1024,6 +1102,23 @@ export async function createRestockAtomic(input: {
   purchaseUnit?: string | null;
 }): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (!memoryStore) memoryStore = normalizeStore(emptyStore());
+      memoryStore.restocks.unshift({
+        id: input.id,
+        inventoryItemId: input.inventoryItemId ?? undefined,
+        itemName: input.itemNameSnapshot,
+        quantityAdded: input.quantityAdded,
+        purchaseQty: input.purchaseQty ?? undefined,
+        purchaseUnit: input.purchaseUnit ?? undefined,
+        date: input.createdAt,
+      });
+      if (input.inventoryItemId) {
+        const item = memoryStore.inventory.find((entry) => entry.id === input.inventoryItemId);
+        if (item) item.stock = roundQty(item.stock + input.quantityAdded);
+      }
+      return;
+    }
     const supabase = supabaseAdmin();
     const { error } = await supabase.rpc("create_restock_atomic", {
       p_id: input.id,
@@ -1051,6 +1146,27 @@ export async function editRestockAtomic(input: {
   newPurchaseUnit?: string | null;
 }): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (!memoryStore) memoryStore = normalizeStore(emptyStore());
+      if (input.oldInventoryItemId) {
+        const oldItem = memoryStore.inventory.find((entry) => entry.id === input.oldInventoryItemId);
+        if (oldItem) oldItem.stock = Math.max(0, roundQty(oldItem.stock - input.oldQuantity));
+      }
+      if (input.newInventoryItemId) {
+        const newItem = memoryStore.inventory.find((entry) => entry.id === input.newInventoryItemId);
+        if (newItem) newItem.stock = roundQty(newItem.stock + input.newQuantity);
+      }
+      const existing = memoryStore.restocks.find((r) => r.id === input.id);
+      if (existing) {
+        existing.inventoryItemId = input.newInventoryItemId ?? undefined;
+        existing.itemName = input.newItemNameSnapshot;
+        existing.quantityAdded = input.newQuantity;
+        existing.purchaseQty = input.newPurchaseQty ?? undefined;
+        existing.purchaseUnit = input.newPurchaseUnit ?? undefined;
+        existing.date = input.newCreatedAt;
+      }
+      return;
+    }
     const supabase = supabaseAdmin();
     const { error } = await supabase.rpc("edit_restock_atomic", {
       p_id: input.id,
@@ -1070,6 +1186,17 @@ export async function editRestockAtomic(input: {
 
 export async function deleteRestockAtomic(input: { id: string }): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (memoryStore) {
+        const existing = memoryStore.restocks.find((r) => r.id === input.id);
+        if (existing && existing.inventoryItemId) {
+          const item = memoryStore.inventory.find((entry) => entry.id === existing.inventoryItemId);
+          if (item) item.stock = Math.max(0, roundQty(item.stock - existing.quantityAdded));
+        }
+        memoryStore.restocks = memoryStore.restocks.filter((r) => r.id !== input.id);
+      }
+      return;
+    }
     const supabase = supabaseAdmin();
     // The persisted restocks row is authoritative for the reversal - the RPC
     // ignores these caller params; nulls are sent only for signature compat.
@@ -1088,6 +1215,24 @@ export async function renameMenuCategoryAtomic(
   toName: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   return enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (!memoryStore) memoryStore = normalizeStore(emptyStore());
+      const fromLower = fromName.trim().toLowerCase();
+      const toLower = toName.trim().toLowerCase();
+      if (!memoryStore.categories.some((c) => c.toLowerCase() === fromLower)) {
+        return { ok: false, error: "Category not found." };
+      }
+      if (toLower !== fromLower && memoryStore.categories.some((c) => c.toLowerCase() === toLower)) {
+        return { ok: false, error: "That category is already on the board." };
+      }
+      memoryStore.categories = memoryStore.categories.map((c) => c.toLowerCase() === fromLower ? toName : c);
+      for (const item of memoryStore.menu) {
+        if (item.category.toLowerCase() === fromLower) {
+          item.category = toName;
+        }
+      }
+      return { ok: true };
+    }
     const supabase = supabaseAdmin();
     // Look up the category's actual row id rather than recomputing a slug
     // from its name: past renames (before this phase) could only ever
@@ -1127,6 +1272,21 @@ export async function deleteInventoryItemRecord(
   id: string,
 ): Promise<{ error: string } | { ok: true }> {
   return enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (!memoryStore) memoryStore = normalizeStore(emptyStore());
+      for (const recipe of Object.values(memoryStore.recipes)) {
+        if (Array.isArray(recipe) && recipe.some((ing) => ing.inventoryItemId === id)) {
+          return { error: "This item is used in a recipe. Remove it from the recipe before deleting it." };
+        }
+      }
+      for (const rc of memoryStore.recipeCostings) {
+        if (rc.ingredients.some((ing) => ing.inventoryItemId === id)) {
+          return { error: "This item is used in a recipe. Remove it from the recipe before deleting it." };
+        }
+      }
+      memoryStore.inventory = memoryStore.inventory.filter((item) => item.id !== id);
+      return { ok: true };
+    }
     const supabase = supabaseAdmin();
     // recipes.inventory_item_id -> inventory_items.id is ON DELETE CASCADE
     // in the live schema, but we don't rely on that: guard explicitly so a
@@ -1167,6 +1327,12 @@ export async function deleteInventoryItemRecord(
 
 export async function deleteMenuItemRecord(id: string): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (memoryStore) {
+        memoryStore.menu = memoryStore.menu.filter((item) => item.id !== id);
+      }
+      return;
+    }
     const supabase = supabaseAdmin();
     // order_items.menu_item_id -> menu_items.id is ON DELETE SET NULL, and
     // order_items keeps its own name/price/qty snapshot columns, so past
@@ -1181,6 +1347,14 @@ export async function deleteMenuItemRecord(id: string): Promise<void> {
 
 export async function deleteMenuCategoryRecord(name: string): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (memoryStore) {
+        memoryStore.categories = memoryStore.categories.filter(
+          (entry) => entry.toLowerCase() !== name.toLowerCase(),
+        );
+      }
+      return;
+    }
     const supabase = supabaseAdmin();
     // menu_items.category_id -> menu_categories.id is ON DELETE RESTRICT.
     // The caller already checks for in-use categories before calling this;
@@ -1242,6 +1416,16 @@ async function ensureMenuCategoryId(
 
 export async function upsertMenuItemRecord(item: MenuItem): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (!memoryStore) memoryStore = normalizeStore(emptyStore());
+      if (!memoryStore.categories.some((c) => c.toLowerCase() === item.category.toLowerCase())) {
+        memoryStore.categories.push(item.category);
+      }
+      const index = memoryStore.menu.findIndex((entry) => entry.id === item.id);
+      if (index >= 0) memoryStore.menu[index] = { ...item };
+      else memoryStore.menu.push({ ...item });
+      return;
+    }
     const supabase = supabaseAdmin();
     const categoryId = await ensureMenuCategoryId(supabase, item.category);
     const { error } = await supabase.from("menu_items").upsert(
@@ -1270,6 +1454,15 @@ export async function insertMenuCategoryRecord(
   name: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   return enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (!memoryStore) memoryStore = normalizeStore(emptyStore());
+      const trimmed = name.trim();
+      if (memoryStore.categories.some((c) => c.toLowerCase() === trimmed.toLowerCase())) {
+        return { ok: false, error: "That category is already on the board." };
+      }
+      memoryStore.categories.push(trimmed);
+      return { ok: true };
+    }
     const supabase = supabaseAdmin();
     const trimmed = name.trim();
     const { data: existing, error: lookupError } = await supabase
@@ -1307,6 +1500,13 @@ export async function setMenuItemAvailableRecord(
   available: boolean,
 ): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (memoryStore) {
+        const item = memoryStore.menu.find((entry) => entry.id === id);
+        if (item) item.available = available;
+      }
+      return;
+    }
     const supabase = supabaseAdmin();
     const { error } = await supabase
       .from("menu_items")
@@ -1322,6 +1522,12 @@ export async function setMenuItemAvailableRecord(
 
 export async function deleteStaffUserRecord(id: string): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (memoryStore) {
+        memoryStore.users = memoryStore.users.filter((user) => user.id !== id);
+      }
+      return;
+    }
     const supabase = supabaseAdmin();
     // orders.barista_user_id -> staff_users.id is ON DELETE SET NULL, and
     // orders keeps its own barista_name snapshot, so past orders stay
@@ -1347,6 +1553,13 @@ export async function deleteStaffUserRecord(id: string): Promise<void> {
 
 export async function saveCostingRecord(costing: CostingItem): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (!memoryStore) memoryStore = normalizeStore(emptyStore());
+      const index = memoryStore.costings.findIndex((entry) => entry.id === costing.id);
+      if (index >= 0) memoryStore.costings[index] = costing;
+      else memoryStore.costings.push(costing);
+      return;
+    }
     const supabase = supabaseAdmin();
     const { error } = await supabase.rpc("save_costing", {
       p_id: costing.id,
@@ -1364,6 +1577,12 @@ export async function saveCostingRecord(costing: CostingItem): Promise<void> {
 
 export async function deleteCostingRecord(id: string): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (memoryStore) {
+        memoryStore.costings = memoryStore.costings.filter((entry) => entry.id !== id);
+      }
+      return;
+    }
     const supabase = supabaseAdmin();
     // costing_ingredients.costing_id -> costings.id is ON DELETE CASCADE
     // (verified against the live schema), so deleting the parent row alone
@@ -1386,6 +1605,13 @@ export async function deleteCostingRecord(id: string): Promise<void> {
 
 export async function saveRecipeCostingRecord(costing: RecipeCosting): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (!memoryStore) memoryStore = normalizeStore(emptyStore());
+      const index = memoryStore.recipeCostings.findIndex((entry) => entry.id === costing.id);
+      if (index >= 0) memoryStore.recipeCostings[index] = costing;
+      else memoryStore.recipeCostings.push(costing);
+      return;
+    }
     const supabase = supabaseAdmin();
     const { error } = await supabase.rpc("save_recipe_costing", {
       p_id: costing.id,
@@ -1407,6 +1633,12 @@ export async function saveRecipeCostingRecord(costing: RecipeCosting): Promise<v
 
 export async function deleteRecipeCostingRecord(id: string): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (memoryStore) {
+        memoryStore.recipeCostings = memoryStore.recipeCostings.filter((entry) => entry.id !== id);
+      }
+      return;
+    }
     const supabase = supabaseAdmin();
     // recipe_costing_menu_items.recipe_costing_id and
     // recipe_costing_ingredients.recipe_costing_id are both
@@ -1431,6 +1663,14 @@ export async function deleteRecipeCostingRecord(id: string): Promise<void> {
 
 export async function insertLoginActivityRecord(entry: LoginActivity): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (!memoryStore) memoryStore = normalizeStore(emptyStore());
+      if (!Array.isArray(memoryStore.loginActivity)) memoryStore.loginActivity = [];
+      if (!memoryStore.loginActivity.some((item) => item.id === entry.id)) {
+        memoryStore.loginActivity.unshift(entry);
+      }
+      return;
+    }
     const supabase = supabaseAdmin();
     const { error } = await supabase.from("login_activity").insert({
       id: entry.id,
@@ -1456,6 +1696,13 @@ export async function insertLoginActivityRecord(entry: LoginActivity): Promise<v
 
 export async function updateLoginActivityTimeRecord(id: string, at: string): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (memoryStore) {
+        const entry = memoryStore.loginActivity.find((item) => item.id === id);
+        if (entry) entry.at = at;
+      }
+      return;
+    }
     const supabase = supabaseAdmin();
     const { error } = await supabase.from("login_activity").update({ at }).eq("id", id);
     if (error) throw new Error(`Unable to update login activity: ${error.message}`);
@@ -1469,6 +1716,13 @@ export async function updateLoginActivityTimeRecord(id: string, at: string): Pro
 export async function deleteLoginActivityRecords(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (memoryStore) {
+        const idSet = new Set(ids);
+        memoryStore.loginActivity = memoryStore.loginActivity.filter((item) => !idSet.has(item.id));
+      }
+      return;
+    }
     const supabase = supabaseAdmin();
     const { error } = await supabase.from("login_activity").delete().in("id", ids);
     if (error) throw new Error(`Unable to delete login activity: ${error.message}`);
@@ -1486,6 +1740,14 @@ export async function deleteLoginActivityRecords(ids: string[]): Promise<void> {
 
 export async function insertOffRequestRecord(entry: OffRequest): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (!memoryStore) memoryStore = normalizeStore(emptyStore());
+      if (!Array.isArray(memoryStore.offRequests)) memoryStore.offRequests = [];
+      if (!memoryStore.offRequests.some((item) => item.id === entry.id)) {
+        memoryStore.offRequests.unshift(entry);
+      }
+      return;
+    }
     const supabase = supabaseAdmin();
     const { error } = await supabase.from("off_requests").insert({
       id: entry.id,
@@ -1508,6 +1770,13 @@ export async function insertOffRequestRecord(entry: OffRequest): Promise<void> {
 
 export async function updateOffRequestStatusRecord(id: string, status: OffRequest["status"]): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (memoryStore) {
+        const entry = memoryStore.offRequests.find((item) => item.id === id);
+        if (entry) entry.status = status;
+      }
+      return;
+    }
     const supabase = supabaseAdmin();
     const { error } = await supabase.from("off_requests").update({ status }).eq("id", id);
     if (error) throw new Error(`Unable to update off request: ${error.message}`);
@@ -1520,6 +1789,12 @@ export async function updateOffRequestStatusRecord(id: string, status: OffReques
 
 export async function deleteOffRequestRecord(id: string): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (memoryStore) {
+        memoryStore.offRequests = memoryStore.offRequests.filter((item) => item.id !== id);
+      }
+      return;
+    }
     const supabase = supabaseAdmin();
     const { error } = await supabase.from("off_requests").delete().eq("id", id);
     if (error) throw new Error(`Unable to delete off request: ${error.message}`);
@@ -1561,6 +1836,14 @@ function voidRequestFromRow(row: any): VoidRequest {
 
 export async function insertVoidRequestRecord(entry: VoidRequest): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (!memoryStore) memoryStore = normalizeStore(emptyStore());
+      if (!Array.isArray(memoryStore.voidRequests)) memoryStore.voidRequests = [];
+      if (!memoryStore.voidRequests.some((item) => item.id === entry.id)) {
+        memoryStore.voidRequests.unshift(entry);
+      }
+      return;
+    }
     const supabase = supabaseAdmin();
     const { error } = await supabase.from("void_requests").insert({
       id: entry.id,
@@ -1592,6 +1875,11 @@ export async function insertVoidRequestRecord(entry: VoidRequest): Promise<void>
 // made on another instance immediately.
 export async function getVoidRequestRecord(id: string): Promise<VoidRequest | null> {
   return enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (!memoryStore) memoryStore = normalizeStore(emptyStore());
+      const item = memoryStore.voidRequests.find((r) => r.id === id);
+      return item ? { ...item } : null;
+    }
     const supabase = supabaseAdmin();
     const { data, error } = await supabase
       .from("void_requests")
@@ -1613,6 +1901,50 @@ export async function approveVoidRequestAtomic(input: {
   newOrderId?: string | null;
 }): Promise<{ ok: true; processedOrderId: string } | { ok: false; error: string }> {
   return enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (!memoryStore) memoryStore = normalizeStore(emptyStore());
+      const request = memoryStore.voidRequests.find((r) => r.id === input.requestId);
+      if (!request) return { ok: false, error: "Void request not found." };
+      if (request.status !== "pending") return { ok: false, error: "Void request is already approved." };
+      request.status = "approved";
+      request.approvedByName = input.approvedByName;
+      request.approvedAt = new Date().toISOString();
+
+      let processedOrderId = request.orderId;
+      if (request.orderId) {
+        const order = memoryStore.orders.find((o) => o.id === request.orderId);
+        if (order) {
+          order.voided = true;
+          order.voidReason = request.reason;
+          const logs = memoryStore.usageLogs.filter((entry) => entry.orderId === request.orderId);
+          for (const log of logs) {
+            const item = memoryStore.inventory.find((entry) => entry.id === log.inventoryItemId || entry.name === log.itemName);
+            if (item) item.stock = roundQty(item.stock + log.usedAmount);
+          }
+        }
+      } else {
+        processedOrderId = input.newOrderId ?? `ord-${Date.now()}`;
+        const newOrder: Order = {
+          id: processedOrderId,
+          createdAt: new Date().toISOString(),
+          baristaName: request.requestedByName,
+          items: request.items,
+          subtotal: request.subtotal,
+          discount: request.discount,
+          promoLabel: request.promoLabel,
+          total: request.total,
+          paymentMethod: request.paymentMethod,
+          ticketNo: `#${String(memoryStore.orders.length + 1).padStart(3, "0")}`,
+          paid: 0,
+          change: 0,
+          voided: true,
+          voidReason: request.reason,
+        };
+        memoryStore.orders.push(newOrder);
+      }
+      request.processedOrderId = processedOrderId;
+      return { ok: true, processedOrderId: processedOrderId! };
+    }
     const supabase = supabaseAdmin();
     const { data, error } = await supabase.rpc("approve_void_request_atomic", {
       p_request_id: input.requestId,
@@ -1644,6 +1976,12 @@ export async function approveVoidRequestAtomic(input: {
 
 export async function deleteVoidRequestRecord(id: string): Promise<void> {
   await enqueue(async () => {
+    if (!isRealSupabaseConfigured()) {
+      if (memoryStore) {
+        memoryStore.voidRequests = memoryStore.voidRequests.filter((item) => item.id !== id);
+      }
+      return;
+    }
     const supabase = supabaseAdmin();
     const { error } = await supabase.from("void_requests").delete().eq("id", id);
     if (error) throw new Error(`Unable to delete void request: ${error.message}`);

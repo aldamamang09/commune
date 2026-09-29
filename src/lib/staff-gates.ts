@@ -36,10 +36,11 @@ export function normalizeLoginGates(gates?: Partial<LoginGates> | null): LoginGa
   return { admin, cashier };
 }
 
-export function roleForLoginGate(gate: string, gates: LoginGates): "admin" | null {
+export function roleForLoginGate(gate: string, gates: LoginGates): "admin" | "cashier" | null {
   const value = gate.trim().replace(/^\/+|\/+$/g, "").toLowerCase();
-  if (!value || value === "sale1803") return null;
-  if (value === gates.admin) return "admin";
+  if (!value) return null;
+  if (value === gates.admin.toLowerCase()) return "admin";
+  if (value === gates.cashier.toLowerCase()) return "cashier";
   return null;
 }
 

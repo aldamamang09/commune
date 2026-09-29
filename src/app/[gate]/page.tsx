@@ -12,7 +12,6 @@ export default async function GatePage({
   params: Promise<{ gate: string }>;
 }) {
   const { gate } = await params;
-  if (gate.toLowerCase() === "sale1803") notFound();
 
   const store = await getStore();
   const role = roleForLoginGate(gate, store.loginGates);

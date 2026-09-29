@@ -6,12 +6,7 @@ export function proxy(request: NextRequest) {
   const session = decodeSession(request.cookies.get(SESSION_COOKIE)?.value);
   const { pathname } = request.nextUrl;
 
-  if (
-    pathname === "/login" ||
-    pathname === "/pos" ||
-    pathname.startsWith("/pos/") ||
-    pathname === "/sale1803"
-  ) {
+  if (pathname === "/login") {
     return NextResponse.redirect(new URL("/", request.url));
   }
 

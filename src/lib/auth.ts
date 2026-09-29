@@ -38,6 +38,7 @@ export async function getSession(): Promise<Session | null> {
 
 export function homeForRole(role: Session["role"]): string {
   if (role === "admin") return "/admin";
+  if (role === "cashier" || role === "manager") return "/pos";
   return "/";
 }
 
