@@ -1,22 +1,18 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { SESSION_COOKIE, decodeSession, homeForRole } from "@/lib/auth";
+import { SESSION_COOKIE, decodeSession } from "@/lib/auth";
 
 export function proxy(request: NextRequest) {
   const session = decodeSession(request.cookies.get(SESSION_COOKIE)?.value);
   const { pathname } = request.nextUrl;
 
-  if (pathname === "/login") {
+  if (
+    pathname === "/login" ||
+    pathname === "/pos" ||
+    pathname.startsWith("/pos/") ||
+    pathname === "/sale1803"
+  ) {
     return NextResponse.redirect(new URL("/", request.url));
-  }
-
-  if (pathname.startsWith("/pos")) {
-    if (!session) {
-      return NextResponse.redirect(new URL("/", request.url));
-    }
-    if (session.role !== "cashier" && session.role !== "manager") {
-      return NextResponse.redirect(new URL(homeForRole(session.role), request.url));
-    }
   }
 
   if (pathname.startsWith("/admin")) {
@@ -24,7 +20,7 @@ export function proxy(request: NextRequest) {
       return NextResponse.redirect(new URL("/", request.url));
     }
     if (session.role !== "admin") {
-      return NextResponse.redirect(new URL(homeForRole(session.role), request.url));
+      return NextResponse.redirect(new URL("/", request.url));
     }
   }
 
@@ -32,5 +28,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/pos/:path*", "/admin/:path*", "/login"],
+  matcher: ["/pos/:path*", "/pos", "/sale1803", "/admin/:path*", "/login"],
 };

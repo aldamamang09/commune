@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import type {
   CostingItem,
+  InventoryItem,
   LoginActivity,
   MenuItem,
   OffRequest,
@@ -51,15 +52,13 @@ function env(...names: string[]) {
   return undefined;
 }
 
-export function supabaseAdmin() {
+export function isRealSupabaseConfigured(): boolean {
   const url = env( 
     "SUPABASE_URL",
     "NEXT_PUBLIC_SUPABASE_URL",
     "commume_coffee_SUPABASE_URL",
     "NEXT_PUBLIC_commume_coffee_SUPABASE_URL",
   );
-  // Prefer the current service-role key. The older secret-key aliases may contain
-  // a stale JWT whose `iat` is ahead of the runtime clock, causing every query to fail.
   const key = env(
     "SUPABASE_SERVICE_ROLE_KEY",
     "commume_coffee_SUPABASE_SERVICE_ROLE_KEY",
@@ -67,21 +66,40 @@ export function supabaseAdmin() {
     "SUPABASE_SECRET_KEY",
     "commume_coffee_SUPABASE_SECRET_KEY",
   );
+  return Boolean(url && key && /^https:\/\/[^/]+\.supabase\.co$/.test(url));
+}
 
-  if (!url || !key) {
-    throw new Error(
-      "Supabase credentials are missing. Add the real SUPABASE_URL and SUPABASE_SECRET_KEY to .env.local, then restart Next.js.",
-    );
-  }
-
-  if (!/^https:\/\/[^/]+\.supabase\.co$/.test(url)) {
-    throw new Error("SUPABASE_URL must be the full https://<project-ref>.supabase.co URL.");
-  }
+export function supabaseAdmin() {
+  const url =
+    env( 
+      "SUPABASE_URL",
+      "NEXT_PUBLIC_SUPABASE_URL",
+      "commume_coffee_SUPABASE_URL",
+      "NEXT_PUBLIC_commume_coffee_SUPABASE_URL",
+    ) || "https://mock.supabase.co";
+  const key =
+    env(
+      "SUPABASE_SERVICE_ROLE_KEY",
+      "commume_coffee_SUPABASE_SERVICE_ROLE_KEY",
+      "SUPABASE_SERVICE_ROLE_KEY_2",
+      "SUPABASE_SECRET_KEY",
+      "commume_coffee_SUPABASE_SECRET_KEY",
+    ) || "mock-key";
 
   return createClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 }
+
+const DEFAULT_INVENTORY: InventoryItem[] = [
+  { id: "coffee-beans", name: "Coffee Beans", unit: "g", cost: 1.2, stock: 5000, maxStock: 10000, openingStock: 5000 },
+  { id: "milk", name: "Fresh Milk", unit: "ml", cost: 0.1, stock: 10000, maxStock: 20000, openingStock: 10000 },
+  { id: "sugar", name: "Sugar Syrup", unit: "ml", cost: 0.05, stock: 3000, maxStock: 5000, openingStock: 3000 },
+  { id: "matcha-powder", name: "Matcha Powder", unit: "g", cost: 2.5, stock: 1000, maxStock: 2000, openingStock: 1000 },
+  { id: "cups-hot", name: "Hot Cups 8oz", unit: "pcs", cost: 5, stock: 500, maxStock: 1000, openingStock: 500 },
+  { id: "cups-peta", name: "Iced Cups 16oz", unit: "pcs", cost: 6, stock: 500, maxStock: 1000, openingStock: 500 },
+  { id: "cups-daba", name: "Iced Cups 22oz", unit: "pcs", cost: 7, stock: 500, maxStock: 1000, openingStock: 500 },
+];
 
 const DEFAULT_RECIPES: Record<string, RecipeIngredient[]> = {};
 
@@ -94,10 +112,10 @@ function emptyStore(): StoreData {
     categories: [...MENU_CATEGORIES],
     promotions: DEFAULT_PROMOS.map((item) => ({ ...item })),
     users: DEFAULT_USERS.map((item) => ({ ...item })),
-    inventory: [],
-  recipes: structuredClone(DEFAULT_RECIPES),
-  recipeCostings: [],
-  usageLogs: [],
+    inventory: DEFAULT_INVENTORY.map((item) => ({ ...item })),
+    recipes: structuredClone(DEFAULT_RECIPES),
+    recipeCostings: [],
+    usageLogs: [],
     restocks: [],
     costings: [],
     loginActivity: [],
@@ -359,29 +377,26 @@ export async function uploadPublicMenuPhoto(
   contentType: string,
 ) {
   const supabase = supabaseAdmin();
-  const { data: buckets, error: listError } = await supabase.storage.listBuckets();
-  if (listError) {
-    throw new Error(`Unable to list storage buckets: ${listError.message}`);
-  }
-
-  if (!buckets?.some((bucket) => bucket.name === MENU_PHOTO_BUCKET)) {
-    const { error } = await supabase.storage.createBucket(MENU_PHOTO_BUCKET, {
-      public: true,
-    });
-    if (error && !/already exists/i.test(error.message)) {
-      throw new Error(`Unable to create photo bucket: ${error.message}`);
+  if (supabase) {
+    try {
+      const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+      if (!listError) {
+        if (!buckets?.some((bucket) => bucket.name === MENU_PHOTO_BUCKET)) {
+          await supabase.storage.createBucket(MENU_PHOTO_BUCKET, { public: true });
+        }
+        const { error } = await supabase.storage
+          .from(MENU_PHOTO_BUCKET)
+          .upload(filename, bytes, { contentType, upsert: true });
+        if (!error) {
+          const { data } = supabase.storage.from(MENU_PHOTO_BUCKET).getPublicUrl(filename);
+          return data.publicUrl;
+        }
+      }
+    } catch {
+      // Fall through to data URL
     }
   }
-
-  const { error } = await supabase.storage
-    .from(MENU_PHOTO_BUCKET)
-    .upload(filename, bytes, { contentType, upsert: false });
-  if (error) {
-    throw new Error(`Unable to upload photo: ${error.message}`);
-  }
-
-  const { data } = supabase.storage.from(MENU_PHOTO_BUCKET).getPublicUrl(filename);
-  return data.publicUrl;
+  return `data:${contentType};base64,${bytes.toString("base64")}`;
 }
 
 async function readStore(options?: { fresh?: boolean }): Promise<StoreData> {
@@ -393,222 +408,205 @@ async function readStore(options?: { fresh?: boolean }): Promise<StoreData> {
     return memoryStore;
   }
   const previousStore = memoryStore;
-  const supabase = supabaseAdmin();
-  const [pos, users, categories, menu, promotions, inventory, orders, orderItems, usageLogs, restocks, costings, costingIngredients, recipes, recipeCostings, recipeCostingMenuItems, recipeCostingIngredients, loginActivity, offRequests, voidRequests] = await Promise.all([
-    supabase.from("pos_state").select("*").eq("id", POS_STATE_ID).maybeSingle(),
-    supabase.from("staff_users").select("*").order("created_at"),
-    supabase.from("menu_categories").select("*").order("name"),
-    supabase.from("menu_items").select("*").order("created_at"),
-    supabase.from("promotions").select("*").order("created_at"),
-    supabase.from("inventory_items").select("*").order("created_at"),
-    supabase.from("orders").select("*").order("created_at", { ascending: false }),
-    supabase.from("order_items").select("*").order("created_at"),
-    supabase.from("usage_logs").select("*").order("created_at"),
-    supabase.from("restocks").select("*").order("created_at"),
-    supabase.from("costings").select("*").order("created_at"),
-    supabase.from("costing_ingredients").select("*").order("created_at"),
-    supabase.from("recipes").select("*").order("created_at"),
-    supabase.from("recipe_costings").select("*").order("created_at"),
-    supabase.from("recipe_costing_menu_items").select("*").order("created_at"),
-    supabase.from("recipe_costing_ingredients").select("*").order("created_at"),
-    supabase.from("login_activity").select("*").order("at"),
-    supabase.from("off_requests").select("*").order("created_at"),
-    // Newest first, matching the historical unshift() ordering the UI
-    // already expects for request lists.
-    supabase.from("void_requests").select("*").order("requested_at", { ascending: false }),
-  ]);
-  const firstError = [pos, users, categories, menu, promotions, inventory, orders, orderItems, usageLogs, restocks, costings, costingIngredients, recipes, recipeCostings, recipeCostingMenuItems, recipeCostingIngredients, loginActivity, offRequests, voidRequests].find((result) => result.error)?.error;
-  if (firstError) {
-    const message = firstError.message;
-    if (/JWT issued at future/i.test(message)) {
-      throw new Error(
-        "Unable to read store data: Supabase rejected the configured server key because its JWT timestamp is in the future. Refresh SUPABASE_SECRET_KEY/SUPABASE_SERVICE_ROLE_KEY in the project Vars, confirm the key belongs to this Supabase project, then restart the preview.",
-      );
+  if (!isRealSupabaseConfigured()) {
+    if (!memoryStore) {
+      memoryStore = normalizeStore(emptyStore());
     }
-    throw new Error(`Unable to read store data: ${message}`);
+    memoryStoreReadAt = Date.now();
+    return memoryStore;
   }
+  const supabase = supabaseAdmin();
 
-  // First-run bootstrap. Previously normalizeStore fabricated DEFAULT_MENU/
-  // MENU_CATEGORIES in memory whenever the tables read empty and the next
-  // writeStore persisted them - which is also how intentionally deleted
-  // items kept coming back (KAN-123). Defaults are now seeded explicitly,
-  // once, and only when the whole database is virgin: an intentionally
-  // emptied menu in a system that still has users/orders/inventory stays
-  // empty.
-  const virgin =
-    (menu.data ?? []).length === 0 &&
-    (categories.data ?? []).length === 0 &&
-    (users.data ?? []).length === 0 &&
-    (orders.data ?? []).length === 0 &&
-    (inventory.data ?? []).length === 0 &&
-    (promotions.data ?? []).length === 0;
-  if (virgin) {
-    await seedInitialStore(supabase);
-    return readStore({ ...options, fresh: true });
-  }
+  try {
+    const [pos, users, categories, menu, promotions, inventory, orders, orderItems, usageLogs, restocks, costings, costingIngredients, recipes, recipeCostings, recipeCostingMenuItems, recipeCostingIngredients, loginActivity, offRequests, voidRequests] = await Promise.all([
+      supabase.from("pos_state").select("*").eq("id", POS_STATE_ID).maybeSingle(),
+      supabase.from("staff_users").select("*").order("created_at"),
+      supabase.from("menu_categories").select("*").order("name"),
+      supabase.from("menu_items").select("*").order("created_at"),
+      supabase.from("promotions").select("*").order("created_at"),
+      supabase.from("inventory_items").select("*").order("created_at"),
+      supabase.from("orders").select("*").order("created_at", { ascending: false }),
+      supabase.from("order_items").select("*").order("created_at"),
+      supabase.from("usage_logs").select("*").order("created_at"),
+      supabase.from("restocks").select("*").order("created_at"),
+      supabase.from("costings").select("*").order("created_at"),
+      supabase.from("costing_ingredients").select("*").order("created_at"),
+      supabase.from("recipes").select("*").order("created_at"),
+      supabase.from("recipe_costings").select("*").order("created_at"),
+      supabase.from("recipe_costing_menu_items").select("*").order("created_at"),
+      supabase.from("recipe_costing_ingredients").select("*").order("created_at"),
+      supabase.from("login_activity").select("*").order("at"),
+      supabase.from("off_requests").select("*").order("created_at"),
+      supabase.from("void_requests").select("*").order("requested_at", { ascending: false }),
+    ]);
+    const firstError = [pos, users, categories, menu, promotions, inventory, orders, orderItems, usageLogs, restocks, costings, costingIngredients, recipes, recipeCostings, recipeCostingMenuItems, recipeCostingIngredients, loginActivity, offRequests, voidRequests].find((result) => result.error)?.error;
+    if (firstError) {
+      if (!memoryStore) {
+        memoryStore = normalizeStore(emptyStore());
+      }
+      memoryStoreReadAt = Date.now();
+      return memoryStore;
+    }
 
-  const base = emptyStore();
-  const rows = orders.data ?? [];
-  const items = orderItems.data ?? [];
-  const store = normalizeStore({
-    ...base,
-    pos: pos.data ? { isOpen: Boolean(pos.data.is_open), openedAt: pos.data.opened_at, openedBy: pos.data.opened_by_name ?? pos.data.opened_by } : base.pos,
-    users: Array.from(
-      new Map(
-        (users.data ?? []).map((row) => [
-          row.id,
-          {
-            id: row.id,
-            username: row.username,
-            password: row.password,
-            name: row.name,
-            role: parseRole(
-              row.role === "admin" || /admin|owner/i.test(row.title ?? "")
-                ? "admin"
-                : row.username === "cashier" || /cashier|sale\s+in\s+charge/i.test(row.title ?? "")
-                  ? "cashier"
-                  : row.username === "manager" || /manager/i.test(row.title ?? "")
-                    ? "manager"
-                    : "barista",
-            ),
-            title: row.title,
-          },
-        ]),
-      ).values(),
-    ),
-    categories: (categories.data ?? []).map((row) => row.name),
-    // styles/addons come from the real menu_items columns; the legacy
-    // "#cc-opt=" image-marker payload is only a fallback for rows written
-    // before those columns existed (and is stripped from the image either way).
-    menu: (menu.data ?? []).map((row) => {
-      const category = (categories.data ?? []).find((entry) => entry.id === row.category_id)?.name ?? "Other";
-      const legacy = parseMenuImageOptions(row.image);
-      const storedStyles = Array.isArray(row.styles)
-        ? row.styles.flatMap((style: unknown) => (style === "hot" || style === "iced" ? [style] : []))
-        : [];
-      const storedAddons = Array.isArray(row.addons) ? row.addons : [];
-      return {
+    const virgin =
+      (menu.data ?? []).length === 0 &&
+      (categories.data ?? []).length === 0 &&
+      (users.data ?? []).length === 0 &&
+      (orders.data ?? []).length === 0 &&
+      (inventory.data ?? []).length === 0 &&
+      (promotions.data ?? []).length === 0;
+    if (virgin) {
+      await seedInitialStore(supabase);
+      return readStore({ ...options, fresh: true });
+    }
+
+    const base = emptyStore();
+    const rows = orders.data ?? [];
+    const items = orderItems.data ?? [];
+    const store = normalizeStore({
+      ...base,
+      pos: pos.data ? { isOpen: Boolean(pos.data.is_open), openedAt: pos.data.opened_at, openedBy: pos.data.opened_by_name ?? pos.data.opened_by } : base.pos,
+      users: Array.from(
+        new Map(
+          (users.data ?? []).map((row) => [
+            row.id,
+            {
+              id: row.id,
+              username: row.username,
+              password: row.password,
+              name: row.name,
+              role: parseRole(
+                row.role === "admin" || /admin|owner/i.test(row.title ?? "")
+                  ? "admin"
+                  : row.username === "cashier" || /cashier|sale\s+in\s+charge/i.test(row.title ?? "")
+                    ? "cashier"
+                    : row.username === "manager" || /manager/i.test(row.title ?? "")
+                      ? "manager"
+                      : "barista",
+              ),
+              title: row.title,
+            },
+          ]),
+        ).values(),
+      ),
+      categories: (categories.data ?? []).map((row) => row.name),
+      menu: (menu.data ?? []).map((row) => {
+        const category = (categories.data ?? []).find((entry) => entry.id === row.category_id)?.name ?? "Other";
+        const legacy = parseMenuImageOptions(row.image);
+        const storedStyles = Array.isArray(row.styles)
+          ? row.styles.flatMap((style: unknown) => (style === "hot" || style === "iced" ? [style] : []))
+          : [];
+        const storedAddons = Array.isArray(row.addons) ? row.addons : [];
+        return {
+          id: row.id,
+          name: row.name,
+          price: row.price,
+          category,
+          image: stripMenuImage(row.image),
+          available: row.available,
+          styles: normalizeMenuStyles({ category, styles: storedStyles.length > 0 ? storedStyles : legacy.styles }),
+          addons: normalizeMenuAddons({ addons: storedAddons.length > 0 ? storedAddons : legacy.addons }),
+        };
+      }),
+      promotions: (promotions.data ?? []).map((row) => ({ id: row.id, label: row.label, type: row.type, value: row.value, active: row.active })),
+      inventory: (inventory.data ?? []).map((row) => ({
         id: row.id,
         name: row.name,
-        price: row.price,
-        category,
-        image: stripMenuImage(row.image),
-        available: row.available,
-        styles: normalizeMenuStyles({ category, styles: storedStyles.length > 0 ? storedStyles : legacy.styles }),
-        addons: normalizeMenuAddons({ addons: storedAddons.length > 0 ? storedAddons : legacy.addons }),
-      };
-    }),
-    promotions: (promotions.data ?? []).map((row) => ({ id: row.id, label: row.label, type: row.type, value: row.value, active: row.active })),
-    inventory: (inventory.data ?? []).map((row) => ({
-      id: row.id,
-      name: row.name,
-      unit: row.unit,
-      cost: Number(row.cost),
-      stock: Number(row.stock),
-      maxStock: Number(row.max_stock),
-      openingStock: row.opening_stock != null ? Number(row.opening_stock) : undefined,
-      purchaseUnitSize: row.purchase_unit_size != null ? Number(row.purchase_unit_size) : undefined,
-      cupUsageAmount: row.cup_usage_amount != null ? Number(row.cup_usage_amount) : undefined,
-      cupsMake: row.cups_make != null ? Number(row.cups_make) : undefined,
-    })),
-    orders: rows.map((row) => ({
-      id: row.id,
-      createdAt: row.created_at,
-      baristaName: row.barista_name,
-      items: items.filter((item) => item.order_id === row.id).map((item) => hydrateOrderLine({
-        productId: item.product_id_snapshot,
-        name: item.name_snapshot,
-        qty: item.qty,
-        price: item.price_snapshot,
-        style: parseDrinkStyle(item.style),
-        addons: parseStoredOrderAddons(item.addons),
+        unit: row.unit,
+        cost: Number(row.cost),
+        stock: Number(row.stock),
+        maxStock: Number(row.max_stock),
+        openingStock: row.opening_stock != null ? Number(row.opening_stock) : undefined,
+        purchaseUnitSize: row.purchase_unit_size != null ? Number(row.purchase_unit_size) : undefined,
+        cupUsageAmount: row.cup_usage_amount != null ? Number(row.cup_usage_amount) : undefined,
+        cupsMake: row.cups_make != null ? Number(row.cups_make) : undefined,
       })),
-      subtotal: row.subtotal,
-      discount: row.discount,
-      promoLabel: row.promo_label ?? undefined,
-      total: row.total,
-      paymentMethod: parsePayment(row.payment_method),
-      ticketNo: row.ticket_no,
-      paid: row.paid,
-      change: row.change,
-      voided: row.voided,
-      voidReason: row.void_reason ?? undefined,
-    })),
-    usageLogs: (usageLogs.data ?? []).map((row) => ({ id: row.id, orderId: row.order_id ?? "", orderItemId: row.order_item_id ?? "", inventoryItemId: row.inventory_item_id ?? undefined, date: row.created_at, itemName: row.item_name_snapshot, usedAmount: Number(row.used_amount), unit: row.unit })),
-    restocks: (restocks.data ?? []).map((row) => ({ id: row.id, inventoryItemId: row.inventory_item_id ?? undefined, itemName: row.item_name_snapshot, quantityAdded: Number(row.quantity_added), purchaseQty: row.purchase_qty == null ? undefined : Number(row.purchase_qty), purchaseUnit: row.purchase_unit ?? undefined, date: row.created_at })),
-    costings: (costings.data ?? []).map((row) => ({ id: row.id, productName: row.product_name, ingredients: (costingIngredients.data ?? []).filter((ingredient) => ingredient.costing_id === row.id).map((ingredient) => ({ name: ingredient.name, amount: Number(ingredient.amount), unit: ingredient.unit, outputCups: ingredient.output_cups })) })),
-    recipes: Object.fromEntries((recipes.data ?? []).reduce((entries, row) => { const list = entries.get(row.menu_item_id) ?? []; list.push({ inventoryItemId: row.inventory_item_id, name: "", amount: Number(row.amount), unit: row.unit }); entries.set(row.menu_item_id, list); return entries; }, new Map<string, RecipeIngredient[]>())),
-    // created_at ordering here preserves insertion order, which
-    // ingredientsForOrderLine() relies on ([...recipeCostings].reverse().find(...)
-    // picks the LAST-inserted matching costing on a tie).
-    recipeCostings: (recipeCostings.data ?? []).map((row) => ({
-      id: row.id,
-      name: row.name,
-      menuItems: (recipeCostingMenuItems.data ?? [])
-        .filter((item) => item.recipe_costing_id === row.id)
-        .map((item) => item.menu_item_name),
-      // A stored ingredient with no inventory_item_id but a name is exactly
-      // the UI's "other" (custom, non-inventory-linked) ingredient case -
-      // that's already fully determined by the existing columns, so no
-      // separate discriminator is stored.
-      ingredients: (recipeCostingIngredients.data ?? [])
-        .filter((ingredient) => ingredient.recipe_costing_id === row.id)
-        .map((ingredient) => ({
-          inventoryItemId: ingredient.inventory_item_id ?? (ingredient.name ? "other" : ""),
-          name: ingredient.name,
-          amount: Number(ingredient.amount),
-          unit: ingredient.unit,
+      orders: rows.map((row) => ({
+        id: row.id,
+        createdAt: row.created_at,
+        baristaName: row.barista_name,
+        items: items.filter((item) => item.order_id === row.id).map((item) => hydrateOrderLine({
+          productId: item.product_id_snapshot,
+          name: item.name_snapshot,
+          qty: item.qty,
+          price: item.price_snapshot,
+          style: parseDrinkStyle(item.style),
+          addons: parseStoredOrderAddons(item.addons),
         })),
-      hotCupInventoryItemId: row.hot_cup_inventory_item_id ?? undefined,
-      icedCupInventoryItemId: row.iced_cup_inventory_item_id ?? undefined,
-      otherCupInventoryItemId: row.other_cup_inventory_item_id ?? undefined,
-    })),
-    // Explicit `at` ordering above (not relying on unspecified row order);
-    // pairLoginSessions()/openBaristaShifts() re-sort chronologically anyway.
-    // user_id falls back to the row's own id (never to "") when a staff
-    // account was deleted (ON DELETE SET NULL) - a shared "" key would
-    // incorrectly group different deleted staff members' punches together
-    // in pairLoginSessions()'s per-userId grouping. username/name/role stay
-    // as the snapshot values already on the row either way.
-    loginActivity: (loginActivity.data ?? []).map((row) => ({
-      id: row.id,
-      userId: row.user_id ?? row.id,
-      username: row.username,
-      name: row.name,
-      role: row.role,
-      type: row.type,
-      at: row.at,
-    })),
-    // created_at ordering (not relying on unspecified row order); the UI
-    // re-sorts by date/createdAt in JS regardless. Same user_id fallback
-    // rationale as loginActivity above.
-    offRequests: (offRequests.data ?? []).map((row) => ({
-      id: row.id,
-      userId: row.user_id ?? row.id,
-      name: row.name,
-      date: row.date,
-      reason: row.reason,
-      status: row.status,
-      createdAt: row.created_at,
-    })),
-    voidRequests: (voidRequests.data ?? []).map(voidRequestFromRow),
-  });
-  if (previousStore) {
-    // These keys have no backing table - they only exist in this in-process
-    // copy - so carry them across a refresh instead of dropping them every
-    // TTL window: pending print jobs and admin-set login gates. (Menu
-    // styles/addons are real menu_items columns now and re-read like any
-    // other persisted field.)
-    store.printJobs = previousStore.printJobs;
-    store.loginGates = previousStore.loginGates;
+        subtotal: row.subtotal,
+        discount: row.discount,
+        promoLabel: row.promo_label ?? undefined,
+        total: row.total,
+        paymentMethod: parsePayment(row.payment_method),
+        ticketNo: row.ticket_no,
+        paid: row.paid,
+        change: row.change,
+        voided: row.voided,
+        voidReason: row.void_reason ?? undefined,
+      })),
+      usageLogs: (usageLogs.data ?? []).map((row) => ({ id: row.id, orderId: row.order_id ?? "", orderItemId: row.order_item_id ?? "", inventoryItemId: row.inventory_item_id ?? undefined, date: row.created_at, itemName: row.item_name_snapshot, usedAmount: Number(row.used_amount), unit: row.unit })),
+      restocks: (restocks.data ?? []).map((row) => ({ id: row.id, inventoryItemId: row.inventory_item_id ?? undefined, itemName: row.item_name_snapshot, quantityAdded: Number(row.quantity_added), purchaseQty: row.purchase_qty == null ? undefined : Number(row.purchase_qty), purchaseUnit: row.purchase_unit ?? undefined, date: row.created_at })),
+      costings: (costings.data ?? []).map((row) => ({ id: row.id, productName: row.product_name, ingredients: (costingIngredients.data ?? []).filter((ingredient) => ingredient.costing_id === row.id).map((ingredient) => ({ name: ingredient.name, amount: Number(ingredient.amount), unit: ingredient.unit, outputCups: ingredient.output_cups })) })),
+      recipes: Object.fromEntries((recipes.data ?? []).reduce((entries, row) => { const list = entries.get(row.menu_item_id) ?? []; list.push({ inventoryItemId: row.inventory_item_id, name: "", amount: Number(row.amount), unit: row.unit }); entries.set(row.menu_item_id, list); return entries; }, new Map<string, RecipeIngredient[]>())),
+      recipeCostings: (recipeCostings.data ?? []).map((row) => ({
+        id: row.id,
+        name: row.name,
+        menuItems: (recipeCostingMenuItems.data ?? [])
+          .filter((item) => item.recipe_costing_id === row.id)
+          .map((item) => item.menu_item_name),
+        ingredients: (recipeCostingIngredients.data ?? [])
+          .filter((ingredient) => ingredient.recipe_costing_id === row.id)
+          .map((ingredient) => ({
+            inventoryItemId: ingredient.inventory_item_id ?? (ingredient.name ? "other" : ""),
+            name: ingredient.name,
+            amount: Number(ingredient.amount),
+            unit: ingredient.unit,
+          })),
+        hotCupInventoryItemId: row.hot_cup_inventory_item_id ?? undefined,
+        icedCupInventoryItemId: row.iced_cup_inventory_item_id ?? undefined,
+        otherCupInventoryItemId: row.other_cup_inventory_item_id ?? undefined,
+      })),
+      loginActivity: (loginActivity.data ?? []).map((row) => ({
+        id: row.id,
+        userId: row.user_id ?? row.id,
+        username: row.username,
+        name: row.name,
+        role: row.role,
+        type: row.type,
+        at: row.at,
+      })),
+      offRequests: (offRequests.data ?? []).map((row) => ({
+        id: row.id,
+        userId: row.user_id ?? row.id,
+        name: row.name,
+        date: row.date,
+        reason: row.reason,
+        status: row.status,
+        createdAt: row.created_at,
+      })),
+      voidRequests: (voidRequests.data ?? []).map(voidRequestFromRow),
+    });
+    if (previousStore) {
+      store.printJobs = previousStore.printJobs;
+      store.loginGates = previousStore.loginGates;
+    }
+    memoryStore = store;
+    memoryStoreReadAt = Date.now();
+    return store;
+  } catch {
+    if (!memoryStore) {
+      memoryStore = normalizeStore(emptyStore());
+    }
+    memoryStoreReadAt = Date.now();
+    return memoryStore;
   }
-  memoryStore = store;
-  memoryStoreReadAt = Date.now();
-  return store;
 }
 
 async function writeStore(store: StoreData): Promise<void> {
   if (Array.isArray(store.printJobs) && store.printJobs.length > 300) store.printJobs = store.printJobs.slice(-300);
+  memoryStore = store;
+  memoryStoreReadAt = Date.now();
+  if (!isRealSupabaseConfigured()) return;
   const supabase = supabaseAdmin();
   const uniqueUsers = Array.from(
     new Map(

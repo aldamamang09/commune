@@ -51,7 +51,7 @@ export function UserManager({ users, session, loginActivity, offRequests, loginG
   const [offDate, setOffDate] = useState(phDateString());
   const [offReason, setOffReason] = useState("");
   const [adminGate, setAdminGate] = useState(loginGates.admin);
-  const [cashierGate, setCashierGate] = useState(loginGates.cashier);
+  const cashierGate = loginGates.cashier;
   
   // Global filter/display date state for In / Out
   const [selectedDate, setSelectedDate] = useState(phDateString());
@@ -679,7 +679,10 @@ export function UserManager({ users, session, loginActivity, offRequests, loginG
 
         {tab === "gates" ? (
           <>
-            <h1 className="text-xl font-semibold tracking-tight">Login links</h1>
+            <h1 className="text-xl font-semibold tracking-tight">Admin login link</h1>
+            <p className="text-xs text-neutral-500">
+              The POS has been moved to the standalone POS application. Configure the website Admin access path here.
+            </p>
             <form
               className="space-y-4 rounded-2xl border border-neutral-200 bg-white p-4 sm:p-5"
               onSubmit={(event) => {
@@ -692,7 +695,6 @@ export function UserManager({ users, session, loginActivity, offRequests, loginG
                   }
                   if (result && "ok" in result && result.ok) {
                     setAdminGate(result.admin);
-                    setCashierGate(result.cashier);
                   }
                   setNotice(null);
                 });
@@ -713,27 +715,12 @@ export function UserManager({ users, session, loginActivity, offRequests, loginG
                   Open: /{adminGate.trim() || "…"}
                 </span>
               </label>
-              <label className="block text-xs font-medium text-neutral-600">
-                <span className="mb-1.5 block">Cashier path</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-neutral-400">/</span>
-                  <input
-                    value={cashierGate}
-                    onChange={(event) => setCashierGate(event.target.value)}
-                    className={field}
-                    required
-                  />
-                </div>
-                <span className="mt-1.5 block text-xs font-normal text-neutral-400">
-                  Open: /{cashierGate.trim() || "…"}
-                </span>
-              </label>
               <button
                 type="submit"
                 disabled={pending}
                 className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-40"
               >
-                {pending ? "Saving..." : "Save links"}
+                {pending ? "Saving..." : "Save link"}
               </button>
             </form>
           </>
