@@ -341,42 +341,45 @@ class _CartPanelState extends State<CartPanel> {
                 const SizedBox(height: 8),
 
                 // Preset Quick Buttons: Exact, ₱500, ₱1,000, ₱2,000
-                Row(
-                  children: [
-                    _buildPresetPill(
-                      label: 'Exact',
-                      onTap: () {
-                        controller.setTenderedAmount(controller.total);
-                        setState(() {
-                          _amountController.text = controller.total.toInt().toString();
-                        });
-                      },
-                    ),
-                    const SizedBox(width: 6),
-                    _buildPresetPill(
-                      label: '₱500',
-                      onTap: () {
-                        controller.setTenderedAmount(500);
-                        setState(() => _amountController.text = '500');
-                      },
-                    ),
-                    const SizedBox(width: 6),
-                    _buildPresetPill(
-                      label: '₱1,000',
-                      onTap: () {
-                        controller.setTenderedAmount(1000);
-                        setState(() => _amountController.text = '1000');
-                      },
-                    ),
-                    const SizedBox(width: 6),
-                    _buildPresetPill(
-                      label: '₱2,000',
-                      onTap: () {
-                        controller.setTenderedAmount(2000);
-                        setState(() => _amountController.text = '2000');
-                      },
-                    ),
-                  ],
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildPresetPill(
+                        label: 'Exact',
+                        onTap: () {
+                          controller.setTenderedAmount(controller.total);
+                          setState(() {
+                            _amountController.text = controller.total.toInt().toString();
+                          });
+                        },
+                      ),
+                      const SizedBox(width: 6),
+                      _buildPresetPill(
+                        label: '₱500',
+                        onTap: () {
+                          controller.setTenderedAmount(500);
+                          setState(() => _amountController.text = '500');
+                        },
+                      ),
+                      const SizedBox(width: 6),
+                      _buildPresetPill(
+                        label: '₱1,000',
+                        onTap: () {
+                          controller.setTenderedAmount(1000);
+                          setState(() => _amountController.text = '1000');
+                        },
+                      ),
+                      const SizedBox(width: 6),
+                      _buildPresetPill(
+                        label: '₱2,000',
+                        onTap: () {
+                          controller.setTenderedAmount(2000);
+                          setState(() => _amountController.text = '2000');
+                        },
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 12),
 
@@ -468,16 +471,6 @@ class _CartPanelState extends State<CartPanel> {
                             'Proceed Order',
                             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                           ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-
-                // Serial port info/error notice (matches Screenshot 4)
-                const Center(
-                  child: Text(
-                    "Failed to execute 'requestPort' on 'Serial': No port selected by the user.",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 10, color: Color(0xFF6B7280)),
                   ),
                 ),
               ],

@@ -56,10 +56,11 @@ class _DrinkOptionsDialogState extends State<DrinkOptionsDialog> {
       child: Container(
         width: 440,
         padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             // Header
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -272,6 +273,7 @@ class _DrinkOptionsDialogState extends State<DrinkOptionsDialog> {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 }

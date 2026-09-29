@@ -316,10 +316,26 @@ class _StockScreenState extends State<StockScreen> {
                     DataColumn(label: Text('Actions')),
                   ],
                   rows: inventory.map((item) {
+                    DateTime? selectedDate;
+                    try {
+                      final parts = _dateController.text.split('/');
+                      if (parts.length == 3) {
+                        selectedDate = DateTime(int.parse(parts[2]), int.parse(parts[0]), int.parse(parts[1]));
+                      }
+                    } catch (_) {}
+
+                    final ledger = widget.controller.getStockLedger(item, range: _range, selectedDate: selectedDate);
+                    final openingPcs = ledger['openingPcs'] ?? (item.openingStock ?? item.stock);
+                    final restockedPcs = ledger['restockedPcs'] ?? 0.0;
+                    final usedPerUnit = ledger['usedPerUnit'] ?? 0.0;
+                    final usedPcs = ledger['usedPcs'] ?? 0.0;
+                    final remainingPcs = ledger['remainingPcs'] ?? item.stock;
+                    final cupsLeftVal = ledger['cupsLeft'];
+
                     final isCup = item.name.toLowerCase().contains('cup');
-                    final cupsLeft = !isCup
-                        ? (item.stock > 0 ? (item.stock * 111).toStringAsFixed(1) : '0.0')
-                        : '—';
+                    final cupsLeft = !isCup && cupsLeftVal != null && cupsLeftVal > 0
+                        ? '${cupsLeftVal.toStringAsFixed(1)} cups'
+                        : (!isCup && item.stock > 0 ? '${(item.stock * 111).toStringAsFixed(1)} cups' : '—');
 
                     _restockControllers.putIfAbsent(item.id, () => TextEditingController());
                     final rCtrl = _restockControllers[item.id]!;
@@ -327,8 +343,15 @@ class _StockScreenState extends State<StockScreen> {
                     return DataRow(
                       cells: [
                         DataCell(Text(item.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
-                        DataCell(Text('${(item.openingStock ?? item.stock).toStringAsFixed(2)} pcs', style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563)))),
-                        DataCell(const Text('0.00 pcs', style: TextStyle(fontSize: 12, color: Color(0xFF4B5563)))),
+                        DataCell(Text('${openingPcs.toStringAsFixed(2)} pcs', style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563)))),
+                        DataCell(Text(
+                          restockedPcs > 0 ? '+${restockedPcs.toStringAsFixed(2)} pcs' : '0.00 pcs',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: restockedPcs > 0 ? FontWeight.bold : FontWeight.normal,
+                            color: restockedPcs > 0 ? const Color(0xFF16A34A) : const Color(0xFF4B5563),
+                          ),
+                        )),
                         DataCell(
                           Container(
                             width: 60,
@@ -338,16 +361,18 @@ class _StockScreenState extends State<StockScreen> {
                               borderRadius: BorderRadius.circular(6),
                               border: Border.all(color: const Color(0xFFD1D5DB)),
                             ),
-                            child: const Center(
+                            child: Center(
                               child: Text(
-                                '0',
-                                style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.bold, fontSize: 12),
+                                usedPerUnit > 0
+                                    ? (usedPerUnit % 1 == 0 ? usedPerUnit.toInt().toString() : usedPerUnit.toStringAsFixed(1))
+                                    : '0',
+                                style: const TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.bold, fontSize: 12),
                               ),
                             ),
                           ),
                         ),
                         DataCell(Text(item.unit, style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563)))),
-                        DataCell(Text(isCup ? '—' : '0.00 pc', style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563)))),
+                        DataCell(Text(isCup ? '—' : '${usedPcs.toStringAsFixed(2)} pc', style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563)))),
                         DataCell(
                           Row(
                             mainAxisSize: MainAxisSize.min,
@@ -362,7 +387,7 @@ class _StockScreenState extends State<StockScreen> {
                                 ),
                                 child: Center(
                                   child: Text(
-                                    item.stock.toStringAsFixed(2),
+                                    remainingPcs.toStringAsFixed(2),
                                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                                   ),
                                 ),
@@ -372,7 +397,7 @@ class _StockScreenState extends State<StockScreen> {
                             ],
                           ),
                         ),
-                        DataCell(Text(cupsLeft == '—' ? '—' : '$cupsLeft cups', style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563)))),
+                        DataCell(Text(cupsLeft, style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563)))),
                         DataCell(
                           Row(
                             mainAxisSize: MainAxisSize.min,

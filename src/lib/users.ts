@@ -81,7 +81,7 @@ export function parseLoginRole(value: string): "admin" | "cashier" | null {
 }
 
 export function canUsePos(role: Role) {
-  return role === "cashier" || role === "manager";
+  return role === "cashier" || role === "manager" || role === "barista" || role === "admin";
 }
 
 export function normalizeStaffRole(item: Pick<StaffUser, "role" | "password">): Role {

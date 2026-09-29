@@ -21,7 +21,7 @@ export function decodeSession(value: string | undefined): Session | null {
       typeof parsed.userId !== "string" ||
       typeof parsed.username !== "string" ||
       typeof parsed.name !== "string" ||
-      parsed.role !== "admin" && parsed.role !== "cashier" && parsed.role !== "manager"
+      parsed.role !== "admin" && parsed.role !== "cashier" && parsed.role !== "manager" && parsed.role !== "barista"
     ) {
       return null;
     }
@@ -38,7 +38,7 @@ export async function getSession(): Promise<Session | null> {
 
 export function homeForRole(role: Session["role"]): string {
   if (role === "admin") return "/admin";
-  if (role === "cashier" || role === "manager") return "/pos";
+  if (role === "cashier" || role === "manager" || role === "barista") return "/pos";
   return "/";
 }
 

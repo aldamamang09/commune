@@ -53,8 +53,8 @@ async function requirePos() {
 
 async function requireCashier() {
   const session = await getSession();
-  if (!session || session.role !== "cashier") {
-    throw new Error("Only a cashier can take orders.");
+  if (!session || !canUsePos(session.role)) {
+    throw new Error("Only authorized staff can take orders.");
   }
   return session;
 }
@@ -71,8 +71,8 @@ async function requireInventoryAccess(hasAdminOnlyData: boolean) {
   const session = await getSession();
   if (
     !session ||
-    (session.role !== "admin" && session.role !== "cashier") ||
-    (session.role === "cashier" && hasAdminOnlyData)
+    !canUsePos(session.role) ||
+    (session.role !== "admin" && hasAdminOnlyData)
   ) {
     throw new Error("You do not have permission to change these store records.");
   }

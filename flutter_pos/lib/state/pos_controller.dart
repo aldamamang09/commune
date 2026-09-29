@@ -92,8 +92,84 @@ class PosController extends ChangeNotifier {
       orders = localStorage.getOrders();
       staffUsers = localStorage.getStaff();
       voidRequests = localStorage.getVoidRequests();
+      restocks = localStorage.getRestocks();
+      shiftLogs = localStorage.getLoginActivity();
       notifyListeners();
     });
+  }
+
+  // --- Stock Ledger Calculation (Opening, Restock, Used, Remaining) ---
+  Map<String, double> getStockLedger(InventoryItem item, {String range = 'Today', DateTime? selectedDate}) {
+    final itemRestocks = restocks.where((r) =>
+      (r.inventoryItemId != null && r.inventoryItemId == item.id) ||
+      r.itemName.trim().toLowerCase() == item.name.trim().toLowerCase()
+    );
+
+    final targetDate = selectedDate ?? DateTime.now();
+    final dateStr = "${targetDate.year.toString().padLeft(4, '0')}-${targetDate.month.toString().padLeft(2, '0')}-${targetDate.day.toString().padLeft(2, '0')}";
+
+    double totalRestocked = 0;
+    for (final r in itemRestocks) {
+      if (range == 'Today') {
+        if (r.date.startsWith(dateStr)) {
+          totalRestocked += r.quantityAdded;
+        }
+      } else {
+        totalRestocked += r.quantityAdded;
+      }
+    }
+
+    double totalUsed = 0;
+    for (final order in orders) {
+      if (order.voided) continue;
+      final oDate = DateTime.tryParse(order.createdAt);
+      if (range == 'Today') {
+        if (oDate == null || oDate.year != targetDate.year || oDate.month != targetDate.month || oDate.day != targetDate.day) {
+          continue;
+        }
+      }
+      for (final line in order.items) {
+        final name = line.name.toLowerCase();
+        if (item.id == 'coffee-beans' && (name.contains('espresso') || name.contains('latte') || name.contains('cappuccino') || name.contains('americano'))) {
+          totalUsed += 18.0 * line.qty;
+        } else if (item.id == 'milk' && (name.contains('latte') || name.contains('cappuccino') || name.contains('flat white'))) {
+          totalUsed += 180.0 * line.qty;
+        } else if (item.id == 'matcha-powder' && name.contains('matcha')) {
+          totalUsed += 10.0 * line.qty;
+        } else if (item.id == 'cups-hot' && line.style == 'hot') {
+          totalUsed += 1.0 * line.qty;
+        } else if (item.id == 'cups-peta' && line.style != 'hot') {
+          totalUsed += 1.0 * line.qty;
+        } else if (item.cupUsageAmount != null && item.cupUsageAmount! > 0) {
+          totalUsed += item.cupUsageAmount! * line.qty;
+        }
+      }
+    }
+
+    final double pieceSize = (item.purchaseUnitSize != null && item.purchaseUnitSize! > 0) ? item.purchaseUnitSize! : 1.0;
+    final double remainingBase = item.stock;
+    final double remainingPcs = remainingBase / pieceSize;
+    final double restockedPcs = totalRestocked / pieceSize;
+    final double usedPcs = totalUsed / pieceSize;
+    final double openingBase = remainingBase - totalRestocked + totalUsed;
+    final double openingPcs = openingBase / pieceSize;
+    final double usedPerUnit = totalUsed;
+
+    double? cupsLeft;
+    if (item.cupUsageAmount != null && item.cupUsageAmount! > 0) {
+      cupsLeft = remainingBase / item.cupUsageAmount!;
+    } else if (item.cupsMake != null) {
+      cupsLeft = item.cupsMake!;
+    }
+
+    return {
+      'openingPcs': openingPcs < 0 ? 0.0 : openingPcs,
+      'restockedPcs': restockedPcs,
+      'usedPerUnit': usedPerUnit,
+      'usedPcs': usedPcs,
+      'remainingPcs': remainingPcs < 0 ? 0.0 : remainingPcs,
+      'cupsLeft': cupsLeft ?? -1.0,
+    };
   }
 
   // --- Filtered Menu ---

@@ -39,12 +39,27 @@ class SupabaseService {
   Future<List<MenuItem>> fetchMenu() async {
     if (_client == null) return [];
     try {
+      final catRes = await _client!
+          .from(SupabaseConfig.tableMenuCategories)
+          .select('id, name');
+      final catMap = <String, String>{};
+      for (final row in (catRes as List)) {
+        catMap[row['id'].toString()] = row['name'].toString();
+      }
+
       final res = await _client!
           .from(SupabaseConfig.tableMenuItems)
           .select('*')
           .eq('available', true)
           .order('created_at');
-      return (res as List).map((e) => MenuItem.fromJson(e)).toList();
+      return (res as List).map((e) {
+        final map = Map<String, dynamic>.from(e as Map);
+        final catId = map['category_id']?.toString();
+        if (catId != null && catMap.containsKey(catId)) {
+          map['category'] = catMap[catId];
+        }
+        return MenuItem.fromJson(map);
+      }).toList();
     } catch (e) {
       print('Error fetching menu from Supabase: $e');
       return [];
@@ -76,6 +91,25 @@ class SupabaseService {
       return (res as List).map((e) => InventoryItem.fromJson(e)).toList();
     } catch (e) {
       print('Error fetching inventory: $e');
+      return [];
+    }
+  }
+
+  Future<List<RestockRecord>> fetchRestocks() async {
+    if (_client == null) return [];
+    try {
+      final res = await _client!
+          .from(SupabaseConfig.tableRestocks)
+          .select('*')
+          .order('created_at', ascending: false)
+          .limit(200);
+      return (res as List).map((e) {
+        final map = Map<String, dynamic>.from(e as Map);
+        map['isSynced'] = true;
+        return RestockRecord.fromJson(map);
+      }).toList();
+    } catch (e) {
+      print('Error fetching restocks from Supabase: $e');
       return [];
     }
   }
@@ -155,22 +189,30 @@ class SupabaseService {
     }
 
     try {
-      final itemsPayload = order.items.map((i) => i.toJson()).toList();
+      final itemsPayload = order.items.map((i) => {
+        'productId': i.productId,
+        'name': i.name,
+        'qty': i.qty,
+        'price': i.price.round(),
+        if (i.style != null) 'style': i.style,
+        'addons': i.addons.map((a) => a.toJson()).toList(),
+      }).toList();
+
       final res = await _client!.rpc(SupabaseConfig.rpcCreateOrderAtomic, params: {
         'p_order_id': order.id,
         'p_created_at': order.createdAt,
         'p_barista_name': order.baristaName,
         'p_barista_user_id': order.baristaUserId,
         'p_items': itemsPayload,
-        'p_subtotal': order.subtotal,
-        'p_discount': order.discount,
+        'p_subtotal': order.subtotal.round(),
+        'p_discount': order.discount.round(),
         'p_promo_id': null,
         'p_promo_label': order.promoLabel,
-        'p_total': order.total,
+        'p_total': order.total.round(),
         'p_payment_method': order.paymentMethod,
         'p_ticket_no': null, // Server allocates daily sequence
-        'p_paid': order.paid,
-        'p_change': order.change,
+        'p_paid': order.paid.round(),
+        'p_change': order.change.round(),
         'p_deductions': deductions,
         'p_voided': order.voided,
         'p_void_reason': order.voidReason,
@@ -190,14 +232,14 @@ class SupabaseService {
           'created_at': order.createdAt,
           'barista_name': order.baristaName,
           'barista_user_id': order.baristaUserId,
-          'subtotal': order.subtotal,
-          'discount': order.discount,
+          'subtotal': order.subtotal.round(),
+          'discount': order.discount.round(),
           'promo_label': order.promoLabel,
-          'total': order.total,
+          'total': order.total.round(),
           'payment_method': order.paymentMethod,
           'ticket_no': order.ticketNo,
-          'paid': order.paid,
-          'change': order.change,
+          'paid': order.paid.round(),
+          'change': order.change.round(),
           'voided': order.voided,
           'void_reason': order.voidReason,
         });
@@ -211,7 +253,7 @@ class SupabaseService {
             'product_id_snapshot': item.productId,
             'name_snapshot': item.name,
             'qty': item.qty,
-            'price_snapshot': item.price,
+            'price_snapshot': item.price.round(),
             'style': item.style,
             'addons': item.addons.map((a) => a.toJson()).toList(),
           };
@@ -276,6 +318,20 @@ class SupabaseService {
           'purchase_unit': record.purchaseUnit,
           'created_at': record.date,
         });
+        if (record.inventoryItemId != null) {
+          final cur = await _client!
+              .from(SupabaseConfig.tableInventoryItems)
+              .select('stock')
+              .eq('id', record.inventoryItemId!)
+              .maybeSingle();
+          if (cur != null && cur['stock'] != null) {
+            final curStock = (cur['stock'] as num).toDouble();
+            await _client!
+                .from(SupabaseConfig.tableInventoryItems)
+                .update({'stock': curStock + record.quantityAdded})
+                .eq('id', record.inventoryItemId!);
+          }
+        }
         return true;
       } catch (_) {
         return false;

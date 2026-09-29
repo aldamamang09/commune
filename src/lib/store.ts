@@ -478,13 +478,13 @@ async function readStore(options?: { fresh?: boolean }): Promise<StoreData> {
               role: parseRole(
                 row.role === "admin" || /admin|owner/i.test(row.title ?? "")
                   ? "admin"
-                  : row.username === "cashier" || /cashier|sale\s+in\s+charge/i.test(row.title ?? "")
+                  : row.username === "cashier" || row.role === "cashier" || /cashier|sale\s+in\s+charge/i.test(row.title ?? "")
                     ? "cashier"
-                    : row.username === "manager" || /manager/i.test(row.title ?? "")
+                    : row.username === "manager" || row.role === "manager" || /manager/i.test(row.title ?? "")
                       ? "manager"
                       : "barista",
               ),
-              title: row.title,
+              title: row.title || (row.role === "cashier" ? "Cashier" : row.role === "manager" ? "Manager" : row.role === "admin" ? "Owner" : "Barista"),
             },
           ]),
         ).values(),
@@ -701,7 +701,7 @@ async function writeStore(store: StoreData): Promise<void> {
         password: user.password,
         name: user.name,
         role: user.role === "admin" ? "admin" : "barista",
-        title: user.title,
+        title: user.title || (user.role === "cashier" ? "Cashier" : user.role === "manager" ? "Manager" : user.role === "admin" ? "Owner" : "Barista"),
       })),
       { onConflict: "id" },
     ),

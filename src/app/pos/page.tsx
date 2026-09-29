@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
 import { PosClient } from "@/components/PosClient";
+import { StaffLogin } from "@/components/StaffLogin";
 import { getSession } from "@/lib/auth";
 import { getStore } from "@/lib/store";
 import { canUsePos } from "@/lib/users";
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function PosPage() {
   const session = await getSession();
   if (!session || !canUsePos(session.role)) {
-    redirect("/");
+    return <StaffLogin role="cashier" />;
   }
 
   const store = await getStore();

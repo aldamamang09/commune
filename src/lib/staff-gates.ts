@@ -5,10 +5,10 @@ export type LoginGates = {
 
 export const DEFAULT_LOGIN_GATES: LoginGates = {
   admin: "mouna1233",
-  cashier: "sale1803",
+  cashier: "",
 };
 
-const RESERVED = new Set(["admin", "pos", "login", "drinks", "images", "api"]);
+const RESERVED = new Set(["admin", "pos", "login", "drinks", "images", "api", "sale1803"]);
 
 export function sanitizeLoginGate(value: string): { ok: true; value: string } | { ok: false; error: string } {
   const next = value.trim().replace(/^\/+|\/+$/g, "").toLowerCase();
@@ -27,23 +27,25 @@ export function sanitizeLoginGate(value: string): { ok: true; value: string } | 
 
 export function normalizeLoginGates(gates?: Partial<LoginGates> | null): LoginGates {
   const adminResult = sanitizeLoginGate(gates?.admin ?? "");
-  const cashierResult = sanitizeLoginGate(gates?.cashier ?? "");
+  const cashierRaw = (gates?.cashier ?? "").trim().toLowerCase();
+  const cashierResult = cashierRaw && cashierRaw !== "sale1803" ? sanitizeLoginGate(cashierRaw) : null;
   const admin = adminResult.ok ? adminResult.value : DEFAULT_LOGIN_GATES.admin;
-  let cashier = cashierResult.ok ? cashierResult.value : DEFAULT_LOGIN_GATES.cashier;
-  if (cashier === admin) {
-    cashier = admin === DEFAULT_LOGIN_GATES.cashier ? `${DEFAULT_LOGIN_GATES.admin}-pos` : DEFAULT_LOGIN_GATES.cashier;
+  let cashier = cashierResult?.ok ? cashierResult.value : "";
+  if (cashier === admin || cashier === "sale1803") {
+    cashier = "";
   }
   return { admin, cashier };
 }
 
 export function roleForLoginGate(gate: string, gates: LoginGates): "admin" | "cashier" | null {
   const value = gate.trim().replace(/^\/+|\/+$/g, "").toLowerCase();
-  if (!value) return null;
+  if (!value || value === "sale1803") return null;
   if (value === gates.admin.toLowerCase()) return "admin";
-  if (value === gates.cashier.toLowerCase()) return "cashier";
+  if (gates.cashier && value === gates.cashier.toLowerCase()) return "cashier";
   return null;
 }
 
 export function loginPathForRole(role: "admin" | "cashier", gates: LoginGates) {
-  return role === "admin" ? `/${gates.admin}` : `/${gates.cashier}`;
+  if (role === "admin") return `/${gates.admin}`;
+  return gates.cashier ? `/${gates.cashier}` : "/pos";
 }

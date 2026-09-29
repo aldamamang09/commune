@@ -15,16 +15,31 @@ class StaffUser {
     this.title = '',
   });
 
-  bool get canUsePos => role == 'cashier' || role == 'manager' || role == 'admin';
+  bool get canUsePos => role == 'cashier' || role == 'manager' || role == 'admin' || role == 'barista';
   bool get isManager => role == 'manager' || role == 'admin';
 
   factory StaffUser.fromJson(Map<String, dynamic> json) {
+    final rawRole = (json['role'] as String? ?? 'barista').toLowerCase();
+    final title = (json['title'] as String? ?? '').toLowerCase();
+    final username = (json['username'] as String? ?? '').toLowerCase();
+
+    var role = rawRole;
+    if (role == 'barista' || role.isEmpty) {
+      if (title.contains('admin') || title.contains('owner') || username == 'admin') {
+        role = 'admin';
+      } else if (title.contains('cashier') || title.contains('sale') || username == 'cashier') {
+        role = 'cashier';
+      } else if (title.contains('manager') || username == 'manager') {
+        role = 'manager';
+      }
+    }
+
     return StaffUser(
       id: json['id'] as String? ?? '',
       username: json['username'] as String? ?? '',
       password: json['password'] as String? ?? '',
       name: json['name'] as String? ?? json['username'] as String? ?? '',
-      role: json['role'] as String? ?? 'barista',
+      role: role,
       title: json['title'] as String? ?? '',
     );
   }

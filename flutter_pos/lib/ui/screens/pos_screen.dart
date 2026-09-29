@@ -296,21 +296,34 @@ class _PosScreenState extends State<PosScreen> {
                               style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 14),
                             ),
                           )
-                        : GridView.builder(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 4,
-                              childAspectRatio: 1.55,
-                              crossAxisSpacing: 12,
-                              mainAxisSpacing: 12,
-                            ),
-                            itemCount: filteredItems.length,
-                            itemBuilder: (context, index) {
-                              final item = filteredItems[index];
-                              return ProductCard(
-                                item: item,
-                                isSelected: _selectedItemId == item.id,
-                                onTap: () => _openDrinkOptions(item),
+                        : LayoutBuilder(
+                            builder: (context, constraints) {
+                              int crossAxisCount = 4;
+                              double aspectRatio = 1.45;
+                              if (constraints.maxWidth < 480) {
+                                crossAxisCount = 2;
+                                aspectRatio = 1.35;
+                              } else if (constraints.maxWidth < 750) {
+                                crossAxisCount = 3;
+                                aspectRatio = 1.4;
+                              }
+                              return GridView.builder(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: crossAxisCount,
+                                  childAspectRatio: aspectRatio,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 12,
+                                ),
+                                itemCount: filteredItems.length,
+                                itemBuilder: (context, index) {
+                                  final item = filteredItems[index];
+                                  return ProductCard(
+                                    item: item,
+                                    isSelected: _selectedItemId == item.id,
+                                    onTap: () => _openDrinkOptions(item),
+                                  );
+                                },
                               );
                             },
                           ),

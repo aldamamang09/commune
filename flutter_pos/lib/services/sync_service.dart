@@ -102,49 +102,75 @@ class SyncService extends ChangeNotifier {
         await localStorage.saveStaff(freshStaff);
       }
 
+      final freshRestocks = await supabaseService.fetchRestocks();
+      if (freshRestocks.isNotEmpty) {
+        await localStorage.saveRestocks(freshRestocks);
+      }
+
+      final freshOrders = await supabaseService.fetchRecentOrders();
+      if (freshOrders.isNotEmpty) {
+        await localStorage.saveOrders(freshOrders);
+      }
+
       // 2. Push offline shift punches
       final pendingPunches = localStorage.getPendingLoginActivity();
       for (final punch in pendingPunches) {
-        final ok = await supabaseService.pushLoginActivity(punch);
-        if (ok) {
-          punch.isSynced = true;
-          await localStorage.removePendingLoginActivity(punch.id);
+        try {
+          final ok = await supabaseService.pushLoginActivity(punch);
+          if (ok) {
+            punch.isSynced = true;
+            await localStorage.removePendingLoginActivity(punch.id);
+          }
+        } catch (e) {
+          print('Error pushing punch: $e');
         }
       }
 
       // 3. Push offline orders
       final pendingOrders = localStorage.getPendingOrders();
       for (final order in pendingOrders) {
-        // Calculate ingredient deductions for this order
-        final deductions = _buildDeductionsForOrder(order);
-        final result = await supabaseService.pushOrderAtomic(order, deductions);
-        if (result['ok'] == true) {
-          order.isSynced = true;
-          if (result['ticketNo'] != null && result['ticketNo'].toString().isNotEmpty) {
-            order.ticketNo = result['ticketNo'].toString();
+        try {
+          // Calculate ingredient deductions for this order
+          final deductions = _buildDeductionsForOrder(order);
+          final result = await supabaseService.pushOrderAtomic(order, deductions);
+          if (result['ok'] == true) {
+            order.isSynced = true;
+            if (result['ticketNo'] != null && result['ticketNo'].toString().isNotEmpty) {
+              order.ticketNo = result['ticketNo'].toString();
+            }
+            await localStorage.addOrder(order);
+            await localStorage.removePendingOrder(order.id);
           }
-          await localStorage.addOrder(order);
-          await localStorage.removePendingOrder(order.id);
+        } catch (e) {
+          print('Error pushing order: $e');
         }
       }
 
       // 4. Push offline restocks
       final pendingRestocks = localStorage.getPendingRestocks();
       for (final restock in pendingRestocks) {
-        final ok = await supabaseService.pushRestockAtomic(restock);
-        if (ok) {
-          restock.isSynced = true;
-          await localStorage.removePendingRestock(restock.id);
+        try {
+          final ok = await supabaseService.pushRestockAtomic(restock);
+          if (ok) {
+            restock.isSynced = true;
+            await localStorage.removePendingRestock(restock.id);
+          }
+        } catch (e) {
+          print('Error pushing restock: $e');
         }
       }
 
       // 5. Push offline void requests
       final pendingVoids = localStorage.getPendingVoidRequests();
       for (final voidReq in pendingVoids) {
-        final ok = await supabaseService.pushVoidRequest(voidReq);
-        if (ok) {
-          voidReq.isSynced = true;
-          await localStorage.removePendingVoidRequest(voidReq.id);
+        try {
+          final ok = await supabaseService.pushVoidRequest(voidReq);
+          if (ok) {
+            voidReq.isSynced = true;
+            await localStorage.removePendingVoidRequest(voidReq.id);
+          }
+        } catch (e) {
+          print('Error pushing void request: $e');
         }
       }
 

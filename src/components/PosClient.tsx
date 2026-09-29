@@ -81,7 +81,7 @@ type PosClientProps = {
   >;
 };
 
-type PosPanel = "pos" | Extract<InventoryTab, "stock" | "restock">;
+type PosPanel = "pos" | "voids" | Extract<InventoryTab, "stock" | "restock">;
 
 const CASH_PRESETS = [500, 1000, 2000];
 const CHECKOUT_KEY = "commune_pos_checkout";
@@ -341,7 +341,7 @@ export function PosClient({
   const isCash = paymentMethod === "cash";
   const paid = isCash ? Number(tendered) || 0 : total;
   const change = isCash && paid >= total ? paid - total : 0;
-  const isManager = session.role === "manager";
+  const isManager = session.role === "manager" || session.role === "admin";
   const voidTickets = useMemo(() => {
     const needle = voidSearch.trim().toLowerCase();
     const today = phDateString();
@@ -363,14 +363,13 @@ export function PosClient({
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [orders, voidSearch, voidTodayOnly]);
   const selectedVoidOrder = orders.find((order) => order.id === voidTargetId);
-  const cashierPaidVoid = !isManager && cart.length === 0 ? lastOrderId : null;
+  const cashierPaidVoid = cart.length === 0 ? (voidTargetId || lastOrderId) : null;
   const activeVoidRequest = voidRequests.find(
     (request) => request.id === activeVoidRequestId,
   );
   const voidRequestPending =
     Boolean(activeVoidRequestId) && activeVoidRequest?.status !== "approved";
   const canCharge =
-    !isManager &&
     !voidRequestPending &&
     pos.isOpen &&
     cart.length > 0 &&
@@ -461,7 +460,7 @@ export function PosClient({
   }
 
   function addItem(id: string, name: string, price: number, style?: DrinkStyle, addons: OrderAddon[] = []) {
-    if (!pos.isOpen || isManager || voidRequestPending) {
+    if (!pos.isOpen || voidRequestPending) {
       return;
     }
     const nextLine = { productId: id, name, qty: 1, price, style, addons };
@@ -513,11 +512,23 @@ export function PosClient({
 
     startTransition(async () => {
       if (isManager) {
-        if (!voidTargetId) {
+        if (cart.length > 0) {
+          setCart([]);
+          setTendered("");
+          setPaymentMethod("cash");
+          setPromoId(null);
+          setPromoOpen(false);
+          setVoidReason("");
+          setVoidModalOpen(false);
+          setMessage("Checkout voided.");
+          return;
+        }
+        const targetId = voidTargetId || lastOrderId;
+        if (!targetId) {
           setMessage("Select a ticket to void.");
           return;
         }
-        const result = await voidOrder(voidTargetId, voidReason);
+        const result = await voidOrder(targetId, voidReason);
         if ("error" in result && result.error) {
           setMessage(result.error);
           return;
@@ -851,38 +862,54 @@ export function PosClient({
             >
               POS
             </button>
-            {!isManager ? (
-              <div>
-                <p className="px-4 pb-1 text-[11px] font-medium tracking-wide text-neutral-400 uppercase">
-                  Inventory
-                </p>
-                {(
-                  [
-                    ["stock", "Stock inventory"],
-                    ["restock", "Restock"],
-                  ] as const
-                ).map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    aria-current={activePanel === id ? "page" : undefined}
-                    onClick={() => {
-                      setActivePanel(id);
-                      setMenuOpen(false);
-                    }}
-                    className={`mb-1 w-full rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${
-                      activePanel === id
-                        ? "bg-black text-white"
-                        : "text-neutral-600 hover:bg-neutral-100 hover:text-black"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+            {isManager ? (
+              <button
+                type="button"
+                aria-current={activePanel === "voids" ? "page" : undefined}
+                onClick={() => {
+                  setActivePanel("voids");
+                  setMenuOpen(false);
+                }}
+                className={`mb-3 w-full rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${
+                  activePanel === "voids"
+                    ? "bg-black text-white"
+                    : "text-neutral-600 hover:bg-neutral-100 hover:text-black"
+                }`}
+              >
+                Void tickets
+              </button>
             ) : null}
 
-            <div className={`${isManager ? "" : "mt-4 border-t border-neutral-100 pt-4"}`}>
+            <div>
+              <p className="px-4 pb-1 text-[11px] font-medium tracking-wide text-neutral-400 uppercase">
+                Inventory
+              </p>
+              {(
+                [
+                  ["stock", "Stock inventory"],
+                  ["restock", "Restock"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-current={activePanel === id ? "page" : undefined}
+                  onClick={() => {
+                    setActivePanel(id);
+                    setMenuOpen(false);
+                  }}
+                  className={`mb-1 w-full rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${
+                    activePanel === id
+                      ? "bg-black text-white"
+                      : "text-neutral-600 hover:bg-neutral-100 hover:text-black"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-4 border-t border-neutral-100 pt-4">
               <button
                 type="button"
                 disabled={pending || !labelPrinter.supported}
@@ -1516,7 +1543,7 @@ export function PosClient({
           />
         ) : null}
 
-        {!isManager && activePanel !== "pos" ? (
+        {activePanel === "stock" || activePanel === "restock" ? (
           <div className="min-h-0 flex-1 overflow-y-auto bg-neutral-100 p-2 sm:p-4">
             <SalePurchaseTransactions
               store={inventoryStore}
@@ -1530,28 +1557,9 @@ export function PosClient({
               showTabs={false}
             />
           </div>
-        ) : (
-        <div className="relative flex min-h-0 flex-1 flex-col md:flex-row">
-          {!pos.isOpen ? (
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-neutral-100 px-6 text-center">
-              <p className="font-serif text-4xl italic sm:text-5xl">Closed</p>
-              <p className="mt-3 max-w-sm text-sm text-neutral-500">
-                Open the POS to {isManager ? "void tickets." : "take orders."}.
-              </p>
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => startTransition(() => openPos())}
-                className="mt-8 rounded-full bg-black px-8 py-3 text-sm font-medium text-white shadow-lg transition hover:bg-neutral-800"
-              >
-                Open POS
-              </button>
-            </div>
-          ) : null}
-
-          {isManager ? (
-            <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-neutral-100">
-              <div className="shrink-0 border-b border-neutral-200 bg-white px-4 py-4 sm:px-6">
+        ) : activePanel === "voids" ? (
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-neutral-100">
+            <div className="shrink-0 border-b border-neutral-200 bg-white px-4 py-4 sm:px-6">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div>
                     <h2 className="text-xl font-semibold tracking-tight">Void tickets</h2>
@@ -1697,7 +1705,23 @@ export function PosClient({
               </div>
             </section>
           ) : (
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
+            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
+              {!pos.isOpen ? (
+                <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-neutral-100 px-6 text-center">
+                  <p className="font-serif text-4xl italic sm:text-5xl">Closed</p>
+                  <p className="mt-3 max-w-sm text-sm text-neutral-500">
+                    Open the POS to take orders.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => startTransition(() => openPos())}
+                    className="mt-8 rounded-full bg-black px-8 py-3 text-sm font-medium text-white shadow-lg transition hover:bg-neutral-800"
+                  >
+                    Open POS
+                  </button>
+                </div>
+              ) : null}
           {/* Menu Catalog Section */}
           <section className="relative flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="flex items-center gap-3 px-4 py-2">
@@ -1731,7 +1755,7 @@ export function PosClient({
                       key={item.id}
                       type="button"
                       onClick={() => handleMenuTap(item)}
-                      disabled={isManager || voidRequestPending}
+                      disabled={voidRequestPending}
                       className="rounded-2xl border border-neutral-300 bg-white p-3 text-center transition hover:border-black disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <p className="text-xs font-medium">{item.name}</p>
@@ -2026,10 +2050,8 @@ export function PosClient({
               ) : null}
             </div>
           </aside>
-            </div>
-          )}
         </div>
-        )}
+      )}
       </div>
     </div>
   );

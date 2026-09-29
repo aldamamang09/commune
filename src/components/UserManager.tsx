@@ -51,7 +51,7 @@ export function UserManager({ users, session, loginActivity, offRequests, loginG
   const [offDate, setOffDate] = useState(phDateString());
   const [offReason, setOffReason] = useState("");
   const [adminGate, setAdminGate] = useState(loginGates.admin);
-  const cashierGate = loginGates.cashier;
+  const cashierGate = loginGates.cashier ?? "";
   
   // Global filter/display date state for In / Out
   const [selectedDate, setSelectedDate] = useState(phDateString());

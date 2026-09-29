@@ -95,8 +95,12 @@ function parseStaff(input: {
 
   const title =
     role === "barista"
-      ? "Barista"
-      : input.title.trim() || (role === "admin" ? "Owner" : "Staff");
+      ? (input.title.trim() || "Barista")
+      : role === "cashier"
+        ? (input.title.trim() || "Cashier")
+        : role === "manager"
+          ? (input.title.trim() || "Manager")
+          : input.title.trim() || "Owner";
   const password = input.password;
   const username = (
     input.username.trim() ||
@@ -464,14 +468,15 @@ export async function deleteOffRequest(id: string) {
 
 export async function updateLoginGates(
   adminPath: string,
-  cashierPath: string,
+  cashierPath?: string,
 ): Promise<{ error: string } | { ok: true; admin: string; cashier: string }> {
   await requireAdmin();
   const admin = sanitizeLoginGate(adminPath);
   if (!admin.ok) return { error: admin.error };
-  const cashier = sanitizeLoginGate(cashierPath);
+  const cashierRaw = (cashierPath ?? "").trim().toLowerCase();
+  const cashier = cashierRaw && cashierRaw !== "sale1803" ? sanitizeLoginGate(cashierRaw) : { ok: true as const, value: "" };
   if (!cashier.ok) return { error: cashier.error };
-  if (admin.value === cashier.value) {
+  if (cashier.value && admin.value === cashier.value) {
     return { error: "Use different paths for admin and cashier." };
   }
 
@@ -484,6 +489,6 @@ export async function updateLoginGates(
   if (previous.admin) revalidatePath(`/${previous.admin}`);
   if (previous.cashier) revalidatePath(`/${previous.cashier}`);
   revalidatePath(`/${admin.value}`);
-  revalidatePath(`/${cashier.value}`);
+  if (cashier.value) revalidatePath(`/${cashier.value}`);
   return { ok: true, admin: admin.value, cashier: cashier.value };
 }

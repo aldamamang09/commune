@@ -62,8 +62,8 @@ export async function login(
   if (selectedRole === "admin" && effectiveRole !== "admin") {
     return { error: "Those credentials are not for the Admin role." };
   }
-  if (selectedRole === "cashier" && effectiveRole !== "cashier" && effectiveRole !== "manager") {
-    return { error: "Those credentials are not for the Cashier role." };
+  if (selectedRole === "cashier" && effectiveRole !== "cashier" && effectiveRole !== "manager" && effectiveRole !== "barista" && effectiveRole !== "admin") {
+    return { error: "Those credentials are not for the Staff role." };
   }
 
   const session = toSession({ ...user, role: effectiveRole });

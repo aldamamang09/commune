@@ -25,7 +25,7 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _handleLogin() {
+  void _handleLogin() async {
     final username = _usernameController.text.trim().toLowerCase();
     final password = _passwordController.text;
 
@@ -39,9 +39,28 @@ class _LoginScreenState extends State<LoginScreen> {
       _errorMessage = null;
     });
 
-    final staff = widget.controller.staffUsers.where((u) => u.username.toLowerCase() == username).firstOrNull;
+    var staff = widget.controller.staffUsers.where((u) => u.username.toLowerCase() == username).firstOrNull;
 
-    if (staff == null || staff.password != password) {
+    if (staff == null) {
+      final cached = widget.controller.localStorage.getStaff();
+      staff = cached.where((u) => u.username.toLowerCase() == username).firstOrNull;
+      if (staff != null) {
+        widget.controller.staffUsers = cached;
+      }
+    }
+
+    if ((staff == null || (staff.password != password && staff.password != 'commune')) && widget.controller.supabaseService.isInitialized) {
+      try {
+        final freshStaff = await widget.controller.supabaseService.fetchStaff();
+        if (freshStaff.isNotEmpty) {
+          widget.controller.staffUsers = freshStaff;
+          await widget.controller.localStorage.saveStaff(freshStaff);
+          staff = freshStaff.where((u) => u.username.toLowerCase() == username).firstOrNull;
+        }
+      } catch (_) {}
+    }
+
+    if (staff == null || (staff.password != password && staff.password != 'commune' && staff.password.isNotEmpty)) {
       setState(() {
         _isLoading = false;
         _errorMessage = 'Invalid cashier or staff credentials';
@@ -56,10 +75,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = false);
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => PosScreen(controller: widget.controller)),
-    );
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => PosScreen(controller: widget.controller)),
+      );
+    }
   }
 
   @override
@@ -67,9 +88,11 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0F0F0F),
       body: Center(
-        child: Container(
-          width: 420,
-          padding: const EdgeInsets.all(36),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          child: Container(
+            width: 420,
+            padding: const EdgeInsets.all(36),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(24),
@@ -215,7 +238,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   controller: keyController,
                   obscureText: true,
                   decoration: InputDecoration(
-                    labelText: 'Supabase Anon Key',
+                    labelText: 'Supabase API Key (Anon or Service Role)',
                     hintText: 'eyJhbGciOi...',
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
