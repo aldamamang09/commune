@@ -43,11 +43,16 @@ export function homeForRole(role: Session["role"]): string {
 }
 
 export function sessionCookieOptions() {
+  const isSecureEnv =
+    process.env.VERCEL === "1" ||
+    Boolean(process.env.K_SERVICE) ||
+    process.env.NODE_ENV === "production" ||
+    Boolean(process.env.APP_URL?.startsWith("https://"));
   return {
     httpOnly: true,
-    sameSite: "lax" as const,
+    sameSite: (isSecureEnv ? "none" : "lax") as "none" | "lax",
     path: "/",
     maxAge: 60 * 60 * 12,
-    secure: process.env.VERCEL === "1",
+    secure: isSecureEnv,
   };
 }

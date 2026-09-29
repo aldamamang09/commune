@@ -11,9 +11,9 @@ import {
   homeForRole,
   sessionCookieOptions,
 } from "@/lib/auth";
-import { getStore, recordAuthActivity } from "@/lib/store";
+import { getFreshStore, getStore, recordAuthActivity } from "@/lib/store";
 import { loginPathForRole, normalizeLoginGates } from "@/lib/staff-gates";
-import { parseLoginRole, toSession } from "@/lib/users";
+import { parseLoginRole, parseRole, toSession } from "@/lib/users";
 
 export type LoginState = {
   error?: string;
@@ -34,9 +34,12 @@ export async function login(
     return { error: "Enter a username and password." };
   }
 
-  const store = await getStore();
+  const store = await getFreshStore();
+  const lowerUsername = username.toLowerCase();
   const user = store.users.find(
-    (entry) => entry.username.trim().toLowerCase() === username.toLowerCase(),
+    (entry) =>
+      entry.username.trim().toLowerCase() === lowerUsername ||
+      entry.name.trim().toLowerCase() === lowerUsername,
   );
 
   if (!user || !user.password) {
@@ -45,20 +48,12 @@ export async function login(
 
   const passwordMatches = user.password.startsWith("$2")
     ? await bcrypt.compare(password, user.password)
-    : user.password === password;
+    : user.password === password || user.password.trim() === password.trim();
   if (!passwordMatches) {
     return { error: "Those credentials do not match a commune staff account." };
   }
 
-  const titleRole = String(user.title ?? "").trim().toLowerCase();
-  const effectiveRole =
-    titleRole === "admin" || titleRole === "owner" || user.role === "admin"
-      ? "admin"
-      : titleRole === "manager"
-        ? "manager"
-        : /cashier|sale\s+in\s+charge/.test(titleRole)
-          ? "cashier"
-          : user.role;
+  const effectiveRole = parseRole(String(user.title ?? ""), user.role);
   if (selectedRole === "admin" && effectiveRole !== "admin") {
     return { error: "Those credentials are not for the Admin role." };
   }

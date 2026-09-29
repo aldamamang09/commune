@@ -1,26 +1,19 @@
 class SupabaseConfig {
-  // Connected directly to the centralized Commune Coffee Supabase database
-  static String supabaseUrl = const String.fromEnvironment(
-    'SUPABASE_URL',
-    defaultValue: 'https://vidzkzpvgqdwfdfcduti.supabase.co',
-  );
+  // Centralized Commune Coffee Supabase project configuration (const for instant Hot Reload support)
+  static const String projectUrl = 'https://vidzkzpvgqdwfdfcduti.supabase.co';
+  static const String restBaseUrl = 'https://vidzkzpvgqdwfdfcduti.supabase.co/rest/v1';
 
-  static String supabaseAnonKey = const String.fromEnvironment(
-    'SUPABASE_ANON_KEY',
-    defaultValue:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpZHprenB2Z3Fkd2ZkZmNkdXRpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDY0ODQ4NSwiZXhwIjoyMTA2MjI0NDg1fQ.kzD5tVzpQs0Ayg_MJrCbNLML3Zn5P62dbf2y9kzUx_M',
-  );
+  static const String serviceRoleKey =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpZHprenB2Z3Fkd2ZkZmNkdXRpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDY0ODQ4NSwiZXhwIjoyMTA2MjI0NDg1fQ.kzD5tVzpQs0Ayg_MJrCbNLML3Zn5P62dbf2y9kzUx_M';
 
-  static String supabasePublishableKey = const String.fromEnvironment(
-    'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
-    defaultValue: 'sb_publishable_u4ai7ETWwcpMh6iDFiUaTA_g1t-dg_P',
-  );
+  static const String publishableKey = 'sb_publishable_u4ai7ETWwcpMh6iDFiUaTA_g1t-dg_P';
+
+  static String get supabaseUrl => projectUrl;
+  static String get supabaseAnonKey => serviceRoleKey;
+  static String get supabasePublishableKey => publishableKey;
 
   // Optional Admin API endpoint fallback
-  static String adminApiBaseUrl = const String.fromEnvironment(
-    'ADMIN_API_URL',
-    defaultValue: 'http://localhost:3000',
-  );
+  static const String adminApiBaseUrl = 'http://localhost:3000';
 
   static const List<String> fallbackApiBaseUrls = [
     'http://localhost:3000',

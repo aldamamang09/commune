@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../config/supabase_config.dart';
 import '../../models/staff_user.dart';
 import '../../state/pos_controller.dart';
 import '../theme.dart';
@@ -28,6 +27,14 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   @override
+  void reassemble() {
+    super.reassemble();
+    // Ensure Hot Reload immediately syncs with Supabase
+    _errorMessage = null;
+    widget.controller.syncService.syncAll();
+  }
+
+  @override
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
@@ -50,7 +57,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     StaffUser? authenticatedStaff;
 
-    // 1. Authenticate against centralized Supabase database
+    // 1. Authenticate directly against centralized Supabase database
     final authRes = await widget.controller.supabaseService.authenticateStaff(username, password);
     if (authRes['ok'] == true && authRes['user'] is StaffUser) {
       authenticatedStaff = authRes['user'] as StaffUser;
@@ -208,171 +215,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 11, color: CommuneTheme.textMuted),
                   ),
-                  const SizedBox(height: 10),
-                  TextButton.icon(
-                    onPressed: _openDatabaseConfigDialog,
-                    icon: const Icon(Icons.settings_outlined, size: 14),
-                    label: const Text('Server & Database Settings', style: TextStyle(fontSize: 11)),
-                    style: TextButton.styleFrom(
-                      foregroundColor: CommuneTheme.textMuted,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ),
                 ],
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  void _openDatabaseConfigDialog() {
-    final currentAdminUrl = widget.controller.localStorage.getAdminApiUrl() ??
-        widget.controller.supabaseService.activeAdminApiUrl ??
-        SupabaseConfig.adminApiBaseUrl;
-    final currentUrl = widget.controller.localStorage.getSupabaseUrl() ?? '';
-    final currentKey = widget.controller.localStorage.getSupabaseAnonKey() ?? '';
-
-    final adminUrlController = TextEditingController(text: currentAdminUrl);
-    final urlController = TextEditingController(text: currentUrl);
-    final keyController = TextEditingController(text: currentKey);
-    bool testing = false;
-    String? statusMessage;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Row(
-            children: [
-              Icon(Icons.cloud_sync, color: CommuneTheme.primary),
-              SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  'Database Sync Settings',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-          ),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Connect to the centralized Admin server or Supabase database so Menu, Stock Inventory, Restocks, and Staff accounts stay in sync.',
-                    style: TextStyle(fontSize: 12, color: CommuneTheme.textMuted),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: adminUrlController,
-                    decoration: InputDecoration(
-                      labelText: 'Admin Panel Server URL',
-                      hintText: 'https://...',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: urlController,
-                    decoration: InputDecoration(
-                      labelText: 'Supabase URL (Optional)',
-                      hintText: 'https://xyzcompany.supabase.co',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: keyController,
-                    obscureText: true,
-                    decoration: InputDecoration(
-                      labelText: 'Supabase Key (Optional)',
-                      hintText: 'eyJhbGciOi...',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    ),
-                  ),
-                  if (statusMessage != null) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      statusMessage!,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: statusMessage!.contains('Connected') ? Colors.green : CommuneTheme.voidRed,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: CommuneTheme.primary,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: testing
-                  ? null
-                  : () async {
-                      final adminUrl = adminUrlController.text.trim();
-                      final url = urlController.text.trim();
-                      final key = keyController.text.trim();
-
-                      setDialogState(() {
-                        testing = true;
-                        statusMessage = 'Connecting & syncing...';
-                      });
-
-                      await widget.controller.localStorage.setSupabaseConfig(
-                        url,
-                        key,
-                        adminApiUrl: adminUrl,
-                      );
-                      final connected = await widget.controller.supabaseService.initialize(
-                        url: url,
-                        anonKey: key,
-                        adminApiUrl: adminUrl,
-                      );
-
-                      if (connected) {
-                        await widget.controller.syncService.syncAll();
-                        await widget.controller.init();
-                        setDialogState(() {
-                          testing = false;
-                          statusMessage = 'Connected! All Admin data synced.';
-                        });
-                        if (mounted) setState(() {});
-                        await Future.delayed(const Duration(milliseconds: 500));
-                        if (ctx.mounted) Navigator.pop(ctx);
-                      } else {
-                        setDialogState(() {
-                          testing = false;
-                          statusMessage = 'Could not connect. Check server URL.';
-                        });
-                      }
-                    },
-              child: testing
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Text('Save & Sync'),
-            ),
-          ],
         ),
       ),
     );

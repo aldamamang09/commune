@@ -43,37 +43,20 @@ class LocalStorageService {
   }
 
   // --- Connection Config ---
-  String? getSupabaseUrl() {
-    final stored = _prefs.getString(_keySupabaseUrl)?.trim();
-    if (stored == null || stored.isEmpty || stored.contains('placeholder')) {
-      return SupabaseConfig.supabaseUrl;
-    }
-    return stored;
-  }
+  String? getSupabaseUrl() => SupabaseConfig.projectUrl;
 
-  String? getSupabaseAnonKey() {
-    final stored = _prefs.getString(_keySupabaseAnonKey)?.trim();
-    if (stored == null ||
-        stored.isEmpty ||
-        stored.contains('placeholder') ||
-        stored.startsWith('sb_publishable_')) {
-      return SupabaseConfig.supabaseAnonKey;
-    }
-    return stored;
-  }
+  String? getSupabaseAnonKey() => SupabaseConfig.serviceRoleKey;
 
-  String? getAdminApiUrl() => _prefs.getString(_keyAdminApiUrl);
+  String? getAdminApiUrl() => null;
 
   Future<void> setSupabaseConfig(String url, String anonKey, {String? adminApiUrl}) async {
-    await _prefs.setString(_keySupabaseUrl, url);
-    await _prefs.setString(_keySupabaseAnonKey, anonKey);
-    if (adminApiUrl != null) {
-      await _prefs.setString(_keyAdminApiUrl, adminApiUrl);
-    }
+    await _prefs.remove(_keySupabaseUrl);
+    await _prefs.remove(_keySupabaseAnonKey);
+    await _prefs.remove(_keyAdminApiUrl);
   }
 
   Future<void> setAdminApiUrl(String adminApiUrl) async {
-    await _prefs.setString(_keyAdminApiUrl, adminApiUrl);
+    await _prefs.remove(_keyAdminApiUrl);
   }
 
   // --- POS State ---
