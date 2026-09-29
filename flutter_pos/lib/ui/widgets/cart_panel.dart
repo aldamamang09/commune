@@ -123,11 +123,11 @@ class CartPanel extends StatelessWidget {
                               IconButton(
                                 onPressed: () => controller.updateCartQty(index, item.qty - 1),
                                 icon: const Icon(Icons.remove, size: 14),
+                                constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
                                 style: IconButton.styleFrom(
                                   backgroundColor: const Color(0xFFF1F1F1),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                                   padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
                                 ),
                               ),
                               Padding(
@@ -137,11 +137,11 @@ class CartPanel extends StatelessWidget {
                               IconButton(
                                 onPressed: () => controller.updateCartQty(index, item.qty + 1),
                                 icon: const Icon(Icons.add, size: 14),
+                                constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
                                 style: IconButton.styleFrom(
                                   backgroundColor: const Color(0xFFF1F1F1),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                                   padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
                                 ),
                               ),
                             ],
