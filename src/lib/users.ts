@@ -64,11 +64,33 @@ export function publicUser(user: StaffUser): PublicStaffUser {
   };
 }
 
-export function parseRole(value: string): Role {
-  const normalized = value.toLowerCase();
-  if (normalized === "admin") return "admin";
-  if (normalized === "manager") return "manager";
-  if (normalized === "cashier") return "cashier";
+export function parseRole(value: string, fallbackRole?: string): Role {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  const fallback = String(fallbackRole ?? "").trim().toLowerCase();
+  const combined = `${normalized} ${fallback}`.trim();
+
+  if (
+    normalized === "admin" ||
+    normalized === "owner" ||
+    fallback === "admin" ||
+    /admin|owner/i.test(combined)
+  ) {
+    return "admin";
+  }
+  if (
+    normalized === "manager" ||
+    fallback === "manager" ||
+    /manager/i.test(combined)
+  ) {
+    return "manager";
+  }
+  if (
+    normalized === "cashier" ||
+    fallback === "cashier" ||
+    /cashier|sale\s+in\s+charge/i.test(combined)
+  ) {
+    return "cashier";
+  }
   return "barista";
 }
 

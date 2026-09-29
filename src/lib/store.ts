@@ -52,43 +52,62 @@ function env(...names: string[]) {
   return undefined;
 }
 
-export function isRealSupabaseConfigured(): boolean {
-  const url = env( 
-    "SUPABASE_URL",
-    "NEXT_PUBLIC_SUPABASE_URL",
-    "commume_coffee_SUPABASE_URL",
-    "NEXT_PUBLIC_commume_coffee_SUPABASE_URL",
-  );
-  const key = env(
-    "SUPABASE_SERVICE_ROLE_KEY",
-    "commume_coffee_SUPABASE_SERVICE_ROLE_KEY",
-    "SUPABASE_SERVICE_ROLE_KEY_2",
-    "SUPABASE_SECRET_KEY",
-    "commume_coffee_SUPABASE_SECRET_KEY",
-  );
-  return Boolean(url && key && /^https:\/\/[^/]+\.supabase\.co$/.test(url));
-}
+const DEFAULT_SUPABASE_URL = "https://vidzkzpvgqdwfdfcduti.supabase.co";
+const DEFAULT_SUPABASE_SERVICE_ROLE_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpZHprenB2Z3Fkd2ZkZmNkdXRpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDY0ODQ4NSwiZXhwIjoyMTA2MjI0NDg1fQ.kzD5tVzpQs0Ayg_MJrCbNLML3Zn5P62dbf2y9kzUx_M";
 
-export function supabaseAdmin() {
-  const url =
-    env( 
+function resolveSupabaseUrl(): string {
+  return (
+    env(
       "SUPABASE_URL",
       "NEXT_PUBLIC_SUPABASE_URL",
       "commume_coffee_SUPABASE_URL",
       "NEXT_PUBLIC_commume_coffee_SUPABASE_URL",
-    ) || "https://mock.supabase.co";
-  const key =
+    ) || DEFAULT_SUPABASE_URL
+  );
+}
+
+function resolveSupabaseKey(): string {
+  return (
     env(
       "SUPABASE_SERVICE_ROLE_KEY",
       "commume_coffee_SUPABASE_SERVICE_ROLE_KEY",
       "SUPABASE_SERVICE_ROLE_KEY_2",
       "SUPABASE_SECRET_KEY",
       "commume_coffee_SUPABASE_SECRET_KEY",
-    ) || "mock-key";
+    ) || DEFAULT_SUPABASE_SERVICE_ROLE_KEY
+  );
+}
+
+export function isRealSupabaseConfigured(): boolean {
+  const url = resolveSupabaseUrl();
+  const key = resolveSupabaseKey();
+  return Boolean(url && key && /^https:\/\/[^/]+\.supabase\.co$/.test(url));
+}
+
+export function supabaseAdmin() {
+  const url = resolveSupabaseUrl();
+  const key = resolveSupabaseKey();
 
   return createClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+}
+
+function formatDbStaffTitle(user: StaffUser): string {
+  const rawTitle = (user.title ?? "").trim();
+  if (user.role === "admin") {
+    return rawTitle && /admin|owner/i.test(rawTitle) ? rawTitle : "Owner";
+  }
+  if (user.role === "manager") {
+    if (!rawTitle) return "Manager";
+    return /manager/i.test(rawTitle) ? rawTitle : `Manager (${rawTitle})`;
+  }
+  if (user.role === "cashier") {
+    if (!rawTitle) return "Cashier";
+    return /cashier|sale\s+in\s+charge/i.test(rawTitle) ? rawTitle : `Cashier (${rawTitle})`;
+  }
+  return rawTitle || "Barista";
 }
 
 const DEFAULT_INVENTORY: InventoryItem[] = [];
@@ -323,14 +342,25 @@ function normalizeStore(store: StoreData): StoreData {
   if (!Array.isArray(store.users) || store.users.length === 0) {
     store.users = DEFAULT_USERS.map((item) => ({ ...item }));
   } else {
-    const normalizedUsers = store.users.map((item: StaffUser) => ({
-      ...item,
-      username: String(item.username ?? "").toLowerCase(),
-      name: item.name || item.username,
-      title: item.title || (item.role === "admin" ? "Owner" : item.role === "manager" ? "Manager" : item.role === "cashier" ? "Cashier" : "Barista"),
-      role: parseRole(String(item.title ?? item.role ?? "barista")),
-      password: String(item.password ?? ""),
-    }));
+    const normalizedUsers = store.users.map((item: StaffUser) => {
+      const resolvedRole = parseRole(String(item.title ?? ""), item.role);
+      return {
+        ...item,
+        username: String(item.username ?? "").trim().toLowerCase(),
+        name: item.name || item.username,
+        title:
+          item.title ||
+          (resolvedRole === "admin"
+            ? "Owner"
+            : resolvedRole === "manager"
+              ? "Manager"
+              : resolvedRole === "cashier"
+                ? "Cashier"
+                : "Barista"),
+        role: resolvedRole,
+        password: String(item.password ?? ""),
+      };
+    });
 
     store.users = Array.from(
       new Map(normalizedUsers.map((user) => [user.id, user])).values(),
@@ -663,12 +693,14 @@ async function writeStore(store: StoreData): Promise<void> {
   // Permanent deletion must be performed explicitly against the database
   // (see the targeted delete*/ *Atomic helpers below).
 
-  const { error: ordersError } = await supabase
-    .from("orders")
-    .upsert(orderRows, { onConflict: "id" });
+  if (orderRows.length > 0) {
+    const { error: ordersError } = await supabase
+      .from("orders")
+      .upsert(orderRows, { onConflict: "id" });
 
-  if (ordersError) {
-    throw new Error(`Unable to save orders: ${ordersError.message}`);
+    if (ordersError) {
+      throw new Error(`Unable to save orders: ${ordersError.message}`);
+    }
   }
 
   // menu_item_id is a live-lookup convenience with an FK: it must be null
@@ -684,6 +716,49 @@ async function writeStore(store: StoreData): Promise<void> {
     throw new Error(`Unable to read menu items: ${liveMenuError.message}`);
   }
   const menuIds = new Set((liveMenuRows ?? []).map((row) => row.id));
+  const orderItemRows = store.orders.flatMap((order) =>
+    order.items.map((item, index) => ({
+      id: `${order.id}-item-${index + 1}`,
+      order_id: order.id,
+      menu_item_id: menuIds.has(item.productId) ? item.productId : null,
+      product_id_snapshot: item.productId,
+      name_snapshot: item.name,
+      qty: item.qty,
+      price_snapshot: item.price,
+      style: item.style ?? null,
+      addons: item.addons ?? [],
+    })),
+  );
+  const inventoryRows = store.inventory.map((item) => ({
+    id: item.id,
+    name: item.name,
+    unit: item.unit,
+    cost: item.cost,
+    stock: item.stock,
+    max_stock: item.maxStock,
+    opening_stock: item.openingStock ?? null,
+    purchase_unit_size: item.purchaseUnitSize ?? null,
+    cup_usage_amount: item.cupUsageAmount ?? null,
+    cups_make: item.cupsMake ?? null,
+  }));
+  const usageLogRows = store.usageLogs.map((log) => ({
+    id: log.id,
+    order_id: log.orderId || null,
+    order_item_id: log.orderItemId || null,
+    item_name_snapshot: log.itemName,
+    used_amount: log.usedAmount,
+    unit: log.unit,
+    inventory_item_id: log.inventoryItemId ?? null,
+  }));
+  const restockRows = store.restocks.map((record) => ({
+    id: record.id,
+    item_name_snapshot: record.itemName,
+    quantity_added: record.quantityAdded,
+    inventory_item_id: record.inventoryItemId ?? null,
+    purchase_qty: record.purchaseQty ?? null,
+    purchase_unit: record.purchaseUnit ?? null,
+  }));
+
   const operations = await Promise.all([
     supabase.from("pos_state").upsert({ id: POS_STATE_ID, is_open: store.pos.isOpen, opened_at: store.pos.openedAt, opened_by_name: store.pos.openedBy, updated_at: new Date().toISOString() }),
     supabase.from("staff_users").upsert(
@@ -693,26 +768,25 @@ async function writeStore(store: StoreData): Promise<void> {
         password: user.password,
         name: user.name,
         role: user.role === "admin" ? "admin" : "barista",
-        title: user.title || (user.role === "cashier" ? "Cashier" : user.role === "manager" ? "Manager" : user.role === "admin" ? "Owner" : "Barista"),
+        title: formatDbStaffTitle(user),
       })),
       { onConflict: "id" },
     ),
-    supabase.from("promotions").upsert(store.promotions.map((promo) => ({ id: promo.id, label: promo.label, type: promo.type, value: Math.round(promo.value), active: promo.active })), { onConflict: "id" }),
-    supabase.from("inventory_items").upsert(store.inventory.map((item) => ({
-      id: item.id,
-      name: item.name,
-      unit: item.unit,
-      cost: item.cost,
-      stock: item.stock,
-      max_stock: item.maxStock,
-      opening_stock: item.openingStock ?? null,
-      purchase_unit_size: item.purchaseUnitSize ?? null,
-      cup_usage_amount: item.cupUsageAmount ?? null,
-      cups_make: item.cupsMake ?? null,
-    })), { onConflict: "id" }),
-    supabase.from("order_items").upsert(store.orders.flatMap((order) => order.items.map((item, index) => ({ id: `${order.id}-item-${index + 1}`, order_id: order.id, menu_item_id: menuIds.has(item.productId) ? item.productId : null, product_id_snapshot: item.productId, name_snapshot: item.name, qty: item.qty, price_snapshot: item.price, style: item.style ?? null, addons: item.addons ?? [] }))), { onConflict: "id" }),
-    supabase.from("usage_logs").upsert(store.usageLogs.map((log) => ({ id: log.id, order_id: log.orderId || null, order_item_id: log.orderItemId || null, item_name_snapshot: log.itemName, used_amount: log.usedAmount, unit: log.unit, ...(log.inventoryItemId ? { inventory_item_id: log.inventoryItemId } : {}) })), { onConflict: "id" }),
-    supabase.from("restocks").upsert(store.restocks.map((record) => ({ id: record.id, item_name_snapshot: record.itemName, quantity_added: record.quantityAdded, ...(record.inventoryItemId ? { inventory_item_id: record.inventoryItemId } : {}), ...(record.purchaseQty != null ? { purchase_qty: record.purchaseQty } : {}), ...(record.purchaseUnit ? { purchase_unit: record.purchaseUnit } : {}) })), { onConflict: "id" }),
+    ...(store.promotions.length > 0
+      ? [supabase.from("promotions").upsert(store.promotions.map((promo) => ({ id: promo.id, label: promo.label, type: promo.type, value: Math.round(promo.value), active: promo.active })), { onConflict: "id" })]
+      : []),
+    ...(inventoryRows.length > 0
+      ? [supabase.from("inventory_items").upsert(inventoryRows, { onConflict: "id" })]
+      : []),
+    ...(orderItemRows.length > 0
+      ? [supabase.from("order_items").upsert(orderItemRows, { onConflict: "id" })]
+      : []),
+    ...(usageLogRows.length > 0
+      ? [supabase.from("usage_logs").upsert(usageLogRows, { onConflict: "id" })]
+      : []),
+    ...(restockRows.length > 0
+      ? [supabase.from("restocks").upsert(restockRows, { onConflict: "id" })]
+      : []),
   ]);
   const error = operations.find((result) => result.error)?.error;
   if (error) throw new Error(`Unable to save store data: ${error.message}`);
@@ -1508,6 +1582,42 @@ export async function setMenuItemAvailableRecord(
     if (memoryStore) {
       const item = memoryStore.menu.find((entry) => entry.id === id);
       if (item) item.available = available;
+    }
+  });
+}
+
+export async function upsertStaffUserRecord(user: StaffUser): Promise<void> {
+  await enqueue(async () => {
+    const normalized: StaffUser = {
+      ...user,
+      username: user.username.trim().toLowerCase(),
+      name: user.name.trim() || user.username.trim(),
+      title: formatDbStaffTitle(user),
+    };
+    if (!isRealSupabaseConfigured()) {
+      if (!memoryStore) memoryStore = normalizeStore(emptyStore());
+      const idx = memoryStore.users.findIndex((u) => u.id === normalized.id);
+      if (idx >= 0) memoryStore.users[idx] = normalized;
+      else memoryStore.users.push(normalized);
+      return;
+    }
+    const supabase = supabaseAdmin();
+    const { error } = await supabase.from("staff_users").upsert(
+      {
+        id: normalized.id,
+        username: normalized.username,
+        password: normalized.password,
+        name: normalized.name,
+        role: normalized.role === "admin" ? "admin" : "barista",
+        title: normalized.title,
+      },
+      { onConflict: "id" },
+    );
+    if (error) throw new Error(`Unable to save staff user: ${error.message}`);
+    if (memoryStore) {
+      const idx = memoryStore.users.findIndex((u) => u.id === normalized.id);
+      if (idx >= 0) memoryStore.users[idx] = normalized;
+      else memoryStore.users.push(normalized);
     }
   });
 }

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../config/supabase_config.dart';
 import '../models/menu_item.dart';
 import '../models/order.dart';
 import '../models/inventory_item.dart';
@@ -42,8 +43,25 @@ class LocalStorageService {
   }
 
   // --- Connection Config ---
-  String? getSupabaseUrl() => _prefs.getString(_keySupabaseUrl);
-  String? getSupabaseAnonKey() => _prefs.getString(_keySupabaseAnonKey);
+  String? getSupabaseUrl() {
+    final stored = _prefs.getString(_keySupabaseUrl)?.trim();
+    if (stored == null || stored.isEmpty || stored.contains('placeholder')) {
+      return SupabaseConfig.supabaseUrl;
+    }
+    return stored;
+  }
+
+  String? getSupabaseAnonKey() {
+    final stored = _prefs.getString(_keySupabaseAnonKey)?.trim();
+    if (stored == null ||
+        stored.isEmpty ||
+        stored.contains('placeholder') ||
+        stored.startsWith('sb_publishable_')) {
+      return SupabaseConfig.supabaseAnonKey;
+    }
+    return stored;
+  }
+
   String? getAdminApiUrl() => _prefs.getString(_keyAdminApiUrl);
 
   Future<void> setSupabaseConfig(String url, String anonKey, {String? adminApiUrl}) async {

@@ -50,18 +50,28 @@ class _LoginScreenState extends State<LoginScreen> {
 
     StaffUser? authenticatedStaff;
 
-    // 1. Authenticate against centralized Admin database (supports newly created Cashier/Barista accounts & bcrypt hashes)
+    // 1. Authenticate against centralized Supabase database
     final authRes = await widget.controller.supabaseService.authenticateStaff(username, password);
     if (authRes['ok'] == true && authRes['user'] is StaffUser) {
       authenticatedStaff = authRes['user'] as StaffUser;
-      // Ensure latest catalog, menu, inventory, and staff are synced before entering POS
+      if (authRes['allStaff'] is List<StaffUser>) {
+        await widget.controller.localStorage.saveStaff(authRes['allStaff'] as List<StaffUser>);
+      }
       await widget.controller.syncService.syncAll();
+      await widget.controller.init();
     } else {
       // 2. Fallback to synced local staff cache if offline
       await widget.controller.syncService.syncAll();
+      await widget.controller.init();
       final staffList = widget.controller.localStorage.getStaff();
-      final matched = staffList.where((u) => u.username.toLowerCase() == username).firstOrNull;
-      if (matched != null && matched.password == password && matched.password.isNotEmpty) {
+      final matched = staffList
+          .where((u) =>
+              u.username.trim().toLowerCase() == username ||
+              u.name.trim().toLowerCase() == username)
+          .firstOrNull;
+      if (matched != null &&
+          (matched.password == password || matched.password.trim() == password.trim()) &&
+          matched.password.isNotEmpty) {
         authenticatedStaff = matched;
       }
     }

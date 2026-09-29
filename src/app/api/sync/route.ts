@@ -54,14 +54,25 @@ export async function GET() {
         costings: store.costings,
         voidRequests: store.voidRequests,
         loginActivity: store.loginActivity,
-        users: store.users.map((u) => ({
-          id: u.id,
-          username: u.username,
-          password: u.password,
-          name: u.name,
-          role: parseRole(String(u.title ?? u.role ?? "barista")),
-          title: u.title || (u.role === "admin" ? "Owner" : u.role === "manager" ? "Manager" : u.role === "cashier" ? "Cashier" : "Barista"),
-        })),
+        users: store.users.map((u) => {
+          const resolvedRole = parseRole(String(u.title ?? ""), u.role);
+          return {
+            id: u.id,
+            username: u.username,
+            password: u.password,
+            name: u.name,
+            role: resolvedRole,
+            title:
+              u.title ||
+              (resolvedRole === "admin"
+                ? "Owner"
+                : resolvedRole === "manager"
+                  ? "Manager"
+                  : resolvedRole === "cashier"
+                    ? "Cashier"
+                    : "Barista"),
+          };
+        }),
       },
       { headers: corsHeaders },
     );
@@ -92,7 +103,11 @@ export async function POST(req: NextRequest) {
       }
 
       const store = await getFreshStore();
-      const user = store.users.find((u) => u.username.trim().toLowerCase() === username);
+      const user = store.users.find(
+        (u) =>
+          u.username.trim().toLowerCase() === username ||
+          u.name.trim().toLowerCase() === username,
+      );
       if (!user || !user.password) {
         return NextResponse.json(
           { ok: false, error: "Invalid staff credentials." },
@@ -102,7 +117,7 @@ export async function POST(req: NextRequest) {
 
       const validPassword = user.password.startsWith("$2")
         ? await bcrypt.compare(password, user.password)
-        : user.password === password;
+        : user.password === password || user.password.trim() === password.trim();
 
       if (!validPassword) {
         return NextResponse.json(
@@ -111,7 +126,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const resolvedRole = parseRole(String(user.title ?? user.role ?? "barista"));
+      const resolvedRole = parseRole(String(user.title ?? ""), user.role);
       return NextResponse.json(
         {
           ok: true,

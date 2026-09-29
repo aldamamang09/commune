@@ -1,26 +1,29 @@
 class SupabaseConfig {
-  // Configurable credentials - can be overridden via environment or local preferences
+  // Connected directly to the centralized Commune Coffee Supabase database
   static String supabaseUrl = const String.fromEnvironment(
     'SUPABASE_URL',
-    defaultValue: '',
+    defaultValue: 'https://vidzkzpvgqdwfdfcduti.supabase.co',
   );
 
   static String supabaseAnonKey = const String.fromEnvironment(
     'SUPABASE_ANON_KEY',
-    defaultValue: '',
+    defaultValue:
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpZHprenB2Z3Fkd2ZkZmNkdXRpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDY0ODQ4NSwiZXhwIjoyMTA2MjI0NDg1fQ.kzD5tVzpQs0Ayg_MJrCbNLML3Zn5P62dbf2y9kzUx_M',
   );
 
-  // Centralized Admin API endpoint so Admin Panel and Flutter POS always share the exact same database
+  static String supabasePublishableKey = const String.fromEnvironment(
+    'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+    defaultValue: 'sb_publishable_u4ai7ETWwcpMh6iDFiUaTA_g1t-dg_P',
+  );
+
+  // Optional Admin API endpoint fallback
   static String adminApiBaseUrl = const String.fromEnvironment(
     'ADMIN_API_URL',
-    defaultValue: 'https://ais-dev-w65xuz5vdarxrabrzdphs7-601909081982.asia-southeast1.run.app',
+    defaultValue: 'http://localhost:3000',
   );
 
   static const List<String> fallbackApiBaseUrls = [
-    'https://ais-dev-w65xuz5vdarxrabrzdphs7-601909081982.asia-southeast1.run.app',
-    'https://ais-pre-w65xuz5vdarxrabrzdphs7-601909081982.asia-southeast1.run.app',
     'http://localhost:3000',
-    'http://10.0.2.2:3000',
   ];
 
   // Exact Supabase table names matching the web app & migrations

@@ -12,12 +12,14 @@ import {
   deleteLoginActivityRecords,
   deleteOffRequestRecord,
   deleteStaffUserRecord,
+  getFreshStore,
   getStore,
   insertLoginActivityRecord,
   insertOffRequestRecord,
   updateLoginActivityTimeRecord,
   updateOffRequestStatusRecord,
   updateStore,
+  upsertStaffUserRecord,
 } from "@/lib/store";
 import { phDateString, phIsoFromDateTimeInput } from "@/lib/datetime";
 import { openBaristaShifts } from "@/lib/staff-sessions";
@@ -140,17 +142,16 @@ export async function createStaffUser(input: {
   const parsed = parseStaff({ ...input, requirePassword: true });
   if ("error" in parsed) return parsed;
 
-  let error: string | undefined;
-  await updateStore((store) => {
-    if (!Array.isArray(store.users)) store.users = [];
-    const taken = store.users.some(
-      (user) => user.username === parsed.username,
-    );
-    if (taken) {
-      error = "That username is already in use.";
-      return;
-    }
-    store.users.push({
+  const store = await getFreshStore();
+  const taken = (store.users ?? []).some(
+    (user) => user.username.trim().toLowerCase() === parsed.username.toLowerCase(),
+  );
+  if (taken) {
+    return { error: "That username is already in use." };
+  }
+
+  try {
+    await upsertStaffUserRecord({
       id: staffUserId(parsed.username),
       name: parsed.name,
       username: parsed.username,
@@ -158,8 +159,10 @@ export async function createStaffUser(input: {
       role: parsed.role,
       password: parsed.password ?? "",
     });
-  });
-  if (error) return { error };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Could not create staff account." };
+  }
+
   refresh();
   return { ok: true };
 }
@@ -176,44 +179,42 @@ export async function updateStaffUser(input: {
   const parsed = parseStaff({ ...input, requirePassword: false });
   if ("error" in parsed) return parsed;
 
-  let error: string | undefined;
-  let nextUser: StaffUser | undefined;
+  const store = await getFreshStore();
+  const user = (store.users ?? []).find((entry) => entry.id === input.id);
+  if (!user) {
+    return { error: "Staff account not found." };
+  }
+  const taken = (store.users ?? []).some(
+    (entry) => entry.id !== input.id && entry.username.trim().toLowerCase() === parsed.username.toLowerCase(),
+  );
+  if (taken) {
+    return { error: "That username is already in use." };
+  }
+  const admins = (store.users ?? []).filter((entry) => entry.role === "admin");
+  if (
+    user.role === "admin" &&
+    parsed.role !== "admin" &&
+    admins.length < 2
+  ) {
+    return { error: "Keep at least one admin account." };
+  }
 
-  await updateStore((store) => {
-    const user = store.users.find((entry) => entry.id === input.id);
-    if (!user) {
-      error = "Staff account not found.";
-      return;
-    }
-    const taken = store.users.some(
-      (entry) => entry.id !== input.id && entry.username === parsed.username,
-    );
-    if (taken) {
-      error = "That username is already in use.";
-      return;
-    }
-    const admins = store.users.filter((entry) => entry.role === "admin");
-    if (
-      user.role === "admin" &&
-      parsed.role !== "admin" &&
-      admins.length < 2
-    ) {
-      error = "Keep at least one admin account.";
-      return;
-    }
-    user.name = parsed.name;
-    user.username = parsed.username;
-    user.title = parsed.title;
-    user.role = parsed.role;
-    if (parsed.password) {
-      user.password = parsed.password;
-    }
-    nextUser = { ...user };
-  });
+  const nextUser: StaffUser = {
+    ...user,
+    name: parsed.name,
+    username: parsed.username,
+    title: parsed.title,
+    role: parsed.role,
+    password: parsed.password ? parsed.password : user.password,
+  };
 
-  if (error) return { error };
+  try {
+    await upsertStaffUserRecord(nextUser);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Could not update staff account." };
+  }
 
-  if (nextUser && session.userId === nextUser.id) {
+  if (session.userId === nextUser.id) {
     const jar = await cookies();
     jar.set(SESSION_COOKIE, encodeSession(toSession(nextUser)), sessionCookieOptions());
   }

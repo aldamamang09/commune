@@ -25,6 +25,7 @@ class SyncService extends ChangeNotifier {
 
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
   Timer? _periodicSyncTimer;
+  Future<void>? _activeSyncFuture;
   VoidCallback? onSyncCompleted;
 
   SyncService({
@@ -75,8 +76,18 @@ class SyncService extends ChangeNotifier {
 
   /// Full bidirectional real-time synchronization with the centralized Admin database
   Future<void> syncAll() async {
-    if (status == SyncStatus.syncing) return;
+    if (_activeSyncFuture != null) {
+      return _activeSyncFuture!;
+    }
+    _activeSyncFuture = _performSync();
+    try {
+      await _activeSyncFuture;
+    } finally {
+      _activeSyncFuture = null;
+    }
+  }
 
+  Future<void> _performSync() async {
     status = SyncStatus.syncing;
     lastError = null;
     notifyListeners();
