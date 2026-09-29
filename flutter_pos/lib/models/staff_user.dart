@@ -18,29 +18,43 @@ class StaffUser {
   bool get canUsePos => role == 'cashier' || role == 'manager' || role == 'admin' || role == 'barista';
   bool get isManager => role == 'manager' || role == 'admin';
 
-  factory StaffUser.fromJson(Map<String, dynamic> json) {
-    final rawRole = (json['role'] as String? ?? 'barista').toLowerCase();
-    final title = (json['title'] as String? ?? '').toLowerCase();
-    final username = (json['username'] as String? ?? '').toLowerCase();
-
-    var role = rawRole;
-    if (role == 'barista' || role.isEmpty) {
-      if (title.contains('admin') || title.contains('owner') || username == 'admin') {
-        role = 'admin';
-      } else if (title.contains('cashier') || title.contains('sale') || username == 'cashier') {
-        role = 'cashier';
-      } else if (title.contains('manager') || username == 'manager') {
-        role = 'manager';
-      }
+  static String parseRole(String rawRole, String title, String username) {
+    final combined = '${rawRole.toLowerCase()} ${title.toLowerCase()} ${username.toLowerCase()}';
+    if (combined.contains('admin') || combined.contains('owner')) {
+      return 'admin';
     }
+    if (combined.contains('manager')) {
+      return 'manager';
+    }
+    if (combined.contains('cashier') || combined.contains('sale in charge') || combined.contains('sale')) {
+      return 'cashier';
+    }
+    return 'barista';
+  }
+
+  factory StaffUser.fromJson(Map<String, dynamic> json) {
+    final rawRole = (json['role'] as String? ?? 'barista').trim();
+    final rawTitle = (json['title'] as String? ?? '').trim();
+    final rawUsername = (json['username'] as String? ?? '').trim();
+    final resolvedRole = parseRole(rawRole, rawTitle, rawUsername);
 
     return StaffUser(
       id: json['id'] as String? ?? '',
-      username: json['username'] as String? ?? '',
+      username: rawUsername.toLowerCase(),
       password: json['password'] as String? ?? '',
-      name: json['name'] as String? ?? json['username'] as String? ?? '',
-      role: role,
-      title: json['title'] as String? ?? '',
+      name: (json['name'] as String? ?? '').trim().isNotEmpty
+          ? (json['name'] as String).trim()
+          : rawUsername,
+      role: resolvedRole,
+      title: rawTitle.isNotEmpty
+          ? rawTitle
+          : (resolvedRole == 'admin'
+              ? 'Owner'
+              : resolvedRole == 'manager'
+                  ? 'Manager'
+                  : resolvedRole == 'cashier'
+                      ? 'Cashier'
+                      : 'Barista'),
     );
   }
 

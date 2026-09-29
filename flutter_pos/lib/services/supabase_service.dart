@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
 import '../models/menu_item.dart';
@@ -10,34 +13,191 @@ import '../models/login_activity.dart';
 
 class SupabaseService {
   SupabaseClient? _client;
+  String? _activeAdminApiUrl;
+  bool _supabaseSdkInitialized = false;
 
-  bool get isInitialized => _client != null;
+  bool get isInitialized => _activeAdminApiUrl != null || _client != null;
+  String? get activeAdminApiUrl => _activeAdminApiUrl;
 
-  Future<bool> initialize({String? url, String? anonKey}) async {
-    final effectiveUrl = url ?? SupabaseConfig.supabaseUrl;
-    final effectiveKey = anonKey ?? SupabaseConfig.supabaseAnonKey;
-
-    if (effectiveUrl.isEmpty || effectiveKey.isEmpty || effectiveUrl.contains('placeholder')) {
-      return false;
+  List<String> _candidateApiUrls(String? customAdminUrl) {
+    final urls = <String>[];
+    void addCandidate(String? raw) {
+      if (raw == null) return;
+      var trimmed = raw.trim();
+      if (trimmed.isEmpty) return;
+      if (trimmed.endsWith('/')) {
+        trimmed = trimmed.substring(0, trimmed.length - 1);
+      }
+      if (trimmed.endsWith('/api/sync')) {
+        trimmed = trimmed.substring(0, trimmed.length - '/api/sync'.length);
+      }
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        if (!urls.contains(trimmed)) urls.add(trimmed);
+      }
     }
 
-    try {
-      await Supabase.initialize(
-        url: effectiveUrl,
-        anonKey: effectiveKey,
-      );
-      _client = Supabase.instance.client;
-      return true;
-    } catch (e) {
-      print('Supabase init error: $e');
-      return false;
+    addCandidate(customAdminUrl);
+    if (kIsWeb) {
+      final origin = Uri.base.origin;
+      if (origin.startsWith('http')) {
+        addCandidate(origin);
+      }
     }
+    addCandidate(SupabaseConfig.adminApiBaseUrl);
+    for (final fallback in SupabaseConfig.fallbackApiBaseUrls) {
+      addCandidate(fallback);
+    }
+    return urls;
   }
 
-  // --- Fetch Catalog & Initial Data ---
+  Future<bool> initialize({
+    String? url,
+    String? anonKey,
+    String? adminApiUrl,
+  }) async {
+    // 1. Try initializing direct Supabase client if valid URL & Anon Key are provided
+    final effectiveUrl = (url ?? SupabaseConfig.supabaseUrl).trim();
+    final effectiveKey = (anonKey ?? SupabaseConfig.supabaseAnonKey).trim();
 
-  Future<List<MenuItem>> fetchMenu() async {
-    if (_client == null) return [];
+    if (effectiveUrl.isNotEmpty &&
+        effectiveKey.isNotEmpty &&
+        !effectiveUrl.contains('placeholder') &&
+        effectiveUrl.contains('.supabase.co')) {
+      try {
+        if (!_supabaseSdkInitialized) {
+          await Supabase.initialize(
+            url: effectiveUrl,
+            anonKey: effectiveKey,
+          );
+          _supabaseSdkInitialized = true;
+        }
+        _client = Supabase.instance.client;
+      } catch (e) {
+        debugPrint('Supabase SDK init warning: $e');
+      }
+    }
+
+    // 2. Discover & verify centralized Admin API (/api/sync) so POS and Admin share the exact same database
+    final candidates = _candidateApiUrls(adminApiUrl);
+    for (final base in candidates) {
+      try {
+        final uri = Uri.parse('$base/api/sync');
+        final res = await http.get(uri).timeout(const Duration(seconds: 5));
+        if (res.statusCode == 200) {
+          final body = jsonDecode(res.body);
+          if (body is Map && body['ok'] == true) {
+            _activeAdminApiUrl = base;
+            return true;
+          }
+        }
+      } catch (_) {
+        // Try next candidate
+      }
+    }
+
+    // Even if initial probe timed out, set default Admin API URL so subsequent syncs can connect automatically
+    if (_activeAdminApiUrl == null && candidates.isNotEmpty) {
+      _activeAdminApiUrl = candidates.first;
+    }
+
+    return isInitialized;
+  }
+
+  /// Fetches the entire centralized StoreData from the Admin backend `/api/sync`
+  Future<Map<String, dynamic>?> fetchFullStore() async {
+    final candidates = _candidateApiUrls(_activeAdminApiUrl);
+    for (final base in candidates) {
+      try {
+        final uri = Uri.parse('$base/api/sync');
+        final response = await http.get(
+          uri,
+          headers: {'Accept': 'application/json', 'Cache-Control': 'no-cache'},
+        ).timeout(const Duration(seconds: 8));
+
+        if (response.statusCode == 200) {
+          final decoded = jsonDecode(response.body);
+          if (decoded is Map<String, dynamic> && decoded['ok'] == true) {
+            _activeAdminApiUrl = base;
+            return decoded;
+          }
+        }
+      } catch (_) {
+        // Try next candidate
+      }
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> _postSyncAction(Map<String, dynamic> payload) async {
+    final candidates = _candidateApiUrls(_activeAdminApiUrl);
+    for (final base in candidates) {
+      try {
+        final uri = Uri.parse('$base/api/sync');
+        final response = await http.post(
+          uri,
+          headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+          body: jsonEncode(payload),
+        ).timeout(const Duration(seconds: 8));
+
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          _activeAdminApiUrl = base;
+          return decoded;
+        }
+      } catch (_) {
+        // Try next candidate
+      }
+    }
+    return null;
+  }
+
+  /// Authenticates a staff member (Cashier, Barista, Manager, Admin) against the centralized Admin database
+  Future<Map<String, dynamic>> authenticateStaff(String username, String password) async {
+    final apiRes = await _postSyncAction({
+      'action': 'auth',
+      'username': username,
+      'password': password,
+    });
+    if (apiRes != null) {
+      if (apiRes['ok'] == true && apiRes['user'] is Map) {
+        final userMap = Map<String, dynamic>.from(apiRes['user'] as Map);
+        userMap['password'] = password;
+        return {
+          'ok': true,
+          'user': StaffUser.fromJson(userMap),
+        };
+      }
+      return {
+        'ok': false,
+        'error': apiRes['error']?.toString() ?? 'Invalid staff credentials',
+      };
+    }
+
+    // Fallback to direct Supabase staff query if Admin API is unreachable
+    if (_client != null) {
+      final staffList = await fetchStaff();
+      if (staffList != null) {
+        final matched = staffList.where((u) => u.username.toLowerCase() == username.toLowerCase()).firstOrNull;
+        if (matched != null && matched.password == password) {
+          return {'ok': true, 'user': matched};
+        }
+      }
+    }
+
+    return {'ok': false, 'error': 'Unable to verify credentials'};
+  }
+
+  // --- Direct Supabase Table Fallbacks (only used when _client != null and Admin API is unavailable) ---
+
+  Future<List<MenuItem>?> fetchMenu() async {
+    final store = await fetchFullStore();
+    if (store != null && store['menu'] is List) {
+      return (store['menu'] as List)
+          .whereType<Map>()
+          .map((e) => MenuItem.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    if (_client == null) return null;
     try {
       final catRes = await _client!
           .from(SupabaseConfig.tableMenuCategories)
@@ -50,7 +210,6 @@ class SupabaseService {
       final res = await _client!
           .from(SupabaseConfig.tableMenuItems)
           .select('*')
-          .eq('available', true)
           .order('created_at');
       return (res as List).map((e) {
         final map = Map<String, dynamic>.from(e as Map);
@@ -61,42 +220,62 @@ class SupabaseService {
         return MenuItem.fromJson(map);
       }).toList();
     } catch (e) {
-      print('Error fetching menu from Supabase: $e');
-      return [];
+      debugPrint('Error fetching menu: $e');
+      return null;
     }
   }
 
-  Future<List<String>> fetchCategories() async {
-    if (_client == null) return [];
+  Future<List<String>?> fetchCategories() async {
+    final store = await fetchFullStore();
+    if (store != null && store['categories'] is List) {
+      final list = (store['categories'] as List).map((e) => e.toString()).toList();
+      return ['All', ...list.where((c) => c.toLowerCase() != 'all')];
+    }
+    if (_client == null) return null;
     try {
       final res = await _client!
           .from(SupabaseConfig.tableMenuCategories)
           .select('name')
           .order('name');
       final list = (res as List).map((e) => e['name'].toString()).toList();
-      return ["All", ...list];
+      return ['All', ...list.where((c) => c.toLowerCase() != 'all')];
     } catch (e) {
-      print('Error fetching categories: $e');
-      return [];
+      debugPrint('Error fetching categories: $e');
+      return null;
     }
   }
 
-  Future<List<InventoryItem>> fetchInventory() async {
-    if (_client == null) return [];
+  Future<List<InventoryItem>?> fetchInventory() async {
+    final store = await fetchFullStore();
+    if (store != null && store['inventory'] is List) {
+      return (store['inventory'] as List)
+          .whereType<Map>()
+          .map((e) => InventoryItem.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    if (_client == null) return null;
     try {
       final res = await _client!
           .from(SupabaseConfig.tableInventoryItems)
           .select('*')
           .order('created_at');
-      return (res as List).map((e) => InventoryItem.fromJson(e)).toList();
+      return (res as List).map((e) => InventoryItem.fromJson(Map<String, dynamic>.from(e as Map))).toList();
     } catch (e) {
-      print('Error fetching inventory: $e');
-      return [];
+      debugPrint('Error fetching inventory: $e');
+      return null;
     }
   }
 
-  Future<List<RestockRecord>> fetchRestocks() async {
-    if (_client == null) return [];
+  Future<List<RestockRecord>?> fetchRestocks() async {
+    final store = await fetchFullStore();
+    if (store != null && store['restocks'] is List) {
+      return (store['restocks'] as List).whereType<Map>().map((e) {
+        final map = Map<String, dynamic>.from(e);
+        map['isSynced'] = true;
+        return RestockRecord.fromJson(map);
+      }).toList();
+    }
+    if (_client == null) return null;
     try {
       final res = await _client!
           .from(SupabaseConfig.tableRestocks)
@@ -109,27 +288,42 @@ class SupabaseService {
         return RestockRecord.fromJson(map);
       }).toList();
     } catch (e) {
-      print('Error fetching restocks from Supabase: $e');
-      return [];
+      debugPrint('Error fetching restocks: $e');
+      return null;
     }
   }
 
-  Future<List<StaffUser>> fetchStaff() async {
-    if (_client == null) return [];
+  Future<List<StaffUser>?> fetchStaff() async {
+    final store = await fetchFullStore();
+    if (store != null && store['users'] is List) {
+      return (store['users'] as List)
+          .whereType<Map>()
+          .map((e) => StaffUser.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+    if (_client == null) return null;
     try {
       final res = await _client!
           .from(SupabaseConfig.tableStaffUsers)
           .select('*')
           .order('id');
-      return (res as List).map((e) => StaffUser.fromJson(e)).toList();
+      return (res as List).map((e) => StaffUser.fromJson(Map<String, dynamic>.from(e as Map))).toList();
     } catch (e) {
-      print('Error fetching staff: $e');
-      return [];
+      debugPrint('Error fetching staff: $e');
+      return null;
     }
   }
 
-  Future<List<Order>> fetchRecentOrders() async {
-    if (_client == null) return [];
+  Future<List<Order>?> fetchRecentOrders() async {
+    final store = await fetchFullStore();
+    if (store != null && store['orders'] is List) {
+      return (store['orders'] as List).whereType<Map>().map((e) {
+        final map = Map<String, dynamic>.from(e);
+        map['isSynced'] = true;
+        return Order.fromJson(map);
+      }).toList();
+    }
+    if (_client == null) return null;
     try {
       final ordersRes = await _client!
           .from(SupabaseConfig.tableOrders)
@@ -144,7 +338,7 @@ class SupabaseService {
       final itemsByOrder = <String, List<Map<String, dynamic>>>{};
       for (final item in (itemsRes as List)) {
         final orderId = item['order_id']?.toString() ?? '';
-        itemsByOrder.putIfAbsent(orderId, () => []).add(item as Map<String, dynamic>);
+        itemsByOrder.putIfAbsent(orderId, () => []).add(Map<String, dynamic>.from(item as Map));
       }
 
       final orders = <Order>[];
@@ -156,36 +350,31 @@ class SupabaseService {
       }
       return orders;
     } catch (e) {
-      print('Error fetching orders: $e');
-      return [];
-    }
-  }
-
-  Future<List<VoidRequest>> fetchVoidRequests() async {
-    if (_client == null) return [];
-    try {
-      final res = await _client!
-          .from(SupabaseConfig.tableVoidRequests)
-          .select('*')
-          .order('requested_at', ascending: false)
-          .limit(50);
-      return (res as List).map((e) {
-        final map = Map<String, dynamic>.from(e as Map);
-        map['isSynced'] = true;
-        return VoidRequest.fromJson(map);
-      }).toList();
-    } catch (e) {
-      print('Error fetching void requests: $e');
-      return [];
+      debugPrint('Error fetching orders: $e');
+      return null;
     }
   }
 
   // --- Transactions & Atomic RPC Operations ---
 
-  /// Syncs an order atomically to Supabase via `create_order_atomic` RPC
   Future<Map<String, dynamic>> pushOrderAtomic(Order order, List<Map<String, dynamic>> deductions) async {
+    final apiRes = await _postSyncAction({
+      'action': 'create_order',
+      'order': order.toJson(),
+      'deductions': deductions,
+    });
+    if (apiRes != null && apiRes['ok'] == true) {
+      return {
+        'ok': true,
+        'ticketNo': apiRes['ticketNo']?.toString() ?? order.ticketNo,
+      };
+    }
+
     if (_client == null) {
-      return {'ok': false, 'error': 'Database not connected'};
+      return {
+        'ok': false,
+        'error': apiRes?['error']?.toString() ?? 'Database not connected',
+      };
     }
 
     try {
@@ -210,7 +399,7 @@ class SupabaseService {
         'p_promo_label': order.promoLabel,
         'p_total': order.total.round(),
         'p_payment_method': order.paymentMethod,
-        'p_ticket_no': null, // Server allocates daily sequence
+        'p_ticket_no': null,
         'p_paid': order.paid.round(),
         'p_change': order.change.round(),
         'p_deductions': deductions,
@@ -224,76 +413,54 @@ class SupabaseService {
       }
       return {'ok': true, 'ticketNo': order.ticketNo};
     } catch (e) {
-      print('Error in pushOrderAtomic: $e');
-      // If RPC fails (e.g. function not deployed), fallback to direct table upsert
-      try {
-        await _client!.from(SupabaseConfig.tableOrders).upsert({
-          'id': order.id,
-          'created_at': order.createdAt,
-          'barista_name': order.baristaName,
-          'barista_user_id': order.baristaUserId,
-          'subtotal': order.subtotal.round(),
-          'discount': order.discount.round(),
-          'promo_label': order.promoLabel,
-          'total': order.total.round(),
-          'payment_method': order.paymentMethod,
-          'ticket_no': order.ticketNo,
-          'paid': order.paid.round(),
-          'change': order.change.round(),
-          'voided': order.voided,
-          'void_reason': order.voidReason,
-        });
-
-        final orderItemRows = order.items.asMap().entries.map((entry) {
-          final idx = entry.key;
-          final item = entry.value;
-          return {
-            'id': '${order.id}-item-${idx + 1}',
-            'order_id': order.id,
-            'product_id_snapshot': item.productId,
-            'name_snapshot': item.name,
-            'qty': item.qty,
-            'price_snapshot': item.price.round(),
-            'style': item.style,
-            'addons': item.addons.map((a) => a.toJson()).toList(),
-          };
-        }).toList();
-
-        await _client!.from(SupabaseConfig.tableOrderItems).upsert(orderItemRows);
-        return {'ok': true, 'ticketNo': order.ticketNo};
-      } catch (errFallback) {
-        return {'ok': false, 'error': errFallback.toString()};
-      }
+      return {'ok': false, 'error': e.toString()};
     }
   }
 
-  /// Voids an order atomically via `void_order_atomic` RPC
-  Future<bool> voidOrderAtomic(String orderId, String reason, String? voidedBy) async {
-    if (_client == null) return false;
+  Future<Map<String, dynamic>> voidOrderAtomic(
+    String orderId,
+    String reason,
+    String? voidedBy, {
+    String? managerUsername,
+    String? managerPassword,
+  }) async {
+    final apiRes = await _postSyncAction({
+      'action': 'void_order',
+      'orderId': orderId,
+      'reason': reason,
+      'voidedBy': voidedBy,
+      if (managerUsername != null) 'managerUsername': managerUsername,
+      if (managerPassword != null) 'managerPassword': managerPassword,
+    });
+    if (apiRes != null) {
+      return {
+        'ok': apiRes['ok'] == true,
+        if (apiRes['error'] != null) 'error': apiRes['error'].toString(),
+      };
+    }
+
+    if (_client == null) return {'ok': false, 'error': 'Database not connected'};
     try {
       final res = await _client!.rpc(SupabaseConfig.rpcVoidOrderAtomic, params: {
         'p_order_id': orderId,
         'p_reason': reason,
         'p_voided_by': voidedBy,
       });
-      return res != null && res['ok'] == true;
+      return {'ok': res != null && res['ok'] == true};
     } catch (e) {
-      print('Error in voidOrderAtomic: $e');
-      try {
-        await _client!.from(SupabaseConfig.tableOrders).update({
-          'voided': true,
-          'void_reason': reason,
-          'voided_by': voidedBy,
-        }).eq('id', orderId);
-        return true;
-      } catch (_) {
-        return false;
-      }
+      return {'ok': false, 'error': e.toString()};
     }
   }
 
-  /// Pushes restock atomically via `create_restock_atomic` RPC
   Future<bool> pushRestockAtomic(RestockRecord record) async {
+    final apiRes = await _postSyncAction({
+      'action': 'create_restock',
+      'restock': record.toJson(),
+    });
+    if (apiRes != null && apiRes['ok'] == true) {
+      return true;
+    }
+
     if (_client == null) return false;
     try {
       await _client!.rpc(SupabaseConfig.rpcCreateRestockAtomic, params: {
@@ -306,41 +473,88 @@ class SupabaseService {
         'p_purchase_unit': record.purchaseUnit,
       });
       return true;
-    } catch (e) {
-      print('Error in pushRestockAtomic: $e');
-      try {
-        await _client!.from(SupabaseConfig.tableRestocks).upsert({
-          'id': record.id,
-          'inventory_item_id': record.inventoryItemId,
-          'item_name_snapshot': record.itemName,
-          'quantity_added': record.quantityAdded,
-          'purchase_qty': record.purchaseQty,
-          'purchase_unit': record.purchaseUnit,
-          'created_at': record.date,
-        });
-        if (record.inventoryItemId != null) {
-          final cur = await _client!
-              .from(SupabaseConfig.tableInventoryItems)
-              .select('stock')
-              .eq('id', record.inventoryItemId!)
-              .maybeSingle();
-          if (cur != null && cur['stock'] != null) {
-            final curStock = (cur['stock'] as num).toDouble();
-            await _client!
-                .from(SupabaseConfig.tableInventoryItems)
-                .update({'stock': curStock + record.quantityAdded})
-                .eq('id', record.inventoryItemId!);
-          }
-        }
-        return true;
-      } catch (_) {
-        return false;
-      }
+    } catch (_) {
+      return false;
     }
   }
 
-  /// Pushes void request to Supabase
+  Future<bool> deleteRestockAtomic(String id) async {
+    final apiRes = await _postSyncAction({
+      'action': 'delete_restock',
+      'id': id,
+    });
+    if (apiRes != null && apiRes['ok'] == true) {
+      return true;
+    }
+    if (_client == null) return false;
+    try {
+      await _client!.rpc(SupabaseConfig.rpcDeleteRestockAtomic, params: {
+        'p_id': id,
+        'p_inventory_item_id': null,
+        'p_quantity_added': null,
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> upsertInventoryItem(InventoryItem item) async {
+    final apiRes = await _postSyncAction({
+      'action': 'upsert_inventory_item',
+      'item': item.toJson(),
+    });
+    if (apiRes != null && apiRes['ok'] == true) {
+      return true;
+    }
+    if (_client == null) return false;
+    try {
+      await _client!.from(SupabaseConfig.tableInventoryItems).upsert({
+        'id': item.id,
+        'name': item.name,
+        'unit': item.unit,
+        'cost': item.cost,
+        'stock': item.stock,
+        'max_stock': item.maxStock,
+        'opening_stock': item.openingStock,
+        'purchase_unit_size': item.purchaseUnitSize,
+        'cup_usage_amount': item.cupUsageAmount,
+        'cups_make': item.cupsMake,
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>> deleteInventoryItem(String id) async {
+    final apiRes = await _postSyncAction({
+      'action': 'delete_inventory_item',
+      'id': id,
+    });
+    if (apiRes != null) {
+      return {
+        'ok': apiRes['ok'] == true,
+        if (apiRes['error'] != null) 'error': apiRes['error'].toString(),
+      };
+    }
+    if (_client == null) return {'ok': false, 'error': 'Database not connected'};
+    try {
+      await _client!.from(SupabaseConfig.tableInventoryItems).delete().eq('id', id);
+      return {'ok': true};
+    } catch (e) {
+      return {'ok': false, 'error': e.toString()};
+    }
+  }
+
   Future<bool> pushVoidRequest(VoidRequest request) async {
+    final apiRes = await _postSyncAction({
+      'action': 'create_void_request',
+      'request': request.toJson(),
+    });
+    if (apiRes != null && apiRes['ok'] == true) {
+      return true;
+    }
     if (_client == null) return false;
     try {
       await _client!.from(SupabaseConfig.tableVoidRequests).upsert({
@@ -359,14 +573,19 @@ class SupabaseService {
         'payment_method': request.paymentMethod,
       });
       return true;
-    } catch (e) {
-      print('Error in pushVoidRequest: $e');
+    } catch (_) {
       return false;
     }
   }
 
-  /// Pushes shift punch / login activity to Supabase
   Future<bool> pushLoginActivity(LoginActivity activity) async {
+    final apiRes = await _postSyncAction({
+      'action': 'login_activity',
+      'activity': activity.toJson(),
+    });
+    if (apiRes != null && apiRes['ok'] == true) {
+      return true;
+    }
     if (_client == null) return false;
     try {
       await _client!.from(SupabaseConfig.tableLoginActivity).upsert({
@@ -379,8 +598,7 @@ class SupabaseService {
         'at': activity.at,
       });
       return true;
-    } catch (e) {
-      print('Error in pushLoginActivity: $e');
+    } catch (_) {
       return false;
     }
   }

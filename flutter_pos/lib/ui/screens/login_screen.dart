@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../config/supabase_config.dart';
+import '../../models/staff_user.dart';
 import '../../state/pos_controller.dart';
 import '../theme.dart';
 import 'pos_screen.dart';
@@ -13,10 +15,17 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _usernameController = TextEditingController(text: 'cashier');
-  final _passwordController = TextEditingController(text: 'commune');
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
   String? _errorMessage;
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pull latest staff accounts, menu, and inventory from Admin on login screen load
+    widget.controller.syncService.syncAll();
+  }
 
   @override
   void dispose() {
@@ -25,7 +34,7 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _handleLogin() async {
+  Future<void> _handleLogin() async {
     final username = _usernameController.text.trim().toLowerCase();
     final password = _passwordController.text;
 
@@ -39,39 +48,37 @@ class _LoginScreenState extends State<LoginScreen> {
       _errorMessage = null;
     });
 
-    var staff = widget.controller.staffUsers.where((u) => u.username.toLowerCase() == username).firstOrNull;
+    StaffUser? authenticatedStaff;
 
-    if (staff == null) {
-      final cached = widget.controller.localStorage.getStaff();
-      staff = cached.where((u) => u.username.toLowerCase() == username).firstOrNull;
-      if (staff != null) {
-        widget.controller.staffUsers = cached;
+    // 1. Authenticate against centralized Admin database (supports newly created Cashier/Barista accounts & bcrypt hashes)
+    final authRes = await widget.controller.supabaseService.authenticateStaff(username, password);
+    if (authRes['ok'] == true && authRes['user'] is StaffUser) {
+      authenticatedStaff = authRes['user'] as StaffUser;
+      // Ensure latest catalog, menu, inventory, and staff are synced before entering POS
+      await widget.controller.syncService.syncAll();
+    } else {
+      // 2. Fallback to synced local staff cache if offline
+      await widget.controller.syncService.syncAll();
+      final staffList = widget.controller.localStorage.getStaff();
+      final matched = staffList.where((u) => u.username.toLowerCase() == username).firstOrNull;
+      if (matched != null && matched.password == password && matched.password.isNotEmpty) {
+        authenticatedStaff = matched;
       }
     }
 
-    if ((staff == null || (staff.password != password && staff.password != 'commune')) && widget.controller.supabaseService.isInitialized) {
-      try {
-        final freshStaff = await widget.controller.supabaseService.fetchStaff();
-        if (freshStaff.isNotEmpty) {
-          widget.controller.staffUsers = freshStaff;
-          await widget.controller.localStorage.saveStaff(freshStaff);
-          staff = freshStaff.where((u) => u.username.toLowerCase() == username).firstOrNull;
-        }
-      } catch (_) {}
-    }
-
-    if (staff == null || (staff.password != password && staff.password != 'commune' && staff.password.isNotEmpty)) {
+    if (authenticatedStaff == null || !authenticatedStaff.canUsePos) {
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Invalid cashier or staff credentials';
+        _errorMessage = authRes['error']?.toString() ?? 'Invalid cashier or staff credentials';
       });
       return;
     }
 
-    widget.controller.currentUser = staff;
-    widget.controller.currentBaristaName = staff.name;
-    widget.controller.currentBaristaUserId = staff.id;
+    widget.controller.currentUser = authenticatedStaff;
+    widget.controller.currentBaristaName = authenticatedStaff.name;
+    widget.controller.currentBaristaUserId = authenticatedStaff.id;
     widget.controller.isPosOpen = true;
+    await widget.controller.punchShift(authenticatedStaff, 'login');
 
     setState(() => _isLoading = false);
 
@@ -90,113 +97,134 @@ class _LoginScreenState extends State<LoginScreen> {
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-          child: Container(
-            width: 420,
-            padding: const EdgeInsets.all(36),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: const [
-              BoxShadow(color: Colors.black26, blurRadius: 30, offset: Offset(0, 10)),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Logo
-              Container(
-                width: 60,
-                height: 60,
-                decoration: const BoxDecoration(
-                  color: CommuneTheme.primary,
-                  shape: BoxShape.circle,
-                ),
-                child: const Center(
-                  child: Text('c', style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
-                ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(32),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black26, blurRadius: 30, offset: Offset(0, 10)),
+                ],
               ),
-              const SizedBox(height: 14),
-              const Text(
-                'commune',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: -0.5),
-              ),
-              const Text(
-                'POS Terminal • Standalone Edition',
-                style: TextStyle(fontSize: 12, color: CommuneTheme.textMuted),
-              ),
-              const SizedBox(height: 28),
-
-              // Inputs
-              TextField(
-                controller: _usernameController,
-                decoration: InputDecoration(
-                  labelText: 'Username',
-                  hintText: 'cashier / manager',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              TextField(
-                controller: _passwordController,
-                obscureText: true,
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                ),
-                onSubmitted: (_) => _handleLogin(),
-              ),
-
-              if (_errorMessage != null) ...[
-                const SizedBox(height: 12),
-                Text(_errorMessage!, style: const TextStyle(color: CommuneTheme.voidRed, fontSize: 12)),
-              ],
-
-              const SizedBox(height: 24),
-
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _handleLogin,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: CommuneTheme.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: const BoxDecoration(
+                      color: CommuneTheme.primary,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'c',
+                        style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
+                      ),
+                    ),
                   ),
-                  child: _isLoading
-                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Text('Open POS Terminal', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-                ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'commune',
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: -0.5),
+                  ),
+                  const Text(
+                    'POS Terminal • Live Admin Sync',
+                    style: TextStyle(fontSize: 12, color: CommuneTheme.textMuted),
+                  ),
+                  const SizedBox(height: 28),
+
+                  TextField(
+                    controller: _usernameController,
+                    decoration: InputDecoration(
+                      labelText: 'Username',
+                      hintText: 'cashier / barista / manager',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  TextField(
+                    controller: _passwordController,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    ),
+                    onSubmitted: (_) => _handleLogin(),
+                  ),
+
+                  if (_errorMessage != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      _errorMessage!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: CommuneTheme.voidRed, fontSize: 12),
+                    ),
+                  ],
+
+                  const SizedBox(height: 24),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _handleLogin,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: CommuneTheme.primary,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text(
+                              'Open POS Terminal',
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Real-time auto-sync with Admin Panel database',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 11, color: CommuneTheme.textMuted),
+                  ),
+                  const SizedBox(height: 10),
+                  TextButton.icon(
+                    onPressed: _openDatabaseConfigDialog,
+                    icon: const Icon(Icons.settings_outlined, size: 14),
+                    label: const Text('Server & Database Settings', style: TextStyle(fontSize: 11)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: CommuneTheme.textMuted,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
-              const Text(
-                'Local-First • Auto-syncs with Supabase database',
-                style: TextStyle(fontSize: 11, color: CommuneTheme.textMuted),
-              ),
-              const SizedBox(height: 10),
-              TextButton.icon(
-                onPressed: _openDatabaseConfigDialog,
-                icon: const Icon(Icons.settings_outlined, size: 14),
-                label: const Text('Supabase Connection Settings', style: TextStyle(fontSize: 11)),
-                style: TextButton.styleFrom(
-                  foregroundColor: CommuneTheme.textMuted,
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
 
   void _openDatabaseConfigDialog() {
+    final currentAdminUrl = widget.controller.localStorage.getAdminApiUrl() ??
+        widget.controller.supabaseService.activeAdminApiUrl ??
+        SupabaseConfig.adminApiBaseUrl;
     final currentUrl = widget.controller.localStorage.getSupabaseUrl() ?? '';
     final currentKey = widget.controller.localStorage.getSupabaseAnonKey() ?? '';
+
+    final adminUrlController = TextEditingController(text: currentAdminUrl);
     final urlController = TextEditingController(text: currentUrl);
     final keyController = TextEditingController(text: currentKey);
     bool testing = false;
@@ -211,52 +239,69 @@ class _LoginScreenState extends State<LoginScreen> {
             children: [
               Icon(Icons.cloud_sync, color: CommuneTheme.primary),
               SizedBox(width: 8),
-              Text('Supabase Connection', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              Flexible(
+                child: Text(
+                  'Database Sync Settings',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
             ],
           ),
-          content: SizedBox(
-            width: 400,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Enter your Supabase credentials to synchronize orders, inventory, and stats with the cloud database.',
-                  style: TextStyle(fontSize: 12, color: CommuneTheme.textMuted),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: urlController,
-                  decoration: InputDecoration(
-                    labelText: 'Supabase URL',
-                    hintText: 'https://xyzcompany.supabase.co',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Connect to the centralized Admin server or Supabase database so Menu, Stock Inventory, Restocks, and Staff accounts stay in sync.',
+                    style: TextStyle(fontSize: 12, color: CommuneTheme.textMuted),
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: keyController,
-                  obscureText: true,
-                  decoration: InputDecoration(
-                    labelText: 'Supabase API Key (Anon or Service Role)',
-                    hintText: 'eyJhbGciOi...',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  ),
-                ),
-                if (statusMessage != null) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    statusMessage!,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: statusMessage!.contains('Connected') ? Colors.green : CommuneTheme.voidRed,
-                      fontWeight: FontWeight.w500,
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: adminUrlController,
+                    decoration: InputDecoration(
+                      labelText: 'Admin Panel Server URL',
+                      hintText: 'https://...',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: urlController,
+                    decoration: InputDecoration(
+                      labelText: 'Supabase URL (Optional)',
+                      hintText: 'https://xyzcompany.supabase.co',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: keyController,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      labelText: 'Supabase Key (Optional)',
+                      hintText: 'eyJhbGciOi...',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                  ),
+                  if (statusMessage != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      statusMessage!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: statusMessage!.contains('Connected') ? Colors.green : CommuneTheme.voidRed,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
           actions: [
@@ -272,41 +317,50 @@ class _LoginScreenState extends State<LoginScreen> {
               onPressed: testing
                   ? null
                   : () async {
+                      final adminUrl = adminUrlController.text.trim();
                       final url = urlController.text.trim();
                       final key = keyController.text.trim();
-                      if (url.isEmpty || key.isEmpty) {
-                        setDialogState(() => statusMessage = 'Please enter both URL and Anon Key');
-                        return;
-                      }
 
                       setDialogState(() {
                         testing = true;
-                        statusMessage = 'Connecting to Supabase...';
+                        statusMessage = 'Connecting & syncing...';
                       });
 
-                      await widget.controller.localStorage.setSupabaseConfig(url, key);
-                      final connected = await widget.controller.supabaseService.initialize(url: url, anonKey: key);
+                      await widget.controller.localStorage.setSupabaseConfig(
+                        url,
+                        key,
+                        adminApiUrl: adminUrl,
+                      );
+                      final connected = await widget.controller.supabaseService.initialize(
+                        url: url,
+                        anonKey: key,
+                        adminApiUrl: adminUrl,
+                      );
 
                       if (connected) {
-                        setDialogState(() {
-                          testing = false;
-                          statusMessage = 'Connected! Syncing database...';
-                        });
                         await widget.controller.syncService.syncAll();
                         await widget.controller.init();
+                        setDialogState(() {
+                          testing = false;
+                          statusMessage = 'Connected! All Admin data synced.';
+                        });
                         if (mounted) setState(() {});
-                        await Future.delayed(const Duration(milliseconds: 600));
+                        await Future.delayed(const Duration(milliseconds: 500));
                         if (ctx.mounted) Navigator.pop(ctx);
                       } else {
                         setDialogState(() {
                           testing = false;
-                          statusMessage = 'Could not connect. Check your credentials.';
+                          statusMessage = 'Could not connect. Check server URL.';
                         });
                       }
                     },
               child: testing
-                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Text('Save & Connect'),
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('Save & Sync'),
             ),
           ],
         ),

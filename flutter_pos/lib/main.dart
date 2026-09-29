@@ -13,26 +13,27 @@ void main() async {
   final localStorage = LocalStorageService();
   await localStorage.init();
 
-  // 2. Initialize Supabase Client
+  // 2. Initialize Centralized Backend & Supabase Client
   final supabaseService = SupabaseService();
   await supabaseService.initialize(
     url: localStorage.getSupabaseUrl(),
     anonKey: localStorage.getSupabaseAnonKey(),
+    adminApiUrl: localStorage.getAdminApiUrl(),
   );
 
-  // 3. Initialize Background & Real-Time Sync Service
+  // 3. Initialize Background & Real-Time Auto-Sync Service
   final syncService = SyncService(
     localStorage: localStorage,
     supabaseService: supabaseService,
   );
-  syncService.start();
 
-  // 4. Initialize State Controller
+  // 4. Initialize State Controller (registers sync listener & pulls fresh Admin data)
   final posController = PosController(
     localStorage: localStorage,
     supabaseService: supabaseService,
     syncService: syncService,
   );
+  syncService.start();
   await posController.init();
 
   runApp(CommunePosApp(controller: posController));

@@ -1,6 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:intl/intl.dart';
-import 'package:uuid/uuid.dart';
 import '../models/menu_item.dart';
 import '../models/order_item.dart';
 import '../models/order.dart';
@@ -23,6 +21,7 @@ class PosController extends ChangeNotifier {
   String? currentBaristaUserId;
   bool isPosOpen = false;
 
+  // Strictly dynamic lists synced from the Admin database (NEVER hardcoded)
   List<MenuItem> menu = [];
   List<String> categories = ['All'];
   List<InventoryItem> inventory = [];
@@ -31,6 +30,7 @@ class PosController extends ChangeNotifier {
   List<RestockRecord> restocks = [];
   List<StaffUser> staffUsers = [];
   List<LoginActivity> shiftLogs = [];
+  Map<String, dynamic> recipesData = {};
 
   // Filtering
   String selectedCategory = 'All';
@@ -51,7 +51,25 @@ class PosController extends ChangeNotifier {
     required this.localStorage,
     required this.supabaseService,
     required this.syncService,
-  });
+  }) {
+    syncService.onSyncCompleted = _refreshFromLocalStorage;
+  }
+
+  void _refreshFromLocalStorage() {
+    menu = localStorage.getMenu();
+    categories = localStorage.getCategories();
+    if (!categories.contains(selectedCategory)) {
+      selectedCategory = 'All';
+    }
+    inventory = localStorage.getInventory();
+    orders = localStorage.getOrders();
+    staffUsers = localStorage.getStaff();
+    voidRequests = localStorage.getVoidRequests();
+    restocks = localStorage.getRestocks();
+    shiftLogs = localStorage.getLoginActivity();
+    recipesData = localStorage.getRecipesData();
+    notifyListeners();
+  }
 
   Future<void> init() async {
     isPosOpen = localStorage.getPosIsOpen();
@@ -60,114 +78,163 @@ class PosController extends ChangeNotifier {
       currentBaristaName = openedBy;
     }
 
-    // Load from local cache first (Instant boot!)
-    menu = localStorage.getMenu();
-    categories = localStorage.getCategories();
-    inventory = localStorage.getInventory();
-    orders = localStorage.getOrders();
-    staffUsers = localStorage.getStaff();
-    voidRequests = localStorage.getVoidRequests();
-    restocks = localStorage.getRestocks();
-    shiftLogs = localStorage.getLoginActivity();
+    // Load cached Admin state (no hardcoded fallback seeds)
+    _refreshFromLocalStorage();
 
-    // If cache is empty, seed defaults
-    if (menu.isEmpty) {
-      _seedDefaultMenu();
-    }
-    if (inventory.isEmpty) {
-      _seedDefaultInventory();
-    }
-    if (staffUsers.isEmpty) {
-      _seedDefaultStaff();
-    }
-
-    notifyListeners();
-
-    // Trigger sync with Supabase in background
-    syncService.syncAll().then((_) {
-      // Refresh local copy from cache after sync
-      menu = localStorage.getMenu();
-      categories = localStorage.getCategories();
-      inventory = localStorage.getInventory();
-      orders = localStorage.getOrders();
-      staffUsers = localStorage.getStaff();
-      voidRequests = localStorage.getVoidRequests();
-      restocks = localStorage.getRestocks();
-      shiftLogs = localStorage.getLoginActivity();
-      notifyListeners();
-    });
+    // Immediately sync with centralized Admin database
+    await syncService.syncAll();
+    _refreshFromLocalStorage();
   }
 
-  // --- Stock Ledger Calculation (Opening, Restock, Used, Remaining) ---
-  Map<String, double> getStockLedger(InventoryItem item, {String range = 'Today', DateTime? selectedDate}) {
+  // --- Date Range Bounds Helper (Matches Admin Panel phPeriodBounds) ---
+  bool _isInRange(String isoOrDateStr, String range, DateTime? customDate) {
+    final parsed = DateTime.tryParse(isoOrDateStr);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    if (customDate != null && range == 'Date') {
+      if (parsed == null) return isoOrDateStr.startsWith(_formatYmd(customDate));
+      return parsed.year == customDate.year &&
+          parsed.month == customDate.month &&
+          parsed.day == customDate.day;
+    }
+
+    if (parsed == null) return true;
+    final itemDay = DateTime(parsed.year, parsed.month, parsed.day);
+
+    switch (range) {
+      case 'Today':
+        return itemDay == today;
+      case 'Yesterday':
+        final yesterday = today.subtract(const Duration(days: 1));
+        return itemDay == yesterday;
+      case 'This Week':
+        final startOfWeek = today.subtract(Duration(days: today.weekday - 1));
+        return !itemDay.isBefore(startOfWeek) && !itemDay.isAfter(today);
+      case 'Last Week':
+        final startOfThisWeek = today.subtract(Duration(days: today.weekday - 1));
+        final startOfLastWeek = startOfThisWeek.subtract(const Duration(days: 7));
+        final endOfLastWeek = startOfThisWeek.subtract(const Duration(days: 1));
+        return !itemDay.isBefore(startOfLastWeek) && !itemDay.isAfter(endOfLastWeek);
+      case 'This Month':
+        return itemDay.year == today.year && itemDay.month == today.month;
+      case 'Last Month':
+        final lastMonth = DateTime(today.year, today.month - 1, 1);
+        return itemDay.year == lastMonth.year && itemDay.month == lastMonth.month;
+      default:
+        return true;
+    }
+  }
+
+  String _formatYmd(DateTime d) {
+    return '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  }
+
+  bool isCupInventoryItem(InventoryItem item) {
+    final lower = item.name.trim().toLowerCase();
+    if (lower.contains('cup') || lower.contains('lid') || lower.contains('straw')) {
+      return true;
+    }
+    final recipeCostings = (recipesData['recipeCostings'] is List)
+        ? (recipesData['recipeCostings'] as List).whereType<Map>()
+        : const <Map>[];
+    for (final rc in recipeCostings) {
+      if (rc['hotCupInventoryItemId'] == item.id ||
+          rc['icedCupInventoryItemId'] == item.id ||
+          rc['otherCupInventoryItemId'] == item.id) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  double getTotalCupsUsed({String range = 'Today', DateTime? selectedDate}) {
+    double total = 0.0;
+    for (final item in inventory) {
+      if (isCupInventoryItem(item)) {
+        final ledger = getStockLedger(item, range: range, selectedDate: selectedDate);
+        total += ledger['usedPerUnit'] ?? 0.0;
+      }
+    }
+    return total;
+  }
+
+  // --- Stock Ledger Calculation (Matches Admin SalePurchaseTransactions.tsx 100%) ---
+  Map<String, double> getStockLedger(
+    InventoryItem item, {
+    String range = 'Today',
+    DateTime? selectedDate,
+  }) {
     final itemRestocks = restocks.where((r) =>
-      (r.inventoryItemId != null && r.inventoryItemId == item.id) ||
-      r.itemName.trim().toLowerCase() == item.name.trim().toLowerCase()
-    );
+        (r.inventoryItemId != null && r.inventoryItemId == item.id) ||
+        r.itemName.trim().toLowerCase() == item.name.trim().toLowerCase());
 
-    final targetDate = selectedDate ?? DateTime.now();
-    final dateStr = "${targetDate.year.toString().padLeft(4, '0')}-${targetDate.month.toString().padLeft(2, '0')}-${targetDate.day.toString().padLeft(2, '0')}";
-
-    double totalRestocked = 0;
+    double totalRestockedInRange = 0;
     for (final r in itemRestocks) {
-      if (range == 'Today') {
-        if (r.date.startsWith(dateStr)) {
-          totalRestocked += r.quantityAdded;
-        }
-      } else {
-        totalRestocked += r.quantityAdded;
+      if (_isInRange(r.date, range, selectedDate)) {
+        totalRestockedInRange += r.quantityAdded;
       }
     }
 
-    double totalUsed = 0;
+    double totalUsedInRange = 0;
+    final usageLogs = (recipesData['usageLogs'] is List)
+        ? (recipesData['usageLogs'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+        : <Map<String, dynamic>>[];
+
+    final loggedOrderIds = <String>{};
+    for (final u in usageLogs) {
+      final oid = u['orderId']?.toString() ?? '';
+      if (oid.isNotEmpty) loggedOrderIds.add(oid);
+      final uItemId = u['inventoryItemId']?.toString() ?? '';
+      final uItemName = (u['itemName']?.toString() ?? '').trim().toLowerCase();
+      final matches = (uItemId.isNotEmpty && uItemId == item.id) ||
+          uItemName == item.name.trim().toLowerCase();
+      if (matches && _isInRange(u['date']?.toString() ?? '', range, selectedDate)) {
+        totalUsedInRange += (u['usedAmount'] as num?)?.toDouble() ?? 0.0;
+      }
+    }
+
     for (final order in orders) {
-      if (order.voided) continue;
-      final oDate = DateTime.tryParse(order.createdAt);
-      if (range == 'Today') {
-        if (oDate == null || oDate.year != targetDate.year || oDate.month != targetDate.month || oDate.day != targetDate.day) {
-          continue;
-        }
-      }
-      for (final line in order.items) {
-        final name = line.name.toLowerCase();
-        if (item.id == 'coffee-beans' && (name.contains('espresso') || name.contains('latte') || name.contains('cappuccino') || name.contains('americano'))) {
-          totalUsed += 18.0 * line.qty;
-        } else if (item.id == 'milk' && (name.contains('latte') || name.contains('cappuccino') || name.contains('flat white'))) {
-          totalUsed += 180.0 * line.qty;
-        } else if (item.id == 'matcha-powder' && name.contains('matcha')) {
-          totalUsed += 10.0 * line.qty;
-        } else if (item.id == 'cups-hot' && line.style == 'hot') {
-          totalUsed += 1.0 * line.qty;
-        } else if (item.id == 'cups-peta' && line.style != 'hot') {
-          totalUsed += 1.0 * line.qty;
-        } else if (item.cupUsageAmount != null && item.cupUsageAmount! > 0) {
-          totalUsed += item.cupUsageAmount! * line.qty;
+      if (order.voided || loggedOrderIds.contains(order.id)) continue;
+      if (!_isInRange(order.createdAt, range, selectedDate)) continue;
+      final deductions = syncService.buildDeductionsForOrder(order);
+      for (final d in deductions) {
+        if (d['inventoryItemId'] == item.id ||
+            (d['itemName']?.toString() ?? '').trim().toLowerCase() == item.name.trim().toLowerCase()) {
+          totalUsedInRange += (d['amount'] as num?)?.toDouble() ?? 0.0;
         }
       }
     }
 
-    final double pieceSize = (item.purchaseUnitSize != null && item.purchaseUnitSize! > 0) ? item.purchaseUnitSize! : 1.0;
+    final double pieceSize = (item.purchaseUnitSize != null && item.purchaseUnitSize! > 0)
+        ? item.purchaseUnitSize!
+        : 1.0;
     final double remainingBase = item.stock;
-    final double remainingPcs = remainingBase / pieceSize;
-    final double restockedPcs = totalRestocked / pieceSize;
-    final double usedPcs = totalUsed / pieceSize;
-    final double openingBase = remainingBase - totalRestocked + totalUsed;
-    final double openingPcs = openingBase / pieceSize;
-    final double usedPerUnit = totalUsed;
+    final double openingBase = (remainingBase - totalRestockedInRange + totalUsedInRange).clamp(0.0, double.infinity);
 
+    final double openingPcs = openingBase / pieceSize;
+    final double restockedPcs = totalRestockedInRange / pieceSize;
+    final double usedPcs = (item.purchaseUnitSize != null && item.purchaseUnitSize! > 0)
+        ? (totalUsedInRange / item.purchaseUnitSize!)
+        : -1.0;
+    final double remainingPcs = (remainingBase / pieceSize).clamp(0.0, double.infinity);
+
+    // Exact Cups Left calculation from Admin (configuredCupsLeft or cupsMake if unit != 'pcs')
     double? cupsLeft;
-    if (item.cupUsageAmount != null && item.cupUsageAmount! > 0) {
-      cupsLeft = remainingBase / item.cupUsageAmount!;
-    } else if (item.cupsMake != null) {
-      cupsLeft = item.cupsMake!;
+    if (item.unit.trim().toLowerCase() != 'pcs') {
+      if (item.cupUsageAmount != null && item.cupUsageAmount! > 0) {
+        cupsLeft = remainingBase / item.cupUsageAmount!;
+      } else if (item.cupsMake != null && item.cupsMake! > 0) {
+        cupsLeft = item.cupsMake!;
+      }
     }
 
     return {
-      'openingPcs': openingPcs < 0 ? 0.0 : openingPcs,
+      'openingPcs': openingPcs,
       'restockedPcs': restockedPcs,
-      'usedPerUnit': usedPerUnit,
+      'usedPerUnit': totalUsedInRange,
       'usedPcs': usedPcs,
-      'remainingPcs': remainingPcs < 0 ? 0.0 : remainingPcs,
+      'remainingPcs': remainingPcs,
       'cupsLeft': cupsLeft ?? -1.0,
     };
   }
@@ -176,12 +243,14 @@ class PosController extends ChangeNotifier {
   List<MenuItem> get filteredMenu {
     return menu.where((item) {
       if (!item.available) return false;
-      if (selectedCategory != 'All' && item.category.toLowerCase() != selectedCategory.toLowerCase()) {
+      if (selectedCategory != 'All' &&
+          item.category.trim().toLowerCase() != selectedCategory.trim().toLowerCase()) {
         return false;
       }
       if (searchQuery.isNotEmpty) {
         final query = searchQuery.toLowerCase().trim();
-        return item.name.toLowerCase().contains(query) || item.category.toLowerCase().contains(query);
+        return item.name.toLowerCase().contains(query) ||
+            item.category.toLowerCase().contains(query);
       }
       return true;
     }).toList();
@@ -203,7 +272,6 @@ class PosController extends ChangeNotifier {
   double get change => paymentMethod == 'cash' && tenderedAmount >= total ? (tenderedAmount - total) : 0.0;
 
   void addToCart(MenuItem product, {String? style, List<OrderAddonSelection> addons = const [], int qty = 1}) {
-    // Check if duplicate item exists in cart
     final existingIndex = cart.indexWhere((line) {
       if (line.productId != product.id) return false;
       if (line.style != style) return false;
@@ -229,6 +297,9 @@ class PosController extends ChangeNotifier {
         category: product.category,
       ));
     }
+    if (paymentMethod != 'cash') {
+      tenderedAmount = total;
+    }
     notifyListeners();
   }
 
@@ -239,6 +310,9 @@ class PosController extends ChangeNotifier {
       } else {
         cart[index].qty = newQty;
       }
+      if (paymentMethod != 'cash') {
+        tenderedAmount = total;
+      }
       notifyListeners();
     }
   }
@@ -246,6 +320,9 @@ class PosController extends ChangeNotifier {
   void removeFromCart(int index) {
     if (index >= 0 && index < cart.length) {
       cart.removeAt(index);
+      if (paymentMethod != 'cash') {
+        tenderedAmount = total;
+      }
       notifyListeners();
     }
   }
@@ -288,12 +365,11 @@ class PosController extends ChangeNotifier {
       final now = DateTime.now();
       final orderId = 'ord-${now.millisecondsSinceEpoch}';
 
-      // Generate next ticket number (PH day format or sequence e.g. 001)
       final existingTodayCount = orders.where((o) {
         final d = DateTime.tryParse(o.createdAt);
         return d != null && d.year == now.year && d.month == now.month && d.day == now.day;
       }).length;
-      final localTicketNo = (existingTodayCount + 1).toString().padLeft(3, '0');
+      final localTicketNo = '#${(existingTodayCount + 1).toString().padLeft(3, '0')}';
 
       final order = Order(
         id: orderId,
@@ -313,18 +389,34 @@ class PosController extends ChangeNotifier {
         isSynced: false,
       );
 
-      // Save locally immediately (Local-First!)
+      final deductions = syncService.buildDeductionsForOrder(order);
+
+      // Push immediately to centralized database
+      final pushRes = await supabaseService.pushOrderAtomic(order, deductions);
+      if (pushRes['ok'] == true) {
+        order.isSynced = true;
+        if (pushRes['ticketNo'] != null && pushRes['ticketNo'].toString().isNotEmpty) {
+          order.ticketNo = pushRes['ticketNo'].toString();
+        }
+      }
+
       await localStorage.addOrder(order);
       orders.insert(0, order);
       lastCompletedOrder = order;
 
-      // Deduct inventory locally
-      _deductInventoryLocally(order);
+      // Deduct inventory locally based on Admin recipe deductions
+      for (final d in deductions) {
+        final stockItem = inventory.where((i) => i.id == d['inventoryItemId']).firstOrNull;
+        final amount = (d['amount'] as num?)?.toDouble() ?? 0.0;
+        if (stockItem != null && amount > 0) {
+          stockItem.stock = (stockItem.stock - amount).clamp(0.0, double.infinity);
+        }
+      }
+      await localStorage.saveInventory(inventory);
 
-      // Clear cart
       clearCart();
-
-      // Trigger background sync
+      syncService.updatePendingCount();
+      // Refresh full state from Admin backend
       syncService.syncAll();
 
       isProcessing = false;
@@ -337,39 +429,13 @@ class PosController extends ChangeNotifier {
     }
   }
 
-  void _deductInventoryLocally(Order order) {
-    for (final line in order.items) {
-      final name = line.name.toLowerCase();
-      if (name.contains('espresso') || name.contains('latte') || name.contains('cappuccino') || name.contains('americano')) {
-        final beans = inventory.where((i) => i.id == 'coffee-beans').firstOrNull;
-        if (beans != null) beans.stock = (beans.stock - (18.0 * line.qty)).clamp(0.0, double.infinity);
-      }
-      if (name.contains('latte') || name.contains('cappuccino') || name.contains('flat white')) {
-        final milk = inventory.where((i) => i.id == 'milk').firstOrNull;
-        if (milk != null) milk.stock = (milk.stock - (180.0 * line.qty)).clamp(0.0, double.infinity);
-      }
-      if (name.contains('matcha')) {
-        final matcha = inventory.where((i) => i.id == 'matcha-powder').firstOrNull;
-        if (matcha != null) matcha.stock = (matcha.stock - (10.0 * line.qty)).clamp(0.0, double.infinity);
-      }
-      final cupId = line.style == 'hot' ? 'cups-hot' : 'cups-peta';
-      final cup = inventory.where((i) => i.id == cupId).firstOrNull;
-      if (cup != null) cup.stock = (cup.stock - (1.0 * line.qty)).clamp(0.0, double.infinity);
-    }
-    localStorage.saveInventory(inventory);
-  }
-
   // --- Void Order Workflow ---
-  Future<Map<String, dynamic>> voidOrder(String orderId, String reason, String managerUsername, String managerPassword) async {
-    // 1. Verify manager credentials
-    final manager = staffUsers.firstWhere(
-      (u) => u.username.toLowerCase() == managerUsername.trim().toLowerCase() && u.isManager,
-      orElse: () => const StaffUser(id: '', username: '', password: '', name: '', role: ''),
-    );
-    if (manager.id.isEmpty || manager.password != managerPassword) {
-      return {'ok': false, 'error': 'Invalid manager credentials'};
-    }
-
+  Future<Map<String, dynamic>> voidOrder(
+    String orderId,
+    String reason,
+    String managerUsername,
+    String managerPassword,
+  ) async {
     final order = orders.where((o) => o.id == orderId).firstOrNull;
     if (order == null) {
       return {'ok': false, 'error': 'Order not found'};
@@ -378,54 +444,71 @@ class PosController extends ChangeNotifier {
       return {'ok': false, 'error': 'Order is already voided'};
     }
 
+    // Verify manager/admin credentials against centralized backend first
+    final remoteVoid = await supabaseService.voidOrderAtomic(
+      orderId,
+      reason,
+      managerUsername.trim(),
+      managerUsername: managerUsername.trim(),
+      managerPassword: managerPassword,
+    );
+
+    if (remoteVoid['ok'] == true) {
+      order.voided = true;
+      order.voidReason = reason;
+      order.voidedBy = managerUsername.trim();
+      order.isSynced = true;
+      await localStorage.addOrder(order);
+      await syncService.syncAll();
+      notifyListeners();
+      return {'ok': true};
+    }
+
+    // Fallback local verification if offline
+    final manager = staffUsers.firstWhere(
+      (u) => u.username.toLowerCase() == managerUsername.trim().toLowerCase() && u.isManager,
+      orElse: () => const StaffUser(id: '', username: '', password: '', name: '', role: ''),
+    );
+    if (manager.id.isEmpty || manager.password != managerPassword) {
+      return {'ok': false, 'error': remoteVoid['error']?.toString() ?? 'Invalid manager credentials'};
+    }
+
     order.voided = true;
     order.voidReason = reason;
     order.voidedBy = manager.name;
     order.isSynced = false;
-
-    // Save locally
     await localStorage.addOrder(order);
-
-    // Restore inventory
-    _restoreInventoryLocally(order);
-
-    // Try Supabase atomic void
-    if (syncService.isOnline && supabaseService.isInitialized) {
-      supabaseService.voidOrderAtomic(orderId, reason, manager.name).then((ok) {
-        if (ok) {
-          order.isSynced = true;
-          localStorage.addOrder(order);
-        }
-      });
-    }
-
     notifyListeners();
     return {'ok': true};
   }
 
-  void _restoreInventoryLocally(Order order) {
-    for (final line in order.items) {
-      final name = line.name.toLowerCase();
-      if (name.contains('espresso') || name.contains('latte') || name.contains('cappuccino') || name.contains('americano')) {
-        final beans = inventory.where((i) => i.id == 'coffee-beans').firstOrNull;
-        if (beans != null) beans.stock += (18.0 * line.qty);
-      }
-      if (name.contains('latte') || name.contains('cappuccino') || name.contains('flat white')) {
-        final milk = inventory.where((i) => i.id == 'milk').firstOrNull;
-        if (milk != null) milk.stock += (180.0 * line.qty);
-      }
-      if (name.contains('matcha')) {
-        final matcha = inventory.where((i) => i.id == 'matcha-powder').firstOrNull;
-        if (matcha != null) matcha.stock += (10.0 * line.qty);
-      }
-      final cupId = line.style == 'hot' ? 'cups-hot' : 'cups-peta';
-      final cup = inventory.where((i) => i.id == cupId).firstOrNull;
-      if (cup != null) cup.stock += (1.0 * line.qty);
+  // --- Inventory & Restock Operations (Synced with Admin) ---
+  Future<void> addOrUpdateInventoryItem(InventoryItem item) async {
+    final idx = inventory.indexWhere((i) => i.id == item.id);
+    if (idx >= 0) {
+      inventory[idx] = item;
+    } else {
+      inventory.add(item);
     }
-    localStorage.saveInventory(inventory);
+    await localStorage.saveInventory(inventory);
+    notifyListeners();
+
+    await supabaseService.upsertInventoryItem(item);
+    await syncService.syncAll();
   }
 
-  // --- Restock Operations ---
+  Future<Map<String, dynamic>> deleteInventoryItem(String id) async {
+    final res = await supabaseService.deleteInventoryItem(id);
+    if (res['ok'] == true) {
+      inventory.removeWhere((i) => i.id == id);
+      await localStorage.saveInventory(inventory);
+      await syncService.syncAll();
+      notifyListeners();
+      return {'ok': true};
+    }
+    return res;
+  }
+
   Future<void> addRestockRecord({
     required String? inventoryItemId,
     required String itemName,
@@ -440,10 +523,13 @@ class PosController extends ChangeNotifier {
       itemName: itemName,
       quantityAdded: quantityAdded,
       purchaseQty: purchaseQty,
-      purchaseUnit: purchaseUnit,
+      purchaseUnit: purchaseUnit ?? 'pcs',
       date: now,
       isSynced: false,
     );
+
+    final synced = await supabaseService.pushRestockAtomic(record);
+    record.isSynced = synced;
 
     await localStorage.addRestock(record);
     restocks.insert(0, record);
@@ -456,18 +542,44 @@ class PosController extends ChangeNotifier {
       }
     }
 
+    syncService.updatePendingCount();
     notifyListeners();
-    syncService.syncAll();
+    await syncService.syncAll();
   }
 
-  Future<void> restockItem(String inventoryItemId, double qty, [String? notes]) async {
+  Future<void> restockItem(String inventoryItemId, double piecesQty, [String? notes]) async {
     final item = inventory.where((i) => i.id == inventoryItemId).firstOrNull;
     if (item == null) return;
+    final unitSize = (item.purchaseUnitSize != null && item.purchaseUnitSize! > 0)
+        ? item.purchaseUnitSize!
+        : 1.0;
+    final baseQtyAdded = piecesQty * unitSize;
+
     await addRestockRecord(
       inventoryItemId: inventoryItemId,
       itemName: item.name,
-      quantityAdded: qty,
+      quantityAdded: baseQtyAdded,
+      purchaseQty: piecesQty,
+      purchaseUnit: 'pcs',
     );
+  }
+
+  Future<void> deleteRestock(String restockId) async {
+    final existing = restocks.where((r) => r.id == restockId).firstOrNull;
+    restocks.removeWhere((r) => r.id == restockId);
+    await localStorage.saveRestocks(restocks);
+
+    if (existing != null && existing.inventoryItemId != null) {
+      final item = inventory.where((i) => i.id == existing.inventoryItemId).firstOrNull;
+      if (item != null) {
+        item.stock = (item.stock - existing.quantityAdded).clamp(0.0, double.infinity);
+        await localStorage.saveInventory(inventory);
+      }
+    }
+    notifyListeners();
+
+    await supabaseService.deleteRestockAtomic(restockId);
+    await syncService.syncAll();
   }
 
   // --- Shift Clock In / Out ---
@@ -484,6 +596,9 @@ class PosController extends ChangeNotifier {
       isSynced: false,
     );
 
+    final ok = await supabaseService.pushLoginActivity(log);
+    log.isSynced = ok;
+
     await localStorage.addLoginActivity(log);
     shiftLogs.insert(0, log);
 
@@ -494,51 +609,8 @@ class PosController extends ChangeNotifier {
       await localStorage.setPosState(isOpen: true, openedBy: staff.name, openedAt: now);
     }
 
+    syncService.updatePendingCount();
     notifyListeners();
-    syncService.syncAll();
-  }
-
-  // --- Default Seeding ---
-  void _seedDefaultMenu() {
-    menu = [
-      const MenuItem(id: 'spanish-latte', name: 'Spanish Latte', price: 130, category: 'Special', image: '/images/drinks.jpg', styles: ['iced', 'hot']),
-      const MenuItem(id: 'matcha-espresso', name: 'Matcha Espresso', price: 140, category: 'Special', image: '/images/drinks.jpg', styles: ['iced']),
-      const MenuItem(id: 'sea-salt-latte', name: 'Sea Salt Latte', price: 135, category: 'Special', image: '/images/drinks.jpg', styles: ['iced']),
-      const MenuItem(id: 'americano', name: 'Americano', price: 100, category: 'Classic', image: '/images/drinks.jpg', styles: ['hot', 'iced']),
-      const MenuItem(id: 'cappuccino', name: 'Cappuccino', price: 120, category: 'Classic', image: '/images/drinks.jpg', styles: ['hot', 'iced']),
-      const MenuItem(id: 'latte', name: 'Café Latte', price: 120, category: 'Classic', image: '/images/drinks.jpg', styles: ['hot', 'iced']),
-      const MenuItem(id: 'caramel-macchiato', name: 'Caramel Macchiato', price: 135, category: 'Classic', image: '/images/drinks.jpg', styles: ['hot', 'iced']),
-      const MenuItem(id: 'pure-matcha', name: 'Pure Matcha Latte', price: 130, category: 'Matcha Drinks', image: '/images/matcha-umami.jpg', styles: ['hot', 'iced']),
-      const MenuItem(id: 'strawberry-matcha', name: 'Strawberry Matcha', price: 145, category: 'Matcha Drinks', image: '/images/matcha-umami.jpg', styles: ['iced']),
-      const MenuItem(id: 'chocolate', name: 'Artisan Chocolate', price: 120, category: 'Non-Coffee', image: '/images/drinks.jpg', styles: ['hot', 'iced']),
-      const MenuItem(id: 'berry-hibiscus', name: 'Berry Hibiscus Refresher', price: 115, category: 'Fresh Drinks', image: '/images/drinks.jpg', styles: ['iced']),
-      const MenuItem(id: 'grilled-cheese', name: 'Truffle Grilled Cheese', price: 160, category: 'Food', image: '/images/drinks.jpg', styles: []),
-      const MenuItem(id: 'butter-croissant', name: 'Butter Croissant', price: 85, category: 'Pastries', image: '/images/drinks.jpg', styles: []),
-    ];
-    categories = ["All", "Special", "Classic", "Non-Coffee", "Fresh Drinks", "Matcha Drinks", "Food", "Pastries"];
-    localStorage.saveMenu(menu);
-    localStorage.saveCategories(categories);
-  }
-
-  void _seedDefaultInventory() {
-    inventory = [
-      InventoryItem(id: 'coffee-beans', name: 'Coffee Beans', unit: 'g', cost: 1.2, stock: 5000, maxStock: 10000, openingStock: 5000),
-      InventoryItem(id: 'milk', name: 'Fresh Milk', unit: 'ml', cost: 0.1, stock: 10000, maxStock: 20000, openingStock: 10000),
-      InventoryItem(id: 'sugar', name: 'Sugar Syrup', unit: 'ml', cost: 0.05, stock: 3000, maxStock: 5000, openingStock: 3000),
-      InventoryItem(id: 'matcha-powder', name: 'Matcha Powder', unit: 'g', cost: 2.5, stock: 1000, maxStock: 2000, openingStock: 1000),
-      InventoryItem(id: 'cups-hot', name: 'Hot Cups 8oz', unit: 'pcs', cost: 5.0, stock: 500, maxStock: 1000, openingStock: 500),
-      InventoryItem(id: 'cups-peta', name: 'Iced Cups 16oz', unit: 'pcs', cost: 6.0, stock: 500, maxStock: 1000, openingStock: 500),
-    ];
-    localStorage.saveInventory(inventory);
-  }
-
-  void _seedDefaultStaff() {
-    staffUsers = [
-      const StaffUser(id: 'admin-1', username: 'admin', password: 'commune', name: 'Admin', role: 'admin', title: 'Owner'),
-      const StaffUser(id: 'cashier-1', username: 'cashier', password: 'commune', name: 'Cashier On Duty', role: 'cashier', title: 'Cashier'),
-      const StaffUser(id: 'manager-1', username: 'manager', password: 'commune', name: 'Manager', role: 'manager', title: 'Manager'),
-      const StaffUser(id: 'barista-1', username: 'barista', password: 'commune', name: 'Barista', role: 'barista', title: 'Barista'),
-    ];
-    localStorage.saveStaff(staffUsers);
+    await syncService.syncAll();
   }
 }

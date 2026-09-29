@@ -14,28 +14,19 @@ class ProductCard extends StatelessWidget {
   });
 
   String _buildSubtitle() {
-    if (!item.isDrink) {
-      return '';
-    }
+    final styleLabels = item.styles
+        .map((s) => s.toLowerCase() == 'hot' ? 'Hot' : 'Iced')
+        .toList();
+    final hasAddons = item.addons.isNotEmpty;
 
-    final hasIced = item.styles.contains('iced') || item.styles.isEmpty;
-    final hasHot = item.styles.contains('hot');
-
-    if (hasIced && hasHot) {
-      return 'Iced / Hot · Add-ons';
-    } else if (hasIced) {
-      // Some drinks like Matcha Umami or Strawberry Whisper show 'Iced' or 'Iced · Add-ons'
-      if (item.category.toLowerCase().contains('matcha') && !item.name.toLowerCase().contains('latte')) {
-        return 'Iced';
-      }
-      if (item.name.toLowerCase().contains('whisper') || item.name.toLowerCase().contains('cloud')) {
-        return 'Iced';
-      }
-      return 'Iced · Add-ons';
-    } else if (hasHot) {
-      return 'Hot · Add-ons';
+    if (styleLabels.isNotEmpty) {
+      final joinedStyles = styleLabels.join(' / ');
+      return hasAddons ? '$joinedStyles · Add-ons' : joinedStyles;
     }
-    return 'Add-ons';
+    if (hasAddons) {
+      return 'Add-ons';
+    }
+    return '';
   }
 
   @override
@@ -59,50 +50,52 @@ class ProductCard extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Center(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Text(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Flexible(
+                  child: Text(
                     item.name,
                     textAlign: TextAlign.center,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: FontWeight.bold,
                       color: Color(0xFF111827),
                       letterSpacing: -0.2,
+                      height: 1.2,
                     ),
                   ),
-                  if (subtitle.isNotEmpty) ...[
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Color(0xFF6B7280),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 4),
+                ),
+                if (subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 3),
                   Text(
-                    '₱${item.price.toInt()}',
+                    subtitle,
                     textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF111827),
+                      fontSize: 10.5,
+                      color: Color(0xFF6B7280),
                     ),
                   ),
                 ],
-              ),
+                const SizedBox(height: 3),
+                Text(
+                  '₱${item.price.toInt()}',
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+              ],
             ),
           ),
         ),

@@ -2,13 +2,26 @@ class SupabaseConfig {
   // Configurable credentials - can be overridden via environment or local preferences
   static String supabaseUrl = const String.fromEnvironment(
     'SUPABASE_URL',
-    defaultValue: 'https://placeholder-commune.supabase.co',
+    defaultValue: '',
   );
 
   static String supabaseAnonKey = const String.fromEnvironment(
     'SUPABASE_ANON_KEY',
-    defaultValue: 'placeholder-anon-key',
+    defaultValue: '',
   );
+
+  // Centralized Admin API endpoint so Admin Panel and Flutter POS always share the exact same database
+  static String adminApiBaseUrl = const String.fromEnvironment(
+    'ADMIN_API_URL',
+    defaultValue: 'https://ais-dev-w65xuz5vdarxrabrzdphs7-601909081982.asia-southeast1.run.app',
+  );
+
+  static const List<String> fallbackApiBaseUrls = [
+    'https://ais-dev-w65xuz5vdarxrabrzdphs7-601909081982.asia-southeast1.run.app',
+    'https://ais-pre-w65xuz5vdarxrabrzdphs7-601909081982.asia-southeast1.run.app',
+    'http://localhost:3000',
+    'http://10.0.2.2:3000',
+  ];
 
   // Exact Supabase table names matching the web app & migrations
   static const String tablePosState = 'pos_state';

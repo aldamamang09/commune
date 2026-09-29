@@ -1,30 +1,42 @@
 class OrderAddonSelection {
+  final String? id;
   final String name;
   final int qty;
   final double price;
   final String? inventoryItemId;
+  final double? usageAmount;
+  final String? usageUnit;
 
   const OrderAddonSelection({
+    this.id,
     required this.name,
     this.qty = 1,
     required this.price,
     this.inventoryItemId,
+    this.usageAmount,
+    this.usageUnit,
   });
 
   factory OrderAddonSelection.fromJson(Map<String, dynamic> json) {
     return OrderAddonSelection(
+      id: json['id'] as String?,
       name: json['name'] as String? ?? '',
       qty: (json['qty'] as num?)?.toInt() ?? 1,
       price: (json['price'] as num?)?.toDouble() ?? 0.0,
-      inventoryItemId: json['inventoryItemId'] as String?,
+      inventoryItemId: json['inventoryItemId'] as String? ?? json['inventory_item_id'] as String?,
+      usageAmount: (json['usageAmount'] as num?)?.toDouble() ?? (json['usage_amount'] as num?)?.toDouble(),
+      usageUnit: json['usageUnit'] as String? ?? json['usage_unit'] as String?,
     );
   }
 
   Map<String, dynamic> toJson() => {
+    if (id != null) 'id': id,
     'name': name,
     'qty': qty,
     'price': price,
     if (inventoryItemId != null) 'inventoryItemId': inventoryItemId,
+    if (usageAmount != null) 'usageAmount': usageAmount,
+    if (usageUnit != null) 'usageUnit': usageUnit,
   };
 }
 
@@ -73,8 +85,8 @@ class OrderItem {
     List<OrderAddonSelection> parsedAddons = [];
     if (json['addons'] is List) {
       parsedAddons = (json['addons'] as List)
-          .whereType<Map<String, dynamic>>()
-          .map((e) => OrderAddonSelection.fromJson(e))
+          .whereType<Map>()
+          .map((e) => OrderAddonSelection.fromJson(Map<String, dynamic>.from(e)))
           .toList();
     }
 

@@ -3,7 +3,13 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'local_storage_service.dart';
 import 'supabase_service.dart';
+import '../models/menu_item.dart';
 import '../models/order.dart';
+import '../models/inventory_item.dart';
+import '../models/restock_record.dart';
+import '../models/staff_user.dart';
+import '../models/void_request.dart';
+import '../models/login_activity.dart';
 
 enum SyncStatus { idle, syncing, success, error, offline }
 
@@ -19,6 +25,7 @@ class SyncService extends ChangeNotifier {
 
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
   Timer? _periodicSyncTimer;
+  VoidCallback? onSyncCompleted;
 
   SyncService({
     required this.localStorage,
@@ -40,14 +47,14 @@ class SyncService extends ChangeNotifier {
       }
     });
 
-    // Periodic sync attempt every 30 seconds when online
-    _periodicSyncTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (isOnline && (getPendingCount() > 0 || status != SyncStatus.syncing)) {
+    // Real-time auto-sync every 5 seconds when online
+    _periodicSyncTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (isOnline && status != SyncStatus.syncing) {
         syncAll();
       }
     });
 
-    // Initial sync
+    // Initial sync immediately
     syncAll();
   }
 
@@ -66,118 +73,180 @@ class SyncService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Full bidirectional synchronization
+  /// Full bidirectional real-time synchronization with the centralized Admin database
   Future<void> syncAll() async {
     if (status == SyncStatus.syncing) return;
-
-    if (!supabaseService.isInitialized) {
-      status = SyncStatus.offline;
-      updatePendingCount();
-      return;
-    }
 
     status = SyncStatus.syncing;
     lastError = null;
     notifyListeners();
 
     try {
-      // 1. Pull latest master catalog from Supabase to refresh local cache
-      final freshMenu = await supabaseService.fetchMenu();
-      if (freshMenu.isNotEmpty) {
-        await localStorage.saveMenu(freshMenu);
-      }
-
-      final freshCategories = await supabaseService.fetchCategories();
-      if (freshCategories.isNotEmpty) {
-        await localStorage.saveCategories(freshCategories);
-      }
-
-      final freshInventory = await supabaseService.fetchInventory();
-      if (freshInventory.isNotEmpty) {
-        await localStorage.saveInventory(freshInventory);
-      }
-
-      final freshStaff = await supabaseService.fetchStaff();
-      if (freshStaff.isNotEmpty) {
-        await localStorage.saveStaff(freshStaff);
-      }
-
-      final freshRestocks = await supabaseService.fetchRestocks();
-      if (freshRestocks.isNotEmpty) {
-        await localStorage.saveRestocks(freshRestocks);
-      }
-
-      final freshOrders = await supabaseService.fetchRecentOrders();
-      if (freshOrders.isNotEmpty) {
-        await localStorage.saveOrders(freshOrders);
-      }
-
-      // 2. Push offline shift punches
+      // 1. Push any pending offline queues FIRST so newly created POS actions are persisted before pulling
       final pendingPunches = localStorage.getPendingLoginActivity();
       for (final punch in pendingPunches) {
-        try {
-          final ok = await supabaseService.pushLoginActivity(punch);
-          if (ok) {
-            punch.isSynced = true;
-            await localStorage.removePendingLoginActivity(punch.id);
-          }
-        } catch (e) {
-          print('Error pushing punch: $e');
+        final ok = await supabaseService.pushLoginActivity(punch);
+        if (ok) {
+          punch.isSynced = true;
+          await localStorage.removePendingLoginActivity(punch.id);
         }
       }
 
-      // 3. Push offline orders
       final pendingOrders = localStorage.getPendingOrders();
       for (final order in pendingOrders) {
-        try {
-          // Calculate ingredient deductions for this order
-          final deductions = _buildDeductionsForOrder(order);
-          final result = await supabaseService.pushOrderAtomic(order, deductions);
-          if (result['ok'] == true) {
-            order.isSynced = true;
-            if (result['ticketNo'] != null && result['ticketNo'].toString().isNotEmpty) {
-              order.ticketNo = result['ticketNo'].toString();
-            }
-            await localStorage.addOrder(order);
-            await localStorage.removePendingOrder(order.id);
+        final deductions = buildDeductionsForOrder(order);
+        final result = await supabaseService.pushOrderAtomic(order, deductions);
+        if (result['ok'] == true) {
+          order.isSynced = true;
+          if (result['ticketNo'] != null && result['ticketNo'].toString().isNotEmpty) {
+            order.ticketNo = result['ticketNo'].toString();
           }
-        } catch (e) {
-          print('Error pushing order: $e');
+          await localStorage.addOrder(order);
+          await localStorage.removePendingOrder(order.id);
         }
       }
 
-      // 4. Push offline restocks
       final pendingRestocks = localStorage.getPendingRestocks();
       for (final restock in pendingRestocks) {
-        try {
-          final ok = await supabaseService.pushRestockAtomic(restock);
-          if (ok) {
-            restock.isSynced = true;
-            await localStorage.removePendingRestock(restock.id);
-          }
-        } catch (e) {
-          print('Error pushing restock: $e');
+        final ok = await supabaseService.pushRestockAtomic(restock);
+        if (ok) {
+          restock.isSynced = true;
+          await localStorage.removePendingRestock(restock.id);
         }
       }
 
-      // 5. Push offline void requests
       final pendingVoids = localStorage.getPendingVoidRequests();
       for (final voidReq in pendingVoids) {
-        try {
-          final ok = await supabaseService.pushVoidRequest(voidReq);
-          if (ok) {
-            voidReq.isSynced = true;
-            await localStorage.removePendingVoidRequest(voidReq.id);
-          }
-        } catch (e) {
-          print('Error pushing void request: $e');
+        final ok = await supabaseService.pushVoidRequest(voidReq);
+        if (ok) {
+          voidReq.isSynced = true;
+          await localStorage.removePendingVoidRequest(voidReq.id);
         }
       }
 
-      status = SyncStatus.success;
-      lastSyncTime = DateTime.now();
+      // 2. Pull authoritative centralized store from Admin API (/api/sync)
+      final fullStore = await supabaseService.fetchFullStore();
+      if (fullStore != null) {
+        if (fullStore['menu'] is List) {
+          final freshMenu = (fullStore['menu'] as List)
+              .whereType<Map>()
+              .map((e) => MenuItem.fromJson(Map<String, dynamic>.from(e)))
+              .toList();
+          await localStorage.saveMenu(freshMenu);
+        }
+
+        if (fullStore['categories'] is List) {
+          final freshCategories = (fullStore['categories'] as List)
+              .map((e) => e.toString())
+              .toList();
+          await localStorage.saveCategories(freshCategories);
+        }
+
+        if (fullStore['inventory'] is List) {
+          final freshInventory = (fullStore['inventory'] as List)
+              .whereType<Map>()
+              .map((e) => InventoryItem.fromJson(Map<String, dynamic>.from(e)))
+              .toList();
+          await localStorage.saveInventory(freshInventory);
+        }
+
+        if (fullStore['users'] is List) {
+          final freshStaff = (fullStore['users'] as List)
+              .whereType<Map>()
+              .map((e) => StaffUser.fromJson(Map<String, dynamic>.from(e)))
+              .toList();
+          await localStorage.saveStaff(freshStaff);
+        }
+
+        if (fullStore['restocks'] is List) {
+          final freshRestocks = (fullStore['restocks'] as List)
+              .whereType<Map>()
+              .map((e) {
+                final map = Map<String, dynamic>.from(e);
+                map['isSynced'] = true;
+                return RestockRecord.fromJson(map);
+              })
+              .toList();
+          await localStorage.saveRestocks(freshRestocks);
+        }
+
+        if (fullStore['orders'] is List) {
+          final freshOrders = (fullStore['orders'] as List)
+              .whereType<Map>()
+              .map((e) {
+                final map = Map<String, dynamic>.from(e);
+                map['isSynced'] = true;
+                return Order.fromJson(map);
+              })
+              .toList();
+          await localStorage.saveOrders(freshOrders);
+        }
+
+        if (fullStore['voidRequests'] is List) {
+          final freshVoids = (fullStore['voidRequests'] as List)
+              .whereType<Map>()
+              .map((e) {
+                final map = Map<String, dynamic>.from(e);
+                map['isSynced'] = true;
+                return VoidRequest.fromJson(map);
+              })
+              .toList();
+          await localStorage.saveVoidRequests(freshVoids);
+        }
+
+        if (fullStore['loginActivity'] is List) {
+          final freshLogs = (fullStore['loginActivity'] as List)
+              .whereType<Map>()
+              .map((e) {
+                final map = Map<String, dynamic>.from(e);
+                map['isSynced'] = true;
+                return LoginActivity.fromJson(map);
+              })
+              .toList();
+          await localStorage.saveLoginActivity(freshLogs);
+        }
+
+        await localStorage.saveRecipesData({
+          'recipes': fullStore['recipes'] ?? {},
+          'recipeCostings': fullStore['recipeCostings'] ?? [],
+          'costings': fullStore['costings'] ?? [],
+          'usageLogs': fullStore['usageLogs'] ?? [],
+        });
+
+        status = SyncStatus.success;
+        isOnline = true;
+        lastSyncTime = DateTime.now();
+        onSyncCompleted?.call();
+      } else {
+        // Fallback to direct Supabase table queries if configured
+        final freshMenu = await supabaseService.fetchMenu();
+        if (freshMenu != null) await localStorage.saveMenu(freshMenu);
+
+        final freshCategories = await supabaseService.fetchCategories();
+        if (freshCategories != null) await localStorage.saveCategories(freshCategories);
+
+        final freshInventory = await supabaseService.fetchInventory();
+        if (freshInventory != null) await localStorage.saveInventory(freshInventory);
+
+        final freshStaff = await supabaseService.fetchStaff();
+        if (freshStaff != null) await localStorage.saveStaff(freshStaff);
+
+        final freshRestocks = await supabaseService.fetchRestocks();
+        if (freshRestocks != null) await localStorage.saveRestocks(freshRestocks);
+
+        final freshOrders = await supabaseService.fetchRecentOrders();
+        if (freshOrders != null) await localStorage.saveOrders(freshOrders);
+
+        if (freshMenu != null || freshInventory != null) {
+          status = SyncStatus.success;
+          lastSyncTime = DateTime.now();
+          onSyncCompleted?.call();
+        } else {
+          status = SyncStatus.idle;
+        }
+      }
     } catch (e) {
-      print('Sync failed: $e');
+      debugPrint('Sync warning: $e');
       status = SyncStatus.error;
       lastError = e.toString();
     } finally {
@@ -185,65 +254,151 @@ class SyncService extends ChangeNotifier {
     }
   }
 
-  List<Map<String, dynamic>> _buildDeductionsForOrder(Order order) {
+  /// Dynamically calculates ingredient deductions based strictly on Admin recipes, recipeCostings, costings, and addons
+  List<Map<String, dynamic>> buildDeductionsForOrder(Order order) {
     final deductions = <Map<String, dynamic>>[];
     final inventory = localStorage.getInventory();
+    final recipesData = localStorage.getRecipesData();
+    final menu = localStorage.getMenu();
 
-    // Automatic default standard deductions for coffee drinks
-    for (final item in order.items) {
-      final name = item.name.toLowerCase();
-      if (name.contains('espresso') || name.contains('latte') || name.contains('cappuccino') || name.contains('americano')) {
-        final beans = inventory.cast<dynamic>().firstWhere((i) => i.id == 'coffee-beans', orElse: () => null);
-        if (beans != null) {
-          deductions.add({
-            'inventoryItemId': beans.id,
-            'itemName': beans.name,
-            'amount': 18.0 * item.qty,
-            'unit': 'g',
-            'orderItemId': item.productId,
-          });
+    final recipeCostings = (recipesData['recipeCostings'] is List)
+        ? (recipesData['recipeCostings'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+        : <Map<String, dynamic>>[];
+    final recipesMap = (recipesData['recipes'] is Map)
+        ? Map<String, dynamic>.from(recipesData['recipes'] as Map)
+        : <String, dynamic>{};
+    final costings = (recipesData['costings'] is List)
+        ? (recipesData['costings'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+        : <Map<String, dynamic>>[];
+
+    for (final line in order.items) {
+      final menuItem = menu.where((m) => m.id == line.productId || m.name.toLowerCase() == line.name.toLowerCase()).firstOrNull;
+      final itemName = (menuItem?.name ?? line.name).trim();
+
+      // 1. Check recipeCostings
+      Map<String, dynamic>? matchedCosting;
+      for (final rc in recipeCostings) {
+        final menuItems = (rc['menuItems'] is List) ? (rc['menuItems'] as List).map((e) => e.toString().trim().toLowerCase()).toList() : <String>[];
+        if (menuItems.contains(itemName.toLowerCase()) || menuItems.contains(line.name.trim().toLowerCase())) {
+          matchedCosting = rc;
+          break;
         }
       }
 
-      if (name.contains('latte') || name.contains('cappuccino') || name.contains('flat white')) {
-        final milk = inventory.cast<dynamic>().firstWhere((i) => i.id == 'milk', orElse: () => null);
-        if (milk != null) {
-          deductions.add({
-            'inventoryItemId': milk.id,
-            'itemName': milk.name,
-            'amount': 180.0 * item.qty,
-            'unit': 'ml',
-            'orderItemId': item.productId,
-          });
+      if (matchedCosting != null) {
+        if (matchedCosting['ingredients'] is List) {
+          for (final rawIng in (matchedCosting['ingredients'] as List)) {
+            if (rawIng is Map) {
+              final ingId = rawIng['inventoryItemId']?.toString() ?? '';
+              final ingName = rawIng['name']?.toString() ?? '';
+              final amount = (rawIng['amount'] as num?)?.toDouble() ?? 0.0;
+              final unit = rawIng['unit']?.toString() ?? 'pcs';
+              if (amount > 0) {
+                final stockItem = inventory.where((i) => i.id == ingId || i.name.toLowerCase() == ingName.toLowerCase()).firstOrNull;
+                if (stockItem != null) {
+                  deductions.add({
+                    'inventoryItemId': stockItem.id,
+                    'itemName': stockItem.name,
+                    'amount': amount * line.qty,
+                    'unit': unit,
+                    'orderItemId': line.productId,
+                  });
+                }
+              }
+            }
+          }
+        }
+        // Cup from recipeCosting
+        final cupId = line.style == 'hot'
+            ? matchedCosting['hotCupInventoryItemId']?.toString()
+            : line.style == 'iced'
+                ? matchedCosting['icedCupInventoryItemId']?.toString()
+                : matchedCosting['otherCupInventoryItemId']?.toString();
+        if (cupId != null && cupId.isNotEmpty) {
+          final cupStock = inventory.where((i) => i.id == cupId).firstOrNull;
+          if (cupStock != null) {
+            deductions.add({
+              'inventoryItemId': cupStock.id,
+              'itemName': cupStock.name,
+              'amount': 1.0 * line.qty,
+              'unit': cupStock.unit,
+              'orderItemId': line.productId,
+            });
+          }
+        }
+      } else {
+        // 2. Check recipes map
+        final recipeList = recipesMap[line.productId] ?? recipesMap[itemName];
+        if (recipeList is List) {
+          for (final rawIng in recipeList) {
+            if (rawIng is Map) {
+              final ingId = rawIng['inventoryItemId']?.toString() ?? '';
+              final ingName = rawIng['name']?.toString() ?? '';
+              final amount = (rawIng['amount'] as num?)?.toDouble() ?? 0.0;
+              final unit = rawIng['unit']?.toString() ?? 'pcs';
+              if (amount > 0) {
+                final stockItem = inventory.where((i) => i.id == ingId || i.name.toLowerCase() == ingName.toLowerCase()).firstOrNull;
+                if (stockItem != null) {
+                  deductions.add({
+                    'inventoryItemId': stockItem.id,
+                    'itemName': stockItem.name,
+                    'amount': amount * line.qty,
+                    'unit': unit,
+                    'orderItemId': line.productId,
+                  });
+                }
+              }
+            }
+          }
+        } else {
+          // 3. Check costings
+          for (final c in costings) {
+            if ((c['productName']?.toString() ?? '').trim().toLowerCase() == itemName.toLowerCase() && c['ingredients'] is List) {
+              for (final rawIng in (c['ingredients'] as List)) {
+                if (rawIng is Map) {
+                  final ingName = rawIng['name']?.toString() ?? '';
+                  final packAmount = (rawIng['amount'] as num?)?.toDouble() ?? 0.0;
+                  final outputCups = (rawIng['outputCups'] as num?)?.toDouble() ?? 0.0;
+                  final perCup = outputCups > 0 ? (packAmount / outputCups) : packAmount;
+                  if (perCup > 0) {
+                    final stockItem = inventory.where((i) => i.name.toLowerCase() == ingName.toLowerCase()).firstOrNull;
+                    if (stockItem != null) {
+                      deductions.add({
+                        'inventoryItemId': stockItem.id,
+                        'itemName': stockItem.name,
+                        'amount': perCup * line.qty,
+                        'unit': rawIng['unit']?.toString() ?? stockItem.unit,
+                        'orderItemId': line.productId,
+                      });
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
 
-      if (name.contains('matcha')) {
-        final matcha = inventory.cast<dynamic>().firstWhere((i) => i.id == 'matcha-powder', orElse: () => null);
-        if (matcha != null) {
-          deductions.add({
-            'inventoryItemId': matcha.id,
-            'itemName': matcha.name,
-            'amount': 10.0 * item.qty,
-            'unit': 'g',
-            'orderItemId': item.productId,
-          });
+      // 4. Addon inventory deductions configured in Admin
+      for (final addon in line.addons) {
+        if (addon.inventoryItemId != null && addon.inventoryItemId!.isNotEmpty) {
+          final stockItem = inventory.where((i) => i.id == addon.inventoryItemId).firstOrNull;
+          if (stockItem != null) {
+            final usagePerAddon = (addon.usageAmount != null && addon.usageAmount! > 0)
+                ? addon.usageAmount!
+                : (stockItem.cupUsageAmount != null && stockItem.cupUsageAmount! > 0 ? stockItem.cupUsageAmount! : 1.0);
+            deductions.add({
+              'inventoryItemId': stockItem.id,
+              'itemName': stockItem.name,
+              'amount': usagePerAddon * addon.qty * line.qty,
+              'unit': addon.usageUnit ?? stockItem.unit,
+              'orderItemId': line.productId,
+            });
+          }
         }
-      }
-
-      // Cup deduction
-      final cupId = item.style == 'hot' ? 'cups-hot' : 'cups-peta';
-      final cup = inventory.cast<dynamic>().firstWhere((i) => i.id == cupId, orElse: () => null);
-      if (cup != null) {
-        deductions.add({
-          'inventoryItemId': cup.id,
-          'itemName': cup.name,
-          'amount': 1.0 * item.qty,
-          'unit': 'pcs',
-          'orderItemId': item.productId,
-        });
       }
     }
+
     return deductions;
   }
 }

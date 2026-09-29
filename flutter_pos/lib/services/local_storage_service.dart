@@ -10,26 +10,30 @@ import '../models/login_activity.dart';
 import '../models/print_job.dart';
 
 class LocalStorageService {
-  static const String _keyMenu = 'cache_menu_items';
-  static const String _keyCategories = 'cache_categories';
-  static const String _keyInventory = 'cache_inventory';
-  static const String _keyOrders = 'cache_orders';
-  static const String _keyStaff = 'cache_staff_users';
-  static const String _keyVoidRequests = 'cache_void_requests';
-  static const String _keyRestocks = 'cache_restocks';
-  static const String _keyLoginActivity = 'cache_login_activity';
-  static const String _keyPrintJobs = 'cache_print_jobs';
-  static const String _keyPosOpen = 'cache_pos_is_open';
-  static const String _keyPosOpenedBy = 'cache_pos_opened_by';
-  static const String _keyPosOpenedAt = 'cache_pos_opened_at';
+  // Versioned cache keys so legacy hardcoded seed data is never loaded
+  static const String _keyMenu = 'v2_cache_menu_items';
+  static const String _keyCategories = 'v2_cache_categories';
+  static const String _keyInventory = 'v2_cache_inventory';
+  static const String _keyOrders = 'v2_cache_orders';
+  static const String _keyStaff = 'v2_cache_staff_users';
+  static const String _keyVoidRequests = 'v2_cache_void_requests';
+  static const String _keyRestocks = 'v2_cache_restocks';
+  static const String _keyLoginActivity = 'v2_cache_login_activity';
+  static const String _keyPrintJobs = 'v2_cache_print_jobs';
+  static const String _keyRecipesData = 'v2_cache_recipes_data';
+  static const String _keyPosOpen = 'v2_cache_pos_is_open';
+  static const String _keyPosOpenedBy = 'v2_cache_pos_opened_by';
+  static const String _keyPosOpenedAt = 'v2_cache_pos_opened_at';
 
-  // Offline Queues
-  static const String _queueOrders = 'offline_queue_orders';
-  static const String _queueRestocks = 'offline_queue_restocks';
-  static const String _queueVoidRequests = 'offline_queue_void_requests';
-  static const String _queueLoginActivity = 'offline_queue_login_activity';
+  // Offline Queues (v2)
+  static const String _queueOrders = 'v2_offline_queue_orders';
+  static const String _queueRestocks = 'v2_offline_queue_restocks';
+  static const String _queueVoidRequests = 'v2_offline_queue_void_requests';
+  static const String _queueLoginActivity = 'v2_offline_queue_login_activity';
+
   static const String _keySupabaseUrl = 'supabase_url';
   static const String _keySupabaseAnonKey = 'supabase_anon_key';
+  static const String _keyAdminApiUrl = 'admin_api_url';
 
   late SharedPreferences _prefs;
 
@@ -37,13 +41,21 @@ class LocalStorageService {
     _prefs = await SharedPreferences.getInstance();
   }
 
-  // --- Supabase Config ---
+  // --- Connection Config ---
   String? getSupabaseUrl() => _prefs.getString(_keySupabaseUrl);
   String? getSupabaseAnonKey() => _prefs.getString(_keySupabaseAnonKey);
+  String? getAdminApiUrl() => _prefs.getString(_keyAdminApiUrl);
 
-  Future<void> setSupabaseConfig(String url, String anonKey) async {
+  Future<void> setSupabaseConfig(String url, String anonKey, {String? adminApiUrl}) async {
     await _prefs.setString(_keySupabaseUrl, url);
     await _prefs.setString(_keySupabaseAnonKey, anonKey);
+    if (adminApiUrl != null) {
+      await _prefs.setString(_keyAdminApiUrl, adminApiUrl);
+    }
+  }
+
+  Future<void> setAdminApiUrl(String adminApiUrl) async {
+    await _prefs.setString(_keyAdminApiUrl, adminApiUrl);
   }
 
   // --- POS State ---
@@ -68,28 +80,28 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => MenuItem.fromJson(e as Map<String, dynamic>)).toList();
+      return list.map((e) => MenuItem.fromJson(Map<String, dynamic>.from(e as Map))).toList();
     } catch (_) {
       return [];
     }
   }
 
-  // --- Categories Cache ---
+  // --- Categories Cache (Strictly dynamic from Admin) ---
   Future<void> saveCategories(List<String> categories) async {
-    await _prefs.setStringList(_keyCategories, categories);
+    final normalized = <String>['All'];
+    for (final c in categories) {
+      final trimmed = c.trim();
+      if (trimmed.isNotEmpty &&
+          trimmed.toLowerCase() != 'all' &&
+          !normalized.any((existing) => existing.toLowerCase() == trimmed.toLowerCase())) {
+        normalized.add(trimmed);
+      }
+    }
+    await _prefs.setStringList(_keyCategories, normalized);
   }
 
   List<String> getCategories() {
-    return _prefs.getStringList(_keyCategories) ?? [
-      "All",
-      "Special",
-      "Classic",
-      "Non-Coffee",
-      "Fresh Drinks",
-      "Matcha Drinks",
-      "Food",
-      "Pastries",
-    ];
+    return _prefs.getStringList(_keyCategories) ?? ['All'];
   }
 
   // --- Inventory Cache ---
@@ -103,9 +115,24 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => InventoryItem.fromJson(e as Map<String, dynamic>)).toList();
+      return list.map((e) => InventoryItem.fromJson(Map<String, dynamic>.from(e as Map))).toList();
     } catch (_) {
       return [];
+    }
+  }
+
+  // --- Recipes, RecipeCostings, Costings & UsageLogs Cache ---
+  Future<void> saveRecipesData(Map<String, dynamic> data) async {
+    await _prefs.setString(_keyRecipesData, jsonEncode(data));
+  }
+
+  Map<String, dynamic> getRecipesData() {
+    final raw = _prefs.getString(_keyRecipesData);
+    if (raw == null) return {};
+    try {
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return {};
     }
   }
 
@@ -120,7 +147,7 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => Order.fromJson(e as Map<String, dynamic>)).toList();
+      return list.map((e) => Order.fromJson(Map<String, dynamic>.from(e as Map))).toList();
     } catch (_) {
       return [];
     }
@@ -150,7 +177,7 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => Order.fromJson(e as Map<String, dynamic>)).toList();
+      return list.map((e) => Order.fromJson(Map<String, dynamic>.from(e as Map))).toList();
     } catch (_) {
       return [];
     }
@@ -172,7 +199,7 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => RestockRecord.fromJson(e as Map<String, dynamic>)).toList();
+      return list.map((e) => RestockRecord.fromJson(Map<String, dynamic>.from(e as Map))).toList();
     } catch (_) {
       return [];
     }
@@ -197,7 +224,7 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => RestockRecord.fromJson(e as Map<String, dynamic>)).toList();
+      return list.map((e) => RestockRecord.fromJson(Map<String, dynamic>.from(e as Map))).toList();
     } catch (_) {
       return [];
     }
@@ -219,7 +246,7 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => VoidRequest.fromJson(e as Map<String, dynamic>)).toList();
+      return list.map((e) => VoidRequest.fromJson(Map<String, dynamic>.from(e as Map))).toList();
     } catch (_) {
       return [];
     }
@@ -244,7 +271,7 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => VoidRequest.fromJson(e as Map<String, dynamic>)).toList();
+      return list.map((e) => VoidRequest.fromJson(Map<String, dynamic>.from(e as Map))).toList();
     } catch (_) {
       return [];
     }
@@ -266,7 +293,7 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => StaffUser.fromJson(e as Map<String, dynamic>)).toList();
+      return list.map((e) => StaffUser.fromJson(Map<String, dynamic>.from(e as Map))).toList();
     } catch (_) {
       return [];
     }
@@ -282,7 +309,7 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => LoginActivity.fromJson(e as Map<String, dynamic>)).toList();
+      return list.map((e) => LoginActivity.fromJson(Map<String, dynamic>.from(e as Map))).toList();
     } catch (_) {
       return [];
     }
@@ -290,11 +317,13 @@ class LocalStorageService {
 
   Future<void> addLoginActivity(LoginActivity activity) async {
     final list = getLoginActivity();
+    list.removeWhere((l) => l.id == activity.id);
     list.insert(0, activity);
     await saveLoginActivity(list);
 
     if (!activity.isSynced) {
       final queue = getPendingLoginActivity();
+      queue.removeWhere((l) => l.id == activity.id);
       queue.add(activity);
       await _prefs.setString(_queueLoginActivity, jsonEncode(queue.map((l) => l.toJson()).toList()));
     }
@@ -305,7 +334,7 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => LoginActivity.fromJson(e as Map<String, dynamic>)).toList();
+      return list.map((e) => LoginActivity.fromJson(Map<String, dynamic>.from(e as Map))).toList();
     } catch (_) {
       return [];
     }
@@ -327,7 +356,7 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => PrintJob.fromJson(e as Map<String, dynamic>)).toList();
+      return list.map((e) => PrintJob.fromJson(Map<String, dynamic>.from(e as Map))).toList();
     } catch (_) {
       return [];
     }
@@ -338,5 +367,12 @@ class LocalStorageService {
         getPendingRestocks().length +
         getPendingVoidRequests().length +
         getPendingLoginActivity().length;
+  }
+
+  Future<void> clearPendingQueues() async {
+    await _prefs.remove(_queueOrders);
+    await _prefs.remove(_queueRestocks);
+    await _prefs.remove(_queueVoidRequests);
+    await _prefs.remove(_queueLoginActivity);
   }
 }

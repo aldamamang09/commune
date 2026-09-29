@@ -91,15 +91,7 @@ export function supabaseAdmin() {
   });
 }
 
-const DEFAULT_INVENTORY: InventoryItem[] = [
-  { id: "coffee-beans", name: "Coffee Beans", unit: "g", cost: 1.2, stock: 5000, maxStock: 10000, openingStock: 5000 },
-  { id: "milk", name: "Fresh Milk", unit: "ml", cost: 0.1, stock: 10000, maxStock: 20000, openingStock: 10000 },
-  { id: "sugar", name: "Sugar Syrup", unit: "ml", cost: 0.05, stock: 3000, maxStock: 5000, openingStock: 3000 },
-  { id: "matcha-powder", name: "Matcha Powder", unit: "g", cost: 2.5, stock: 1000, maxStock: 2000, openingStock: 1000 },
-  { id: "cups-hot", name: "Hot Cups 8oz", unit: "pcs", cost: 5, stock: 500, maxStock: 1000, openingStock: 500 },
-  { id: "cups-peta", name: "Iced Cups 16oz", unit: "pcs", cost: 6, stock: 500, maxStock: 1000, openingStock: 500 },
-  { id: "cups-daba", name: "Iced Cups 22oz", unit: "pcs", cost: 7, stock: 500, maxStock: 1000, openingStock: 500 },
-];
+const DEFAULT_INVENTORY: InventoryItem[] = [];
 
 const DEFAULT_RECIPES: Record<string, RecipeIngredient[]> = {};
 

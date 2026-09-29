@@ -2,24 +2,34 @@ class MenuAddon {
   final String id;
   final String name;
   final double price;
+  final bool qtyEnabled;
   final int maxQty;
   final String? inventoryItemId;
+  final double? usageAmount;
+  final String? usageUnit;
 
   const MenuAddon({
     required this.id,
     required this.name,
     required this.price,
+    this.qtyEnabled = false,
     this.maxQty = 9,
     this.inventoryItemId,
+    this.usageAmount,
+    this.usageUnit,
   });
 
   factory MenuAddon.fromJson(Map<String, dynamic> json) {
+    final qtyEnabled = json['qtyEnabled'] == true || json['qty_enabled'] == true;
     return MenuAddon(
       id: json['id'] as String? ?? json['name'] as String? ?? 'addon',
       name: json['name'] as String? ?? '',
       price: (json['price'] as num?)?.toDouble() ?? 0.0,
+      qtyEnabled: qtyEnabled,
       maxQty: (json['maxQty'] as num?)?.toInt() ?? 9,
-      inventoryItemId: json['inventoryItemId'] as String?,
+      inventoryItemId: json['inventoryItemId'] as String? ?? json['inventory_item_id'] as String?,
+      usageAmount: (json['usageAmount'] as num?)?.toDouble() ?? (json['usage_amount'] as num?)?.toDouble(),
+      usageUnit: json['usageUnit'] as String? ?? json['usage_unit'] as String?,
     );
   }
 
@@ -27,8 +37,11 @@ class MenuAddon {
     'id': id,
     'name': name,
     'price': price,
+    'qtyEnabled': qtyEnabled,
     'maxQty': maxQty,
     if (inventoryItemId != null) 'inventoryItemId': inventoryItemId,
+    if (usageAmount != null) 'usageAmount': usageAmount,
+    if (usageUnit != null) 'usageUnit': usageUnit,
   };
 }
 
@@ -49,38 +62,84 @@ class MenuItem {
     required this.category,
     required this.image,
     this.available = true,
-    this.styles = const ['hot', 'iced'],
+    this.styles = const [],
     this.addons = const [],
   });
 
-  bool get isDrink => !RegExp(r'food|pastr', caseSensitive: false).hasMatch(category);
+  bool get isDrink => !RegExp(r'^\s*(food|pastr)', caseSensitive: false).hasMatch(category);
+
+  static Map<String, dynamic> _parseLegacyImageOptions(String rawImage) {
+    final parts = rawImage.split('#');
+    final cleanImage = parts.first.isNotEmpty ? parts.first : '/images/drinks.jpg';
+    final fragment = parts.length > 1 ? parts.sublist(1).join('#') : '';
+    final styles = <String>[];
+    final addons = <MenuAddon>[];
+
+    if (fragment.isNotEmpty) {
+      try {
+        final params = Uri.splitQueryString(fragment);
+        final stylesParam = params['styles'];
+        if (stylesParam != null && stylesParam.isNotEmpty) {
+          for (final s in stylesParam.split(',')) {
+            final clean = s.trim().toLowerCase();
+            if ((clean == 'hot' || clean == 'iced') && !styles.contains(clean)) {
+              styles.add(clean);
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    return {
+      'image': cleanImage,
+      'styles': styles,
+      'addons': addons,
+    };
+  }
 
   factory MenuItem.fromJson(Map<String, dynamic> json) {
+    final rawImage = json['image'] as String? ?? '/images/drinks.jpg';
+    final legacy = _parseLegacyImageOptions(rawImage);
+    final category = json['category'] as String? ?? 'Other';
+    final isFoodOrPastry = RegExp(r'^\s*(food|pastr)', caseSensitive: false).hasMatch(category);
+
     List<String> parsedStyles = [];
     if (json['styles'] is List) {
-      parsedStyles = (json['styles'] as List)
-          .map((e) => e.toString().toLowerCase())
-          .where((e) => e == 'hot' || e == 'iced')
-          .toList();
+      for (final e in (json['styles'] as List)) {
+        final s = e.toString().trim().toLowerCase();
+        if ((s == 'hot' || s == 'iced') && !parsedStyles.contains(s)) {
+          parsedStyles.add(s);
+        }
+      }
     }
-    if (parsedStyles.isEmpty && !RegExp(r'food|pastr', caseSensitive: false).hasMatch(json['category']?.toString() ?? '')) {
+    if (parsedStyles.isEmpty && (legacy['styles'] as List<String>).isNotEmpty) {
+      parsedStyles = List<String>.from(legacy['styles'] as List<String>);
+    }
+    if (isFoodOrPastry) {
+      parsedStyles = [];
+    } else if (parsedStyles.isEmpty) {
       parsedStyles = ['hot', 'iced'];
     }
 
+    // Strictly parse ONLY addons configured in the Admin panel (never fallback to hardcoded addons)
     List<MenuAddon> parsedAddons = [];
     if (json['addons'] is List) {
-      parsedAddons = (json['addons'] as List)
-          .whereType<Map<String, dynamic>>()
-          .map((e) => MenuAddon.fromJson(e))
-          .toList();
+      for (final item in (json['addons'] as List)) {
+        if (item is Map) {
+          final addon = MenuAddon.fromJson(Map<String, dynamic>.from(item));
+          if (addon.name.trim().isNotEmpty) {
+            parsedAddons.add(addon);
+          }
+        }
+      }
     }
 
     return MenuItem(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? 'Unnamed Item',
       price: (json['price'] as num?)?.toDouble() ?? 0.0,
-      category: json['category'] as String? ?? 'Other',
-      image: json['image'] as String? ?? '/images/drinks.jpg',
+      category: category,
+      image: legacy['image'] as String,
       available: json['available'] != false,
       styles: parsedStyles,
       addons: parsedAddons,

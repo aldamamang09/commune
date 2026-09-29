@@ -1,4 +1,8 @@
 {
   "name": "Commune Coffee",
-  "description": "Commune Coffee POS & Menu application with real-time ordering, inventory, and staff management."
+  "description": "Commune Coffee POS & Menu application with real-time ordering, inventory, and staff management.",
+  "requestFramePermissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
