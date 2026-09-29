@@ -3,7 +3,7 @@ import 'package:intl/intl.dart';
 import '../../state/pos_controller.dart';
 import '../theme.dart';
 
-class CartPanel extends StatelessWidget {
+class CartPanel extends StatefulWidget {
   final PosController controller;
   final VoidCallback onProceedOrder;
   final VoidCallback onVoid;
@@ -18,350 +18,536 @@ class CartPanel extends StatelessWidget {
   });
 
   @override
+  State<CartPanel> createState() => _CartPanelState();
+}
+
+class _CartPanelState extends State<CartPanel> {
+  final TextEditingController _amountController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _amountController.text = widget.controller.tenderedAmount > 0
+        ? widget.controller.tenderedAmount.toInt().toString()
+        : '0';
+  }
+
+  @override
+  void didUpdateWidget(covariant CartPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.controller.paymentMethod != 'cash') {
+      _amountController.text = widget.controller.total.toInt().toString();
+    }
+  }
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final currency = NumberFormat('#,##0.00', 'en_PH');
+    final controller = widget.controller;
+    final currency = NumberFormat('#,##0', 'en_PH');
 
     return Container(
-      width: 380,
+      width: 360,
       decoration: const BoxDecoration(
         color: Colors.white,
-        border: Border(left: BorderSide(color: CommuneTheme.border)),
+        border: Border(
+          left: BorderSide(color: Color(0xFFE5E7EB), width: 1),
+        ),
       ),
       child: Column(
         children: [
-          // Header
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          // Header: Checkout
+          const Padding(
+            padding: EdgeInsets.only(top: 20, bottom: 16),
+            child: Text(
+              'Checkout',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF111827),
+                letterSpacing: -0.4,
+              ),
+            ),
+          ),
+
+          // Table Column Headers: NAME | QTY | PRICE
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    const Icon(Icons.shopping_bag_outlined, size: 20, color: CommuneTheme.primary),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Current Order',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: CommuneTheme.textMain),
+                Expanded(
+                  flex: 5,
+                  child: Text(
+                    'NAME',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF9CA3AF),
+                      letterSpacing: 0.5,
                     ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEAEAEA),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        '${controller.cart.fold(0, (sum, i) => sum + i.qty)}',
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                ),
-                if (controller.cart.isNotEmpty)
-                  TextButton(
-                    onPressed: controller.clearCart,
-                    style: TextButton.styleFrom(
-                      foregroundColor: CommuneTheme.textMuted,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                    ),
-                    child: const Text('Clear', style: TextStyle(fontSize: 12)),
                   ),
+                ),
+                Expanded(
+                  flex: 3,
+                  child: Text(
+                    'QTY',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF9CA3AF),
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 3,
+                  child: Text(
+                    'PRICE',
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF9CA3AF),
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
-          const Divider(),
+          const Divider(height: 1),
 
           // Cart Items List
           Expanded(
             child: controller.cart.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.coffee_outlined, size: 48, color: Colors.grey.shade300),
-                        const SizedBox(height: 12),
-                        const Text('No items in cart', style: TextStyle(color: CommuneTheme.textMuted, fontSize: 14)),
-                        const SizedBox(height: 4),
-                        const Text('Select drinks or food from the menu', style: TextStyle(color: Colors.grey, fontSize: 11)),
-                      ],
+                ? const Center(
+                    child: Text(
+                      'No items yet.',
+                      style: TextStyle(
+                        color: Color(0xFF9CA3AF),
+                        fontSize: 13,
+                      ),
                     ),
                   )
                 : ListView.separated(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     itemCount: controller.cart.length,
                     separatorBuilder: (_, __) => const Divider(height: 12),
                     itemBuilder: (context, index) {
                       final item = controller.cart[index];
                       return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
+                          // Name & options
                           Expanded(
+                            flex: 5,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
                                   item.name,
-                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: CommuneTheme.textMain),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                    color: Color(0xFF111827),
+                                  ),
                                 ),
                                 if (item.optionsSummary.isNotEmpty) ...[
                                   const SizedBox(height: 2),
                                   Text(
                                     item.optionsSummary,
-                                    style: const TextStyle(fontSize: 11, color: CommuneTheme.textMuted),
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: Color(0xFF6B7280),
+                                    ),
                                   ),
                                 ],
-                                const SizedBox(height: 4),
-                                Text(
-                                  '₱${currency.format(item.unitPrice)} each',
-                                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                              ],
+                            ),
+                          ),
+
+                          // Qty adjustment
+                          Expanded(
+                            flex: 3,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                InkWell(
+                                  onTap: () => controller.updateCartQty(index, item.qty - 1),
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: Container(
+                                    width: 22,
+                                    height: 22,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF3F4F6),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Center(
+                                      child: Icon(Icons.remove, size: 12, color: Colors.black82),
+                                    ),
+                                  ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                                  child: Text(
+                                    '${item.qty}',
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                  ),
+                                ),
+                                InkWell(
+                                  onTap: () => controller.updateCartQty(index, item.qty + 1),
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: Container(
+                                    width: 22,
+                                    height: 22,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF3F4F6),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Center(
+                                      child: Icon(Icons.add, size: 12, color: Colors.black82),
+                                    ),
+                                  ),
                                 ),
                               ],
                             ),
                           ),
-                          Row(
-                            children: [
-                              IconButton(
-                                onPressed: () => controller.updateCartQty(index, item.qty - 1),
-                                icon: const Icon(Icons.remove, size: 14),
-                                constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-                                style: IconButton.styleFrom(
-                                  backgroundColor: const Color(0xFFF1F1F1),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                                  padding: EdgeInsets.zero,
-                                ),
+
+                          // Price
+                          Expanded(
+                            flex: 3,
+                            child: Text(
+                              '₱${currency.format(item.lineTotal)}',
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                                color: Color(0xFF111827),
                               ),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 8),
-                                child: Text('${item.qty}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                              ),
-                              IconButton(
-                                onPressed: () => controller.updateCartQty(index, item.qty + 1),
-                                icon: const Icon(Icons.add, size: 14),
-                                constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-                                style: IconButton.styleFrom(
-                                  backgroundColor: const Color(0xFFF1F1F1),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                                  padding: EdgeInsets.zero,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(width: 12),
-                          Text(
-                            '₱${currency.format(item.lineTotal)}',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
                           ),
                         ],
                       );
                     },
                   ),
           ),
-          const Divider(),
 
-          // Calculation Summary
+          // Bottom Controls & Checkout Form
           Container(
-            padding: const EdgeInsets.all(16),
-            color: const Color(0xFFFAFAFA),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Color(0xFFE5E7EB))),
+            ),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Subtotal', style: TextStyle(fontSize: 12, color: CommuneTheme.textMuted)),
-                    Text('₱${currency.format(controller.subtotal)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                  ],
-                ),
-                if (controller.discountAmount > 0) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Discount (${controller.promoLabel ?? "Promo"})', style: const TextStyle(fontSize: 12, color: Colors.green)),
-                      Text('-₱${currency.format(controller.discountAmount)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.green)),
-                    ],
+                // "Pay with" label
+                const Text(
+                  'Pay with',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF6B7280),
                   ),
-                ],
+                ),
                 const SizedBox(height: 6),
+
+                // 3 Payment Buttons: Cash, GCash, Maya
+                Row(
+                  children: [
+                    _buildPaymentButton(
+                      label: 'Cash',
+                      isSelected: controller.paymentMethod == 'cash',
+                      onTap: () {
+                        controller.setPaymentMethod('cash');
+                        setState(() {
+                          _amountController.text = controller.tenderedAmount > 0
+                              ? controller.tenderedAmount.toInt().toString()
+                              : '0';
+                        });
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    _buildPaymentButton(
+                      label: 'GCash',
+                      isSelected: controller.paymentMethod == 'gcash',
+                      onTap: () {
+                        controller.setPaymentMethod('gcash');
+                        setState(() {
+                          _amountController.text = controller.total.toInt().toString();
+                        });
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    _buildPaymentButton(
+                      label: 'Maya',
+                      isSelected: controller.paymentMethod == 'maya',
+                      onTap: () {
+                        controller.setPaymentMethod('maya');
+                        setState(() {
+                          _amountController.text = controller.total.toInt().toString();
+                        });
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // Amount row
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Total Due', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: CommuneTheme.primary)),
-                    Text('₱${currency.format(controller.total)}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: CommuneTheme.primary)),
-                  ],
-                ),
-
-                const SizedBox(height: 12),
-                const Divider(),
-                const SizedBox(height: 8),
-
-                // Payment Method Selector Buttons: Cash, GCash, Maya
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'PAYMENT METHOD',
-                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.8, color: CommuneTheme.textMuted),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    // Cash Button
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => controller.setPaymentMethod('cash'),
-                        style: OutlinedButton.styleFrom(
-                          backgroundColor: controller.paymentMethod == 'cash' ? CommuneTheme.primary : Colors.white,
-                          foregroundColor: controller.paymentMethod == 'cash' ? Colors.white : CommuneTheme.textMain,
-                          side: BorderSide(color: controller.paymentMethod == 'cash' ? CommuneTheme.primary : CommuneTheme.border),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                        ),
-                        child: const Text('Cash', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                      ),
+                    const Text(
+                      'Amount',
+                      style: TextStyle(fontSize: 13, color: Color(0xFF374151)),
                     ),
-                    const SizedBox(width: 6),
-                    // GCash Button
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => controller.setPaymentMethod('gcash'),
-                        style: OutlinedButton.styleFrom(
-                          backgroundColor: controller.paymentMethod == 'gcash' ? const Color(0xFF007DFE) : Colors.white,
-                          foregroundColor: controller.paymentMethod == 'gcash' ? Colors.white : const Color(0xFF007DFE),
-                          side: BorderSide(color: controller.paymentMethod == 'gcash' ? const Color(0xFF007DFE) : CommuneTheme.border),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                        ),
-                        child: const Text('GCash', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    // Maya Button
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => controller.setPaymentMethod('maya'),
-                        style: OutlinedButton.styleFrom(
-                          backgroundColor: controller.paymentMethod == 'maya' ? const Color(0xFF00D166) : Colors.white,
-                          foregroundColor: controller.paymentMethod == 'maya' ? Colors.white : const Color(0xFF00A34F),
-                          side: BorderSide(color: controller.paymentMethod == 'maya' ? const Color(0xFF00D166) : CommuneTheme.border),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                        ),
-                        child: const Text('Maya', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                      ),
-                    ),
-                  ],
-                ),
-
-                // Cash presets (500, 1000, 2000) & Tendered amount
-                if (controller.paymentMethod == 'cash') ...[
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [500, 1000, 2000].map((preset) {
-                      return Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 3),
-                          child: InkWell(
-                            onTap: () => controller.setTenderedAmount(preset.toDouble()),
+                    SizedBox(
+                      width: 90,
+                      height: 34,
+                      child: TextField(
+                        controller: _amountController,
+                        keyboardType: TextInputType.number,
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                        decoration: InputDecoration(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 6),
-                              decoration: BoxDecoration(
-                                color: controller.tenderedAmount == preset ? const Color(0xFFE5E7EB) : const Color(0xFFF3F4F6),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: controller.tenderedAmount == preset ? Colors.black : Colors.transparent),
-                              ),
-                              child: Center(
-                                child: Text('₱$preset', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-                              ),
-                            ),
+                            borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(color: Colors.black, width: 1.5),
                           ),
                         ),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Tendered:', style: TextStyle(fontSize: 12, color: CommuneTheme.textMuted)),
-                      Text('₱${currency.format(controller.tenderedAmount)}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Change Due:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: CommuneTheme.primary)),
-                      Text(
-                        '₱${currency.format(controller.change)}',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: controller.tenderedAmount >= controller.total ? Colors.green.shade700 : Colors.red,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-
-                const SizedBox(height: 14),
-
-                // Action Buttons Row: Void, Print, Proceed Order
-                Row(
-                  children: [
-                    // Void button
-                    IconButton(
-                      onPressed: onVoid,
-                      icon: const Icon(Icons.remove_circle_outline, color: CommuneTheme.voidRed),
-                      tooltip: 'Void Order',
-                      style: IconButton.styleFrom(
-                        backgroundColor: const Color(0xFFFFF1F2),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        padding: const EdgeInsets.all(12),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // Print button
-                    IconButton(
-                      onPressed: onPrint,
-                      icon: const Icon(Icons.print_outlined, color: CommuneTheme.primary),
-                      tooltip: 'Reprint / Preview Receipt',
-                      style: IconButton.styleFrom(
-                        backgroundColor: const Color(0xFFF1F1F1),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        padding: const EdgeInsets.all(12),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // Proceed Order button
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: controller.cart.isEmpty || controller.isProcessing ? null : onProceedOrder,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: CommuneTheme.primary,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          disabledBackgroundColor: const Color(0xFFCCCCCC),
-                        ),
-                        child: controller.isProcessing
-                            ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                            : Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Text('Proceed Order', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                  const SizedBox(width: 6),
-                                  const Icon(Icons.arrow_forward, size: 16),
-                                ],
-                              ),
+                        onChanged: (val) {
+                          final parsed = double.tryParse(val) ?? 0;
+                          controller.setTenderedAmount(parsed);
+                        },
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 8),
+
+                // Preset Quick Buttons: Exact, ₱500, ₱1,000, ₱2,000
+                Row(
+                  children: [
+                    _buildPresetPill(
+                      label: 'Exact',
+                      onTap: () {
+                        controller.setTenderedAmount(controller.total);
+                        setState(() {
+                          _amountController.text = controller.total.toInt().toString();
+                        });
+                      },
+                    ),
+                    const SizedBox(width: 6),
+                    _buildPresetPill(
+                      label: '₱500',
+                      onTap: () {
+                        controller.setTenderedAmount(500);
+                        setState(() => _amountController.text = '500');
+                      },
+                    ),
+                    const SizedBox(width: 6),
+                    _buildPresetPill(
+                      label: '₱1,000',
+                      onTap: () {
+                        controller.setTenderedAmount(1000);
+                        setState(() => _amountController.text = '1000');
+                      },
+                    ),
+                    const SizedBox(width: 6),
+                    _buildPresetPill(
+                      label: '₱2,000',
+                      onTap: () {
+                        controller.setTenderedAmount(2000);
+                        setState(() => _amountController.text = '2000');
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // Financial Summary
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Subtotal', style: TextStyle(fontSize: 13, color: Color(0xFF4B5563))),
+                    Text('₱${currency.format(controller.subtotal)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Total',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black),
+                    ),
+                    Text(
+                      '₱${currency.format(controller.total)}',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Change', style: TextStyle(fontSize: 13, color: Color(0xFF4B5563))),
+                    Text('₱${currency.format(controller.change)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // Action Buttons: Print | Void
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: widget.onPrint,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF374151),
+                          side: const BorderSide(color: Color(0xFFD1D5DB)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                        child: const Text('Print', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: widget.onVoid,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF374151),
+                          side: const BorderSide(color: Color(0xFFD1D5DB)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                        child: const Text('Void', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+
+                // Proceed Order Button
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: controller.cart.isEmpty || controller.isProcessing
+                        ? null
+                        : widget.onProceedOrder,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.black,
+                      side: const BorderSide(color: Color(0xFFD1D5DB)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      disabledForegroundColor: const Color(0xFF9CA3AF),
+                    ),
+                    child: controller.isProcessing
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                          )
+                        : const Text(
+                            'Proceed Order',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // Serial port info/error notice (matches Screenshot 4)
+                const Center(
+                  child: Text(
+                    "Failed to execute 'requestPort' on 'Serial': No port selected by the user.",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 10, color: Color(0xFF6B7280)),
+                  ),
                 ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPaymentButton({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.black : Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected ? Colors.black : const Color(0xFFD1D5DB),
+              width: 1,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? Colors.white : const Color(0xFF111827),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPresetPill({
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFD1D5DB)),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF374151),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

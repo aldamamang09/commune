@@ -1,122 +1,104 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../../models/menu_item.dart';
-import '../theme.dart';
 
 class ProductCard extends StatelessWidget {
   final MenuItem item;
+  final bool isSelected;
   final VoidCallback onTap;
 
   const ProductCard({
     super.key,
     required this.item,
+    this.isSelected = false,
     required this.onTap,
   });
 
+  String _buildSubtitle() {
+    if (!item.isDrink) {
+      return '';
+    }
+
+    final hasIced = item.styles.contains('iced') || item.styles.isEmpty;
+    final hasHot = item.styles.contains('hot');
+
+    if (hasIced && hasHot) {
+      return 'Iced / Hot · Add-ons';
+    } else if (hasIced) {
+      // Some drinks like Matcha Umami or Strawberry Whisper show 'Iced' or 'Iced · Add-ons'
+      if (item.category.toLowerCase().contains('matcha') && !item.name.toLowerCase().contains('latte')) {
+        return 'Iced';
+      }
+      if (item.name.toLowerCase().contains('whisper') || item.name.toLowerCase().contains('cloud')) {
+        return 'Iced';
+      }
+      return 'Iced · Add-ons';
+    } else if (hasHot) {
+      return 'Hot · Add-ons';
+    }
+    return 'Add-ons';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final currency = NumberFormat('#,##0', 'en_PH');
+    final subtitle = _buildSubtitle();
 
-    return Card(
-      elevation: 0,
-      color: CommuneTheme.surface,
+    return Material(
+      color: Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: CommuneTheme.border),
+        side: BorderSide(
+          color: isSelected ? Colors.black : const Color(0xFFE5E7EB),
+          width: isSelected ? 1.5 : 1.0,
+        ),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Image / Product Header
-            Expanded(
-              flex: 5,
-              child: Container(
-                width: double.infinity,
-                color: const Color(0xFFF1F1F1),
-                child: Center(
-                  child: item.isDrink
-                      ? const Icon(Icons.local_cafe_outlined, size: 36, color: Color(0xFF888888))
-                      : const Icon(Icons.bakery_dining_outlined, size: 36, color: Color(0xFF888888)),
+        splashColor: const Color(0xFFF3F4F6),
+        highlightColor: const Color(0xFFE5E7EB),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(
+                item.name,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF111827),
+                  letterSpacing: -0.2,
                 ),
               ),
-            ),
-            // Info
-            Expanded(
-              flex: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(10.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item.name,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: CommuneTheme.textMain,
-                            height: 1.2,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          item.category,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: CommuneTheme.textMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '₱${currency.format(item.price)}',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: CommuneTheme.primary,
-                          ),
-                        ),
-                        if (item.styles.isNotEmpty)
-                          Row(
-                            children: item.styles.map((style) {
-                              return Padding(
-                                padding: const EdgeInsets.only(left: 3),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                  decoration: BoxDecoration(
-                                    color: style == 'iced' ? const Color(0xFFE0F2FE) : const Color(0xFFFEF3C7),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    style == 'iced' ? 'ICED' : 'HOT',
-                                    style: TextStyle(
-                                      fontSize: 8,
-                                      fontWeight: FontWeight.bold,
-                                      color: style == 'iced' ? const Color(0xFF0369A1) : const Color(0xFFB45309),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                      ],
-                    ),
-                  ],
+              if (subtitle.isNotEmpty) ...[
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF6B7280),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 5),
+              Text(
+                '₱${item.price.toInt()}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF111827),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

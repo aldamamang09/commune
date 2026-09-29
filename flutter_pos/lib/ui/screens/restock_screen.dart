@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../models/inventory_item.dart';
 import '../../state/pos_controller.dart';
-import '../theme.dart';
 
 class RestockScreen extends StatefulWidget {
   final PosController controller;
@@ -13,51 +12,75 @@ class RestockScreen extends StatefulWidget {
 }
 
 class _RestockScreenState extends State<RestockScreen> {
-  InventoryItem? _selectedItem;
-  final _qtyController = TextEditingController();
-  final _purchaseQtyController = TextEditingController();
-  final _purchaseUnitController = TextEditingController();
-  bool _isSaving = false;
+  String _range = 'Today';
+  final TextEditingController _dateController = TextEditingController(text: '09/29/2026');
 
-  @override
-  void dispose() {
-    _qtyController.dispose();
-    _purchaseQtyController.dispose();
-    _purchaseUnitController.dispose();
-    super.dispose();
-  }
+  void _openAddRestockDialog() {
+    InventoryItem? selectedItem = widget.controller.inventory.isNotEmpty ? widget.controller.inventory.first : null;
+    final qtyController = TextEditingController();
 
-  void _submitRestock() async {
-    final qty = double.tryParse(_qtyController.text);
-    if (_selectedItem == null || qty == null || qty <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select item and enter valid restock quantity')),
-      );
-      return;
-    }
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Add Restock Entry', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          content: SizedBox(
+            width: 380,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<InventoryItem>(
+                  value: selectedItem,
+                  decoration: InputDecoration(
+                    labelText: 'Select Item',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  items: widget.controller.inventory.map((i) {
+                    return DropdownMenuItem(value: i, child: Text('${i.name} (${i.unit})'));
+                  }).toList(),
+                  onChanged: (val) => setDialogState(() => selectedItem = val),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: qtyController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Quantity to Add',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.black,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () async {
+                final qty = double.tryParse(qtyController.text);
+                if (selectedItem == null || qty == null || qty <= 0) return;
 
-    setState(() => _isSaving = true);
-    await widget.controller.addRestockRecord(
-      inventoryItemId: _selectedItem!.id,
-      itemName: _selectedItem!.name,
-      quantityAdded: qty,
-      purchaseQty: double.tryParse(_purchaseQtyController.text),
-      purchaseUnit: _purchaseUnitController.text.isNotEmpty ? _purchaseUnitController.text : null,
+                await widget.controller.addRestockRecord(
+                  inventoryItemId: selectedItem!.id,
+                  itemName: selectedItem!.name,
+                  quantityAdded: qty,
+                );
+                Navigator.pop(ctx);
+                setState(() {});
+              },
+              child: const Text('Add Restock'),
+            ),
+          ],
+        ),
+      ),
     );
-
-    setState(() {
-      _isSaving = false;
-      _qtyController.clear();
-      _purchaseQtyController.clear();
-      _purchaseUnitController.clear();
-      _selectedItem = null;
-    });
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Restock logged and inventory updated!')),
-      );
-    }
   }
 
   @override
@@ -65,136 +88,194 @@ class _RestockScreenState extends State<RestockScreen> {
     final restocks = widget.controller.restocks;
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Restock Management'),
-      ),
-      body: Row(
-        children: [
-          // Left: Add Restock Form
-          Container(
-            width: 360,
-            padding: const EdgeInsets.all(20),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(right: BorderSide(color: CommuneTheme.border)),
+        backgroundColor: Colors.black,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+        titleSpacing: 0,
+        title: const Row(
+          children: [
+            Text(
+              'commune.',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                letterSpacing: -0.5,
+              ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('New Restock Entry', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                const Text('Adds stock directly to inventory and logs transaction for admin reporting.', style: TextStyle(fontSize: 11, color: CommuneTheme.textMuted)),
-                const SizedBox(height: 16),
-
-                DropdownButtonFormField<InventoryItem>(
-                  value: _selectedItem,
-                  decoration: InputDecoration(
-                    labelText: 'Inventory Item',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  items: widget.controller.inventory.map((i) {
-                    return DropdownMenuItem(value: i, child: Text('${i.name} (${i.unit})'));
-                  }).toList(),
-                  onChanged: (val) => setState(() => _selectedItem = val),
-                ),
-                const SizedBox(height: 12),
-
-                TextField(
-                  controller: _qtyController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: 'Quantity Added (${_selectedItem?.unit ?? "units"}) *',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _purchaseQtyController,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: 'Purchase Qty (optional)',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: _purchaseUnitController,
-                        decoration: InputDecoration(
-                          labelText: 'Unit (e.g. bag, box)',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _isSaving ? null : _submitRestock,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: CommuneTheme.primary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    child: _isSaving
-                        ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Text('Add Restock', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ],
+            SizedBox(width: 8),
+            Text(
+              'Restock',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.normal,
+                color: Color(0xFF9CA3AF),
+              ),
             ),
+          ],
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: _openAddRestockDialog,
+            icon: const Icon(Icons.add, color: Colors.white, size: 16),
+            label: const Text('Add Restock', style: TextStyle(color: Colors.white, fontSize: 12)),
           ),
-
-          // Right: Restock History List
-          Expanded(
-            child: restocks.isEmpty
-                ? const Center(child: Text('No restock history available.'))
-                : ListView.separated(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: restocks.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, index) {
-                      final item = restocks[index];
-                      return Card(
-                        elevation: 0,
-                        color: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: const BorderSide(color: CommuneTheme.border),
-                        ),
-                        child: ListTile(
-                          title: Text(item.itemName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                          subtitle: Text('Added: +${item.quantityAdded.toStringAsFixed(1)} • ${item.date.split("T").first}'),
-                          trailing: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: item.isSynced ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              item.isSynced ? 'SYNCED' : 'LOCAL',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: item.isSynced ? const Color(0xFF15803D) : const Color(0xFFB45309),
-                              ),
+          const SizedBox(width: 12),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+          ),
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Filters: Range & Date (matches Screenshot 2)
+              Row(
+                children: [
+                  Container(
+                    height: 38,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFD1D5DB)),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _range,
+                        icon: const Icon(Icons.keyboard_arrow_down, size: 18),
+                        style: const TextStyle(fontSize: 13, color: Colors.black, fontWeight: FontWeight.w500),
+                        items: ['Today', 'Yesterday', 'This Week', 'This Month'].map((r) {
+                          return DropdownMenuItem(value: r, child: Text('Range:  $r'));
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) setState(() => _range = val);
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(
+                    height: 38,
+                    width: 180,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFD1D5DB)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Text('Date: ', style: TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+                        Expanded(
+                          child: TextField(
+                            controller: _dateController,
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                            decoration: const InputDecoration(
+                              border: InputBorder.none,
+                              isDense: true,
+                              contentPadding: EdgeInsets.zero,
                             ),
                           ),
                         ),
-                      );
-                    },
+                        const Icon(Icons.calendar_today_outlined, size: 16, color: Color(0xFF4B5563)),
+                      ],
+                    ),
                   ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // Table with solid black header row (matches Screenshot 2)
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  children: [
+                    // Black header bar
+                    Container(
+                      color: Colors.black,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      child: const Row(
+                        children: [
+                          Expanded(flex: 3, child: Text('Date & Time', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))),
+                          Expanded(flex: 4, child: Text('Item Name', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))),
+                          Expanded(flex: 2, child: Text('Added Qty', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))),
+                          Expanded(flex: 2, child: Text('Unit', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))),
+                          Expanded(flex: 2, child: Text('Actions', textAlign: TextAlign.right, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))),
+                        ],
+                      ),
+                    ),
+
+                    // Content rows or empty state (matches Screenshot 2)
+                    if (restocks.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 48),
+                        child: const Center(
+                          child: Text(
+                            'No restock data for this date range.',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF6B7280),
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: restocks.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final r = restocks[index];
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            child: Row(
+                              children: [
+                                Expanded(flex: 3, child: Text(r.createdAt.split('T').first, style: const TextStyle(fontSize: 13))),
+                                Expanded(flex: 4, child: Text(r.itemName, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
+                                Expanded(flex: 2, child: Text('+${r.quantityAdded}', style: const TextStyle(fontSize: 13, color: Color(0xFF16A34A), fontWeight: FontWeight.bold))),
+                                Expanded(flex: 2, child: Text(r.purchaseUnit ?? 'pcs', style: const TextStyle(fontSize: 13, color: Color(0xFF4B5563)))),
+                                Expanded(
+                                  flex: 2,
+                                  child: Align(
+                                    alignment: Alignment.centerRight,
+                                    child: IconButton(
+                                      icon: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFDC2626)),
+                                      onPressed: () {
+                                        widget.controller.restocks.removeAt(index);
+                                        widget.controller.localStorage.saveRestocks(widget.controller.restocks);
+                                        setState(() {});
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
