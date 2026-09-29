@@ -25,7 +25,9 @@ class _RestockScreenState extends State<RestockScreen> {
     );
     widget.controller.addListener(_onControllerChange);
     widget.controller.syncService.addListener(_onControllerChange);
-    widget.controller.syncService.syncAll();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.controller.syncService.syncAll();
+    });
   }
 
   @override

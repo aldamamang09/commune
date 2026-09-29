@@ -36,7 +36,9 @@ class _StockScreenState extends State<StockScreen> {
     widget.controller.addListener(_onControllerChange);
     widget.controller.syncService.addListener(_onControllerChange);
     // Trigger immediate refresh from Admin database
-    widget.controller.syncService.syncAll();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.controller.syncService.syncAll();
+    });
   }
 
   @override

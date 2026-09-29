@@ -504,7 +504,24 @@ class SupabaseService {
       });
       return true;
     } catch (e) {
-      if (e.toString().contains('duplicate key')) return true;
+      final message = e.toString();
+      if (message.contains('PGRST202')) {
+        try {
+          await _restRpc(SupabaseConfig.rpcCreateRestockAtomic, {
+            'p_id': record.id,
+            'p_inventory_item_id': record.inventoryItemId,
+            'p_item_name_snapshot': record.itemName,
+            'p_quantity_added': record.quantityAdded,
+            'p_created_at': record.date,
+          });
+          return true;
+        } catch (legacyError) {
+          if (legacyError.toString().contains('duplicate key')) return true;
+          debugPrint('Legacy restock RPC error: $legacyError');
+          return false;
+        }
+      }
+      if (message.contains('duplicate key')) return true;
       debugPrint('Restock RPC error: $e');
       return false;
     }
