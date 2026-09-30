@@ -635,7 +635,7 @@ export async function approveVoidRequest(requestId: string) {
     console.error("Unable to approve void request:", error);
     return {
       error: error instanceof Error
-        ? `Unable to approve void request: ${error.message}`
+        ? error.message
         : "Unable to approve void request. Check the server logs for details.",
     };
   }

@@ -2053,8 +2053,7 @@ export async function approveVoidRequestAtomic(input: {
       p_approved_by_id: input.approvedById,
       p_approved_by_name: input.approvedByName,
       p_new_order_id: input.newOrderId ?? null,
-      // p_ticket_no is omitted: the RPC allocates the ticket itself for a
-      // pre-checkout approval, in the same transaction as the order insert.
+      p_ticket_no: null,
     });
     if (error) throw new Error(`Unable to approve void request: ${error.message}`);
     if (!data?.ok) {
