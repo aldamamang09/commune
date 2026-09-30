@@ -31,6 +31,7 @@ class _PosScreenState extends State<PosScreen> {
   final BluetoothPrinterService _printerService =
       BluetoothPrinterService.instance;
   String? _selectedItemId;
+  bool _isLoggingOut = false;
 
   @override
   void initState() {
@@ -184,8 +185,7 @@ class _PosScreenState extends State<PosScreen> {
       context: context,
       builder: (_) => BaristaShiftDialog(
         staffUsers: widget.controller.staffUsers,
-        currentBaristaUserId: widget.controller.currentBaristaUserId,
-        currentBaristaName: widget.controller.currentBaristaName,
+        onShiftBaristas: widget.controller.onShiftBaristas,
         onPunch: (staff, type) {
           widget.controller.punchShift(staff, type);
           ScaffoldMessenger.of(context).showSnackBar(
@@ -264,21 +264,14 @@ class _PosScreenState extends State<PosScreen> {
     final sync = controller.syncService;
     final filteredItems = controller.filteredMenu;
     final currency = NumberFormat('#,##0', 'en_PH');
-    final canLogout =
-        controller.cart.isEmpty && !controller.isVoidRequestPending;
+    final canLogout = controller.cart.isEmpty &&
+        !controller.isVoidRequestPending &&
+        !_isLoggingOut;
 
-    String syncStatusLabel = 'Synced';
-    Color syncDotColor = const Color(0xFF22C55E);
-    if (sync.status == SyncStatus.syncing) {
-      syncStatusLabel = 'Syncing...';
-      syncDotColor = const Color(0xFF3B82F6);
-    } else if (sync.pendingCount > 0) {
-      syncStatusLabel = '${sync.pendingCount} pending';
-      syncDotColor = const Color(0xFFF59E0B);
-    } else if (!sync.isOnline) {
-      syncStatusLabel = 'Offline';
-      syncDotColor = const Color(0xFF9CA3AF);
-    }
+    final syncStatusLabel = sync.isOnline ? 'Online' : 'Offline';
+    final syncDotColor = sync.isOnline
+        ? const Color(0xFF22C55E)
+        : const Color(0xFF9CA3AF);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -366,12 +359,8 @@ class _PosScreenState extends State<PosScreen> {
                         letterSpacing: -0.5,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    const Text('POS Terminal',
-                        style: TextStyle(color: Colors.white70, fontSize: 12)),
-                    const SizedBox(height: 12),
                     Text(
-                      'On Duty: ${controller.currentBaristaName}',
+                      'Cashier: ${controller.currentUser?.name ?? 'Cashier'}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -498,14 +487,26 @@ class _PosScreenState extends State<PosScreen> {
                       ),
                 onTap: canLogout
                     ? () async {
-                        await controller.clearActiveSession();
-                        if (!context.mounted) return;
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) =>
-                                  LoginScreen(controller: controller)),
-                        );
+                        setState(() => _isLoggingOut = true);
+                        final cashier = controller.currentUser;
+                        try {
+                          if (cashier != null) {
+                            await controller.recordCashierSessionEvent(
+                                cashier, 'logout');
+                          }
+                          await controller.clearActiveSession();
+                          if (!context.mounted) return;
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    LoginScreen(controller: controller)),
+                          );
+                        } finally {
+                          if (mounted) {
+                            setState(() => _isLoggingOut = false);
+                          }
+                        }
                       }
                     : null,
               ),

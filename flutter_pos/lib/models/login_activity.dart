@@ -8,6 +8,34 @@ class LoginActivity {
   final String at;
   bool isSynced;
 
+  static List<LoginActivity> openBaristaShifts(
+      Iterable<LoginActivity> records) {
+    final events = records
+        .where((entry) =>
+            entry.role.trim().toLowerCase() == 'barista' &&
+            entry.userId.isNotEmpty &&
+            (entry.type == 'login' || entry.type == 'logout'))
+        .toList()
+      ..sort((a, b) {
+        final first = DateTime.tryParse(a.at);
+        final second = DateTime.tryParse(b.at);
+        return first != null && second != null
+            ? first.compareTo(second)
+            : a.at.compareTo(b.at);
+      });
+
+    final openByUser = <String, LoginActivity>{};
+    for (final event in events) {
+      if (event.type == 'login') {
+        openByUser[event.userId] = event;
+      } else {
+        openByUser.remove(event.userId);
+      }
+    }
+
+    return openByUser.values.toList()..sort((a, b) => b.at.compareTo(a.at));
+  }
+
   LoginActivity({
     required this.id,
     required this.userId,
@@ -33,13 +61,13 @@ class LoginActivity {
   }
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'userId': userId,
-    'username': username,
-    'name': name,
-    'role': role,
-    'type': type,
-    'at': at,
-    'isSynced': isSynced,
-  };
+        'id': id,
+        'userId': userId,
+        'username': username,
+        'name': name,
+        'role': role,
+        'type': type,
+        'at': at,
+        'isSynced': isSynced,
+      };
 }

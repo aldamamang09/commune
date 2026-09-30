@@ -22,7 +22,10 @@ class PosController extends ChangeNotifier {
   StaffUser? currentUser;
   String currentBaristaName = 'Barista';
   String? currentBaristaUserId;
+  List<StaffUser> onShiftBaristas = [];
   bool isPosOpen = false;
+  bool _cashierLogoutInProgress = false;
+  String? _cashierLogoutRecordedFor;
 
   // Strictly dynamic lists synced from the Admin database (NEVER hardcoded)
   List<MenuItem> menu = [];
@@ -89,31 +92,12 @@ class PosController extends ChangeNotifier {
   }
 
   void _restoreOnShiftBarista() {
-    final events = shiftLogs
-        .where((entry) =>
-            entry.role.trim().toLowerCase() == 'barista' &&
-            entry.userId.isNotEmpty &&
-            (entry.type == 'login' || entry.type == 'logout'))
+    final active = LoginActivity.openBaristaShifts(shiftLogs);
+    onShiftBaristas = active
+        .map((event) =>
+            staffUsers.where((staff) => staff.id == event.userId).firstOrNull)
+        .whereType<StaffUser>()
         .toList();
-    events.sort((a, b) {
-      final first = DateTime.tryParse(a.at);
-      final second = DateTime.tryParse(b.at);
-      return first != null && second != null
-          ? first.compareTo(second)
-          : a.at.compareTo(b.at);
-    });
-
-    final openShifts = <String, LoginActivity>{};
-    for (final event in events) {
-      if (event.type == 'login') {
-        openShifts[event.userId] = event;
-      } else {
-        openShifts.remove(event.userId);
-      }
-    }
-
-    final active = openShifts.values.toList()
-      ..sort((a, b) => b.at.compareTo(a.at));
     final onShift = active.firstOrNull;
     currentBaristaName = onShift?.name ?? 'Barista';
     currentBaristaUserId = onShift?.userId;
@@ -132,6 +116,31 @@ class PosController extends ChangeNotifier {
     await localStorage.clearActiveStaffId();
     currentUser = null;
     notifyListeners();
+  }
+
+  Future<void> recordCashierSessionEvent(StaffUser staff, String type) async {
+    if (!staff.canUsePos || (type != 'login' && type != 'logout')) {
+      return;
+    }
+    if (type == 'login') {
+      _cashierLogoutRecordedFor = null;
+      await _recordLoginActivity(staff, type, idPrefix: 'cashier');
+      return;
+    }
+
+    if (_cashierLogoutInProgress || _cashierLogoutRecordedFor == staff.id) {
+      return;
+    }
+    _cashierLogoutInProgress = true;
+    _cashierLogoutRecordedFor = staff.id;
+    try {
+      await _recordLoginActivity(staff, type, idPrefix: 'cashier');
+    } catch (_) {
+      _cashierLogoutRecordedFor = null;
+      rethrow;
+    } finally {
+      _cashierLogoutInProgress = false;
+    }
   }
 
   Future<void> init() async {
@@ -823,10 +832,24 @@ class PosController extends ChangeNotifier {
     if (!staff.canAccessBaristaShift || (type != 'login' && type != 'logout')) {
       return;
     }
+    final alreadyOnShift =
+        onShiftBaristas.any((barista) => barista.id == staff.id);
+    if ((type == 'login' && alreadyOnShift) ||
+        (type == 'logout' && !alreadyOnShift)) {
+      return;
+    }
 
+    await _recordLoginActivity(staff, type, idPrefix: 'shift');
+  }
+
+  Future<void> _recordLoginActivity(
+    StaffUser staff,
+    String type, {
+    required String idPrefix,
+  }) async {
     final now = ManilaTime.utcNowIso8601();
     final log = LoginActivity(
-      id: 'log-${DateTime.now().millisecondsSinceEpoch}',
+      id: '$idPrefix-${staff.id}-${DateTime.now().microsecondsSinceEpoch}-$type',
       userId: staff.id,
       username: staff.username,
       name: staff.name,
@@ -836,12 +859,18 @@ class PosController extends ChangeNotifier {
       isSynced: false,
     );
 
-    final ok = await supabaseService.pushLoginActivity(log);
-    log.isSynced = ok;
-
     await localStorage.addLoginActivity(log);
     shiftLogs.insert(0, log);
-    _restoreOnShiftBarista();
+    if (staff.canAccessBaristaShift) _restoreOnShiftBarista();
+    syncService.updatePendingCount();
+    notifyListeners();
+
+    final ok = await supabaseService.pushLoginActivity(log);
+    if (ok) {
+      log.isSynced = true;
+      await localStorage.removePendingLoginActivity(log.id);
+      await localStorage.saveLoginActivity(shiftLogs);
+    }
 
     syncService.updatePendingCount();
     notifyListeners();

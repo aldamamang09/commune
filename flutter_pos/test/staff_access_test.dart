@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:commune_pos/models/login_activity.dart';
 import 'package:commune_pos/models/staff_user.dart';
 
 void main() {
@@ -31,5 +32,58 @@ void main() {
     expect(manager.canAccessBaristaShift, isFalse);
     expect(barista.canUsePos, isFalse);
     expect(barista.canAccessBaristaShift, isTrue);
+  });
+
+  test('multiple baristas stay on shift independently until each clocks out',
+      () {
+    final active = LoginActivity.openBaristaShifts([
+      LoginActivity(
+        id: 'barista-a-in',
+        userId: 'barista-a',
+        username: 'a',
+        name: 'Barista A',
+        role: 'barista',
+        type: 'login',
+        at: '2026-09-30T01:00:00Z',
+      ),
+      LoginActivity(
+        id: 'barista-b-in',
+        userId: 'barista-b',
+        username: 'b',
+        name: 'Barista B',
+        role: 'barista',
+        type: 'login',
+        at: '2026-09-30T02:00:00Z',
+      ),
+      LoginActivity(
+        id: 'barista-a-out',
+        userId: 'barista-a',
+        username: 'a',
+        name: 'Barista A',
+        role: 'barista',
+        type: 'logout',
+        at: '2026-09-30T03:00:00Z',
+      ),
+      LoginActivity(
+        id: 'cashier-in',
+        userId: 'cashier-1',
+        username: 'cashier',
+        name: 'Cashier',
+        role: 'cashier',
+        type: 'login',
+        at: '2026-09-30T04:00:00Z',
+      ),
+      LoginActivity(
+        id: 'cashier-out',
+        userId: 'cashier-1',
+        username: 'cashier',
+        name: 'Cashier',
+        role: 'cashier',
+        type: 'logout',
+        at: '2026-09-30T05:00:00Z',
+      ),
+    ]);
+
+    expect(active.map((shift) => shift.userId), ['barista-b']);
   });
 }

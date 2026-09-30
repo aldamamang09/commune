@@ -107,6 +107,8 @@ class _LoginScreenState extends State<LoginScreen> {
         .saveActiveStaffSession(authenticatedStaff);
     widget.controller.currentUser = authenticatedStaff;
     widget.controller.isPosOpen = true;
+    await widget.controller
+        .recordCashierSessionEvent(authenticatedStaff, 'login');
 
     setState(() => _isLoading = false);
 

@@ -3,15 +3,13 @@ import '../../models/staff_user.dart';
 
 class BaristaShiftDialog extends StatefulWidget {
   final List<StaffUser> staffUsers;
-  final String? currentBaristaUserId;
-  final String currentBaristaName;
+  final List<StaffUser> onShiftBaristas;
   final Function(StaffUser staff, String type) onPunch;
 
   const BaristaShiftDialog({
     super.key,
     required this.staffUsers,
-    required this.currentBaristaUserId,
-    required this.currentBaristaName,
+    required this.onShiftBaristas,
     required this.onPunch,
   });
 
@@ -22,6 +20,7 @@ class BaristaShiftDialog extends StatefulWidget {
 class _BaristaShiftDialogState extends State<BaristaShiftDialog> {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  StaffUser? _clockOutTarget;
   String? _error;
 
   @override
@@ -60,7 +59,18 @@ class _BaristaShiftDialogState extends State<BaristaShiftDialog> {
     Navigator.pop(context);
   }
 
-  void _handleClockOut(StaffUser onShift) {
+  void _selectClockOutTarget(StaffUser barista) {
+    setState(() {
+      _clockOutTarget = barista;
+      _usernameController.text = barista.username;
+      _passwordController.clear();
+      _error = null;
+    });
+  }
+
+  void _handleClockOut() {
+    final onShift = _clockOutTarget;
+    if (onShift == null) return;
     final staff = _authenticatedBarista();
     if (staff == null || staff.id != onShift.id) {
       setState(() => _error =
@@ -74,14 +84,6 @@ class _BaristaShiftDialogState extends State<BaristaShiftDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final onShift = widget.currentBaristaUserId == null
-        ? null
-        : widget.staffUsers
-            .where((staff) =>
-                staff.canAccessBaristaShift &&
-                staff.id == widget.currentBaristaUserId)
-            .firstOrNull;
-
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       backgroundColor: Colors.white,
@@ -113,37 +115,41 @@ class _BaristaShiftDialogState extends State<BaristaShiftDialog> {
                 ],
               ),
               const SizedBox(height: 16),
-              if (onShift != null)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 20),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF3F4F6),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                            color: Color(0xFF16A34A), shape: BoxShape.circle),
+              if (widget.onShiftBaristas.isNotEmpty)
+                ...widget.onShiftBaristas.map((barista) => Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF3F4F6),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      const SizedBox(width: 8),
-                      Text('${onShift.name} is on shift',
-                          style: const TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.w600)),
-                    ],
-                  ),
-                )
+                      child: Row(
+                        children: [
+                          const Icon(Icons.circle,
+                              size: 8, color: Color(0xFF16A34A)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                              child: Text('${barista.name} is on shift',
+                                  style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600))),
+                          TextButton(
+                            onPressed: () => _selectClockOutTarget(barista),
+                            child: Text(_clockOutTarget?.id == barista.id
+                                ? 'Selected'
+                                : 'Clock out'),
+                          ),
+                        ],
+                      ),
+                    ))
               else ...[
                 const Text('No barista is on shift yet.',
                     style: TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
                 const SizedBox(height: 24),
               ],
               Text(
-                onShift == null ? 'CLOCK IN' : 'BARISTA ACCESS',
+                _clockOutTarget == null ? 'CLOCK IN' : 'CLOCK OUT',
                 style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
@@ -181,9 +187,9 @@ class _BaristaShiftDialogState extends State<BaristaShiftDialog> {
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),
-                onSubmitted: (_) => onShift == null
+                onSubmitted: (_) => _clockOutTarget == null
                     ? _handleClockIn()
-                    : _handleClockOut(onShift),
+                    : _handleClockOut(),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 10),
@@ -196,9 +202,9 @@ class _BaristaShiftDialogState extends State<BaristaShiftDialog> {
                 width: double.infinity,
                 height: 44,
                 child: ElevatedButton(
-                  onPressed: () => onShift == null
+                  onPressed: () => _clockOutTarget == null
                       ? _handleClockIn()
-                      : _handleClockOut(onShift),
+                      : _handleClockOut(),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
                     foregroundColor: Colors.white,
@@ -206,7 +212,8 @@ class _BaristaShiftDialogState extends State<BaristaShiftDialog> {
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(22)),
                   ),
-                  child: Text(onShift == null ? 'Clock in' : 'Clock out'),
+                  child:
+                      Text(_clockOutTarget == null ? 'Clock in' : 'Clock out'),
                 ),
               ),
             ],
