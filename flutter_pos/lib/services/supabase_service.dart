@@ -581,7 +581,11 @@ class SupabaseService {
         'reason': request.reason,
         'status': request.status,
         'order_id': request.orderId,
-        'items': request.items.map((i) => i.toJson()).toList(),
+        'items': request.items.map((item) {
+          final json = item.toJson();
+          json['price'] = item.price.round();
+          return json;
+        }).toList(),
         'subtotal': request.subtotal.round(),
         'discount': request.discount.round(),
         'promo_label': request.promoLabel,
