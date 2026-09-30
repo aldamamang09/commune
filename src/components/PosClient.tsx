@@ -179,6 +179,8 @@ export function PosClient({
   const [baristaModalOpen, setBaristaModalOpen] = useState(false);
   const [baristaUsername, setBaristaUsername] = useState("");
   const [baristaPassword, setBaristaPassword] = useState("");
+  const [baristaAction, setBaristaAction] = useState<"login" | "logout">("login");
+  const [baristaTargetId, setBaristaTargetId] = useState<string | null>(null);
   const [baristaNotice, setBaristaNotice] = useState<string | null>(null);
   const [onShift, setOnShift] = useState(clockedInBaristas);
   const [drinkPick, setDrinkPick] = useState<{
@@ -973,18 +975,15 @@ export function PosClient({
                   <button
                     type="button"
                     disabled={pending}
-                    onClick={() =>
-                      startTransition(async () => {
-                        const result = await punchBaristaShift({ type: "logout", userId: barista.id });
-                        if (result && "error" in result && result.error) {
-                          setMessage(result.error);
-                          return;
-                        }
-                        setOnShift((current) => current.filter((entry) => entry.id !== barista.id));
-                        setMessage(`${barista.name} clocked out.`);
-                        router.refresh();
-                      })
-                    }
+                    onClick={() => {
+                      setBaristaUsername(barista.username);
+                      setBaristaPassword("");
+                      setBaristaAction("logout");
+                      setBaristaTargetId(barista.id);
+                      setBaristaNotice(null);
+                      setBaristaModalOpen(true);
+                      setMenuOpen(false);
+                    }}
                     className="shrink-0 rounded-full border border-neutral-300 px-3 py-1 text-xs font-medium hover:border-black disabled:opacity-40"
                   >
                     Out
@@ -997,6 +996,8 @@ export function PosClient({
                 onClick={() => {
                   setBaristaUsername("");
                   setBaristaPassword("");
+                  setBaristaAction("login");
+                  setBaristaTargetId(null);
                   setBaristaNotice(null);
                   setBaristaModalOpen(true);
                   setMenuOpen(false);
@@ -1154,7 +1155,7 @@ export function PosClient({
                                 }
                                 className="flex h-7 w-7 items-center justify-center rounded-full border border-neutral-200 text-sm"
                               >
-                                −
+                                -
                               </span>
                               <span className="w-4 text-center text-xs font-medium">{qty}</span>
                               <span
@@ -1242,19 +1243,13 @@ export function PosClient({
                       <button
                         type="button"
                         disabled={pending}
-                        onClick={() =>
-                          startTransition(async () => {
-                            const result = await punchBaristaShift({ type: "logout", userId: barista.id });
-                            if (result && "error" in result && result.error) {
-                              setBaristaNotice(result.error);
-                              return;
-                            }
-                            setOnShift((current) => current.filter((entry) => entry.id !== barista.id));
-                            setBaristaNotice(null);
-                            setMessage(`${barista.name} clocked out.`);
-                            router.refresh();
-                          })
-                        }
+                        onClick={() => {
+                          setBaristaUsername(barista.username);
+                          setBaristaPassword("");
+                          setBaristaAction("logout");
+                          setBaristaTargetId(barista.id);
+                          setBaristaNotice(null);
+                        }}
                         className="shrink-0 rounded-full border border-neutral-300 px-3 py-1.5 text-xs font-medium hover:border-black disabled:opacity-40"
                       >
                         Out
@@ -1271,12 +1266,13 @@ export function PosClient({
                   event.preventDefault();
                   startTransition(async () => {
                     const result = await punchBaristaShift({
-                      type: "login",
+                      type: baristaAction,
                       username: baristaUsername,
                       password: baristaPassword,
+                      userId: baristaTargetId ?? undefined,
                     });
                     if (result && "error" in result && result.error) {
-                      if ("id" in result && result.id) {
+                      if (baristaAction === "login" && "id" in result && result.id) {
                         setOnShift((current) =>
                           current.some((entry) => entry.id === result.id)
                             ? current
@@ -1286,7 +1282,9 @@ export function PosClient({
                       setBaristaNotice(result.error);
                       return;
                     }
-                    if ("id" in result && result.id) {
+                    if (baristaAction === "logout" && baristaTargetId) {
+                      setOnShift((current) => current.filter((entry) => entry.id !== baristaTargetId));
+                    } else if ("id" in result && result.id) {
                       setOnShift((current) =>
                         current.some((entry) => entry.id === result.id)
                           ? current
@@ -1295,15 +1293,17 @@ export function PosClient({
                     }
                     setBaristaUsername("");
                     setBaristaPassword("");
+                    setBaristaAction("login");
+                    setBaristaTargetId(null);
                     setBaristaNotice(null);
-                    setMessage(`${"name" in result ? result.name : "Barista"} clocked in.`);
+                    setMessage(`${"name" in result ? result.name : "Barista"} clocked ${baristaAction === "login" ? "in" : "out"}.`);
                     router.refresh();
                   });
                 }}
                 className="mt-5 border-t border-neutral-100 pt-5"
               >
                 <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">
-                  Clock in
+                  {baristaAction === "login" ? "Clock in" : "Clock out"}
                 </p>
                 <label className="mt-3 block text-xs font-medium text-neutral-600">
                   <span className="mb-1.5 block">Username</span>
@@ -1332,7 +1332,7 @@ export function PosClient({
                   disabled={pending}
                   className="mt-5 w-full rounded-full bg-black px-4 py-2.5 text-sm font-medium text-white disabled:opacity-40"
                 >
-                  {pending ? "Saving..." : "Clock in"}
+                  {pending ? "Saving..." : baristaAction === "login" ? "Clock in" : "Clock out"}
                 </button>
               </form>
             </div>

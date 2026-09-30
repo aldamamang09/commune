@@ -3,12 +3,14 @@ import '../../models/staff_user.dart';
 
 class BaristaShiftDialog extends StatefulWidget {
   final List<StaffUser> staffUsers;
+  final String? currentBaristaUserId;
   final String currentBaristaName;
   final Function(StaffUser staff, String type) onPunch;
 
   const BaristaShiftDialog({
     super.key,
     required this.staffUsers,
+    required this.currentBaristaUserId,
     required this.currentBaristaName,
     required this.onPunch,
   });
@@ -29,18 +31,28 @@ class _BaristaShiftDialogState extends State<BaristaShiftDialog> {
     super.dispose();
   }
 
-  void _handleClockIn() {
+  StaffUser? _authenticatedBarista() {
     final username = _usernameController.text.trim().toLowerCase();
     final password = _passwordController.text;
+    return widget.staffUsers
+        .where((staff) =>
+            staff.username.trim().toLowerCase() == username &&
+            staff.canAccessBaristaShift &&
+            staff.password.isNotEmpty &&
+            staff.password == password)
+        .firstOrNull;
+  }
 
-    if (username.isEmpty || password.isEmpty) {
+  void _handleClockIn() {
+    if (_usernameController.text.trim().isEmpty ||
+        _passwordController.text.isEmpty) {
       setState(() => _error = 'Please enter both username and password');
       return;
     }
 
-    final staff = widget.staffUsers.where((u) => u.username.toLowerCase() == username).firstOrNull;
-    if (staff == null || (staff.password != password && staff.password != 'commune' && staff.password.isNotEmpty)) {
-      setState(() => _error = 'Invalid credentials');
+    final staff = _authenticatedBarista();
+    if (staff == null) {
+      setState(() => _error = 'Use valid credentials for a Barista account.');
       return;
     }
 
@@ -48,9 +60,27 @@ class _BaristaShiftDialogState extends State<BaristaShiftDialog> {
     Navigator.pop(context);
   }
 
+  void _handleClockOut(StaffUser onShift) {
+    final staff = _authenticatedBarista();
+    if (staff == null || staff.id != onShift.id) {
+      setState(() => _error =
+          'Only the Barista on shift can clock out with their credentials.');
+      return;
+    }
+
+    widget.onPunch(staff, 'logout');
+    Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final onShift = widget.staffUsers.where((u) => u.name == widget.currentBaristaName).firstOrNull;
+    final onShift = widget.currentBaristaUserId == null
+        ? null
+        : widget.staffUsers
+            .where((staff) =>
+                staff.canAccessBaristaShift &&
+                staff.id == widget.currentBaristaUserId)
+            .firstOrNull;
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
@@ -64,194 +94,125 @@ class _BaristaShiftDialogState extends State<BaristaShiftDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-            // Header: Baristas & close button
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Baristas',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF111827),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Baristas',
+                    style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF111827)),
                   ),
-                ),
-                InkWell(
-                  onTap: () => Navigator.pop(context),
-                  borderRadius: BorderRadius.circular(12),
-                  child: const Padding(
-                    padding: EdgeInsets.all(4.0),
-                    child: Icon(Icons.close, size: 20, color: Color(0xFF6B7280)),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close,
+                        size: 20, color: Color(0xFF6B7280)),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // On-shift status
-            if (onShift != null)
-              Container(
-                margin: const EdgeInsets.only(bottom: 20),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF3F4F6),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF16A34A),
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${onShift.name} is on shift',
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        widget.onPunch(onShift, 'logout');
-                        Navigator.pop(context);
-                      },
-                      style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFFDC2626),
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (onShift != null)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 20),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                            color: Color(0xFF16A34A), shape: BoxShape.circle),
                       ),
-                      child: const Text('Clock out', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                    ),
-                  ],
-                ),
-              )
-            else ...[
-              const Text(
-                'No barista is on shift yet.',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF6B7280),
-                ),
-              ),
-              const SizedBox(height: 24),
-            ],
-
-            // Section Header: CLOCK IN
-            const Text(
-              'CLOCK IN',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF9CA3AF),
-                letterSpacing: 0.8,
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // Username input
-            const Text(
-              'Username',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF374151),
-              ),
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _usernameController,
-              decoration: InputDecoration(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Colors.black, width: 1.5),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Password input
-            const Text(
-              'Password',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF374151),
-              ),
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _passwordController,
-              obscureText: true,
-              decoration: InputDecoration(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Colors.black, width: 1.5),
-                ),
-              ),
-              onSubmitted: (_) => _handleClockIn(),
-            ),
-
-            if (_error != null) ...[
-              const SizedBox(height: 10),
+                      const SizedBox(width: 8),
+                      Text('${onShift.name} is on shift',
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                )
+              else ...[
+                const Text('No barista is on shift yet.',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+                const SizedBox(height: 24),
+              ],
               Text(
-                _error!,
-                style: const TextStyle(color: Color(0xFFDC2626), fontSize: 12),
+                onShift == null ? 'CLOCK IN' : 'BARISTA ACCESS',
+                style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF9CA3AF)),
+              ),
+              const SizedBox(height: 12),
+              const Text('Username',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF374151))),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _usernameController,
+                decoration: InputDecoration(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text('Password',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF374151))),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _passwordController,
+                obscureText: true,
+                decoration: InputDecoration(
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                onSubmitted: (_) => onShift == null
+                    ? _handleClockIn()
+                    : _handleClockOut(onShift),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(_error!,
+                    style: const TextStyle(
+                        color: Color(0xFFDC2626), fontSize: 12)),
+              ],
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 44,
+                child: ElevatedButton(
+                  onPressed: () => onShift == null
+                      ? _handleClockIn()
+                      : _handleClockOut(onShift),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(22)),
+                  ),
+                  child: Text(onShift == null ? 'Clock in' : 'Clock out'),
+                ),
               ),
             ],
-
-            const SizedBox(height: 24),
-
-            // Solid black pill button: Clock in
-            SizedBox(
-              width: double.infinity,
-              height: 44,
-              child: ElevatedButton(
-                onPressed: _handleClockIn,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                ),
-                child: const Text(
-                  'Clock in',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
-    ),
-  );
+    );
   }
 }

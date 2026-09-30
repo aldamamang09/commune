@@ -28,7 +28,8 @@ class PosScreen extends StatefulWidget {
 
 class _PosScreenState extends State<PosScreen> {
   final TextEditingController _searchController = TextEditingController();
-  final BluetoothPrinterService _printerService = BluetoothPrinterService.instance;
+  final BluetoothPrinterService _printerService =
+      BluetoothPrinterService.instance;
   String? _selectedItemId;
 
   @override
@@ -95,7 +96,8 @@ class _PosScreenState extends State<PosScreen> {
         builder: (_) => DrinkOptionsDialog(
           item: item,
           onConfirm: (style, addons, qty) {
-            widget.controller.addToCart(item, style: style, addons: addons, qty: qty);
+            widget.controller
+                .addToCart(item, style: style, addons: addons, qty: qty);
           },
         ),
       );
@@ -126,7 +128,8 @@ class _PosScreenState extends State<PosScreen> {
           final password = managerPass.isNotEmpty
               ? managerPass
               : widget.controller.currentUser?.password ?? '';
-          final res = await widget.controller.voidCheckout(reason, username, password);
+          final res =
+              await widget.controller.voidCheckout(reason, username, password);
           if (res['ok'] == true && mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Checkout voided.')),
@@ -135,7 +138,8 @@ class _PosScreenState extends State<PosScreen> {
           return res;
         },
         onRequestVoid: (reason) async {
-          final result = await widget.controller.requestVoidApproval(null, reason);
+          final result =
+              await widget.controller.requestVoidApproval(null, reason);
           if (result['ok'] == true && mounted) {
             final synced = result['synced'] == true;
             ScaffoldMessenger.of(context).showSnackBar(
@@ -155,7 +159,9 @@ class _PosScreenState extends State<PosScreen> {
   void _openReceiptDialog([Order? targetOrder]) {
     final order = targetOrder ??
         widget.controller.lastCompletedOrder ??
-        (widget.controller.orders.isNotEmpty ? widget.controller.orders.first : null);
+        (widget.controller.orders.isNotEmpty
+            ? widget.controller.orders.first
+            : null);
     if (order == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No orders found to print')),
@@ -178,11 +184,14 @@ class _PosScreenState extends State<PosScreen> {
       context: context,
       builder: (_) => BaristaShiftDialog(
         staffUsers: widget.controller.staffUsers,
+        currentBaristaUserId: widget.controller.currentBaristaUserId,
         currentBaristaName: widget.controller.currentBaristaName,
         onPunch: (staff, type) {
           widget.controller.punchShift(staff, type);
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('${staff.name} clocked ${type == "login" ? "in" : "out"}')),
+            SnackBar(
+                content: Text(
+                    '${staff.name} clocked ${type == "login" ? "in" : "out"}')),
           );
         },
       ),
@@ -255,7 +264,8 @@ class _PosScreenState extends State<PosScreen> {
     final sync = controller.syncService;
     final filteredItems = controller.filteredMenu;
     final currency = NumberFormat('#,##0', 'en_PH');
-    final canLogout = controller.cart.isEmpty && !controller.isVoidRequestPending;
+    final canLogout =
+        controller.cart.isEmpty && !controller.isVoidRequestPending;
 
     String syncStatusLabel = 'Synced';
     Color syncDotColor = const Color(0xFF22C55E);
@@ -357,13 +367,17 @@ class _PosScreenState extends State<PosScreen> {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    const Text('POS Terminal', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                    const Text('POS Terminal',
+                        style: TextStyle(color: Colors.white70, fontSize: 12)),
                     const SizedBox(height: 12),
                     Text(
                       'On Duty: ${controller.currentBaristaName}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500),
                     ),
                   ],
                 ),
@@ -373,36 +387,45 @@ class _PosScreenState extends State<PosScreen> {
                   padding: EdgeInsets.zero,
                   children: [
                     ListTile(
-                      leading: const Icon(Icons.point_of_sale, color: Colors.black),
-                      title: const Text('POS Terminal', style: TextStyle(fontWeight: FontWeight.bold)),
+                      leading:
+                          const Icon(Icons.point_of_sale, color: Colors.black),
+                      title: const Text('POS Terminal',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
                       selected: true,
                       selectedTileColor: const Color(0xFFF3F4F6),
                       onTap: () => Navigator.pop(context),
                     ),
                     ListTile(
-                      leading: const Icon(Icons.inventory_2_outlined, color: Colors.black87),
+                      leading: const Icon(Icons.inventory_2_outlined,
+                          color: Colors.black87),
                       title: const Text('Stock inventory'),
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => StockScreen(controller: controller)),
+                          MaterialPageRoute(
+                              builder: (_) =>
+                                  StockScreen(controller: controller)),
                         );
                       },
                     ),
                     ListTile(
-                      leading: const Icon(Icons.add_shopping_cart_outlined, color: Colors.black87),
+                      leading: const Icon(Icons.add_shopping_cart_outlined,
+                          color: Colors.black87),
                       title: const Text('Restock'),
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => RestockScreen(controller: controller)),
+                          MaterialPageRoute(
+                              builder: (_) =>
+                                  RestockScreen(controller: controller)),
                         );
                       },
                     ),
                     ListTile(
-                      leading: const Icon(Icons.badge_outlined, color: Colors.black87),
+                      leading: const Icon(Icons.badge_outlined,
+                          color: Colors.black87),
                       title: const Text('Baristas on shift'),
                       onTap: () {
                         Navigator.pop(context);
@@ -422,15 +445,19 @@ class _PosScreenState extends State<PosScreen> {
                       ),
                     ),
                     ListTile(
-                      leading: const Icon(Icons.local_cafe_outlined, color: Colors.black87),
+                      leading: const Icon(Icons.local_cafe_outlined,
+                          color: Colors.black87),
                       title: const Text('Connect labels'),
-                      subtitle: Text(_printerService.connectionSummary(PrinterRole.labels)),
+                      subtitle: Text(_printerService
+                          .connectionSummary(PrinterRole.labels)),
                       onTap: () => _openPrinterPicker(PrinterRole.labels),
                     ),
                     ListTile(
-                      leading: const Icon(Icons.receipt_long_outlined, color: Colors.black87),
+                      leading: const Icon(Icons.receipt_long_outlined,
+                          color: Colors.black87),
                       title: const Text('Connect receipt'),
-                      subtitle: Text(_printerService.connectionSummary(PrinterRole.receipt)),
+                      subtitle: Text(_printerService
+                          .connectionSummary(PrinterRole.receipt)),
                       onTap: () => _openPrinterPicker(PrinterRole.receipt),
                     ),
                     ListTile(
@@ -450,28 +477,34 @@ class _PosScreenState extends State<PosScreen> {
                 enabled: canLogout,
                 leading: Icon(
                   Icons.logout,
-                  color: canLogout ? const Color(0xFFDC2626) : CommuneTheme.textMuted,
+                  color: canLogout
+                      ? const Color(0xFFDC2626)
+                      : CommuneTheme.textMuted,
                 ),
                 title: Text(
                   'Logout',
                   style: TextStyle(
-                    color: canLogout ? const Color(0xFFDC2626) : CommuneTheme.textMuted,
+                    color: canLogout
+                        ? const Color(0xFFDC2626)
+                        : CommuneTheme.textMuted,
                   ),
                 ),
                 subtitle: canLogout
-                  ? null
-                  : Text(
-                    controller.isVoidRequestPending
-                      ? 'Wait for void approval first'
-                      : 'Clear checkout first',
-                    ),
+                    ? null
+                    : Text(
+                        controller.isVoidRequestPending
+                            ? 'Wait for void approval first'
+                            : 'Clear checkout first',
+                      ),
                 onTap: canLogout
-                  ? () async {
-                    await controller.clearActiveSession();
-                    if (!context.mounted) return;
+                    ? () async {
+                        await controller.clearActiveSession();
+                        if (!context.mounted) return;
                         Navigator.pushReplacement(
                           context,
-                          MaterialPageRoute(builder: (_) => LoginScreen(controller: controller)),
+                          MaterialPageRoute(
+                              builder: (_) =>
+                                  LoginScreen(controller: controller)),
                         );
                       }
                     : null,
@@ -484,10 +517,12 @@ class _PosScreenState extends State<PosScreen> {
 
       body: LayoutBuilder(
         builder: (context, screenConstraints) {
-          final checkoutPanelWidth = screenConstraints.maxWidth >= 1280 ? 400.0 : 370.0;
-            final isWide =
-              screenConstraints.maxWidth >= 960 && screenConstraints.maxHeight >= 480;
-          final cartItemCount = controller.cart.fold<int>(0, (sum, i) => sum + i.qty);
+          final checkoutPanelWidth =
+              screenConstraints.maxWidth >= 1280 ? 400.0 : 370.0;
+          final isWide = screenConstraints.maxWidth >= 960 &&
+              screenConstraints.maxHeight >= 480;
+          final cartItemCount =
+              controller.cart.fold<int>(0, (sum, i) => sum + i.qty);
 
           final menuSection = Container(
             color: const Color(0xFFF9FAFB),
@@ -505,11 +540,14 @@ class _PosScreenState extends State<PosScreen> {
                         style: const TextStyle(fontSize: 13),
                         decoration: InputDecoration(
                           hintText: 'Search item...',
-                          hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF9CA3AF)),
-                          prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xFF9CA3AF)),
+                          hintStyle: const TextStyle(
+                              fontSize: 13, color: Color(0xFF9CA3AF)),
+                          prefixIcon: const Icon(Icons.search,
+                              size: 18, color: Color(0xFF9CA3AF)),
                           suffixIcon: _searchController.text.isNotEmpty
                               ? IconButton(
-                                  icon: const Icon(Icons.clear, size: 14, color: Color(0xFF9CA3AF)),
+                                  icon: const Icon(Icons.clear,
+                                      size: 14, color: Color(0xFF9CA3AF)),
                                   onPressed: () {
                                     _searchController.clear();
                                     controller.setSearchQuery('');
@@ -518,18 +556,22 @@ class _PosScreenState extends State<PosScreen> {
                               : null,
                           filled: true,
                           fillColor: Colors.white,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 0),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(24),
-                            borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                            borderSide:
+                                const BorderSide(color: Color(0xFFE5E7EB)),
                           ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(24),
-                            borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                            borderSide:
+                                const BorderSide(color: Color(0xFFE5E7EB)),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(24),
-                            borderSide: const BorderSide(color: Colors.black, width: 1.2),
+                            borderSide: const BorderSide(
+                                color: Colors.black, width: 1.2),
                           ),
                         ),
                         onChanged: (val) => controller.setSearchQuery(val),
@@ -549,7 +591,8 @@ class _PosScreenState extends State<PosScreen> {
                                   ? 'Syncing menu from Admin...'
                                   : 'No menu items found in this category.',
                               textAlign: TextAlign.center,
-                              style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 14),
+                              style: const TextStyle(
+                                  color: Color(0xFF9CA3AF), fontSize: 14),
                             ),
                           ),
                         )
@@ -568,8 +611,10 @@ class _PosScreenState extends State<PosScreen> {
                               aspectRatio = 1.65;
                             }
                             return GridView.builder(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 8),
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: crossAxisCount,
                                 childAspectRatio: aspectRatio,
                                 crossAxisSpacing: 12,
@@ -592,7 +637,8 @@ class _PosScreenState extends State<PosScreen> {
                 // Bottom Category Bar (Strictly synced with Admin Categories)
                 Container(
                   height: 54,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: const BoxDecoration(
                     color: Color(0xFFF9FAFB),
                     border: Border(
@@ -602,7 +648,8 @@ class _PosScreenState extends State<PosScreen> {
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: controller.categories.length,
-                    separatorBuilder: (context, index) => const SizedBox(width: 8),
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(width: 8),
                     itemBuilder: (context, index) {
                       final cat = controller.categories[index];
                       final isSelected = controller.selectedCategory == cat;
@@ -610,12 +657,15 @@ class _PosScreenState extends State<PosScreen> {
                         onTap: () => controller.setCategory(cat),
                         borderRadius: BorderRadius.circular(20),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
                           decoration: BoxDecoration(
                             color: isSelected ? Colors.black : Colors.white,
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                              color: isSelected ? Colors.black : const Color(0xFFD1D5DB),
+                              color: isSelected
+                                  ? Colors.black
+                                  : const Color(0xFFD1D5DB),
                             ),
                           ),
                           child: Center(
@@ -624,7 +674,9 @@ class _PosScreenState extends State<PosScreen> {
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: isSelected ? Colors.white : const Color(0xFF111827),
+                                color: isSelected
+                                    ? Colors.white
+                                    : const Color(0xFF111827),
                               ),
                             ),
                           ),
@@ -637,7 +689,8 @@ class _PosScreenState extends State<PosScreen> {
                 // Mobile/Narrow Checkout Summary Bar
                 if (!isWide)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
                     decoration: const BoxDecoration(
                       color: Colors.white,
                       border: Border(top: BorderSide(color: Color(0xFFE5E7EB))),
@@ -653,7 +706,8 @@ class _PosScreenState extends State<PosScreen> {
                               children: [
                                 Text(
                                   '$cartItemCount ${cartItemCount == 1 ? "item" : "items"} in cart',
-                                  style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                                  style: const TextStyle(
+                                      fontSize: 12, color: Color(0xFF6B7280)),
                                 ),
                                 Text(
                                   '₱${currency.format(controller.total)}',
@@ -668,13 +722,16 @@ class _PosScreenState extends State<PosScreen> {
                           ),
                           ElevatedButton.icon(
                             onPressed: _openMobileCartSheet,
-                            icon: const Icon(Icons.shopping_bag_outlined, size: 18),
+                            icon: const Icon(Icons.shopping_bag_outlined,
+                                size: 18),
                             label: const Text('Checkout'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.black,
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20, vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
                             ),
                           ),
                         ],

@@ -71,7 +71,7 @@ async function requireInventoryAccess(hasAdminOnlyData: boolean) {
   const session = await getSession();
   if (
     !session ||
-    !canUsePos(session.role) ||
+    (session.role !== "admin" && !canUsePos(session.role)) ||
     (session.role !== "admin" && hasAdminOnlyData)
   ) {
     throw new Error("You do not have permission to change these store records.");

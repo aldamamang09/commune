@@ -15,18 +15,22 @@ class StaffUser {
     this.title = '',
   });
 
-  bool get canUsePos => role == 'cashier' || role == 'manager' || role == 'admin' || role == 'barista';
+  bool get canUsePos => role == 'cashier';
+  bool get canAccessBaristaShift => role == 'barista';
   bool get isManager => role == 'manager' || role == 'admin';
 
   static String parseRole(String rawRole, String title, String username) {
-    final combined = '${rawRole.toLowerCase()} ${title.toLowerCase()} ${username.toLowerCase()}';
+    final combined =
+        '${rawRole.toLowerCase()} ${title.toLowerCase()} ${username.toLowerCase()}';
     if (combined.contains('admin') || combined.contains('owner')) {
       return 'admin';
     }
     if (combined.contains('manager')) {
       return 'manager';
     }
-    if (combined.contains('cashier') || combined.contains('sale in charge') || combined.contains('sale')) {
+    if (combined.contains('cashier') ||
+        combined.contains('sale in charge') ||
+        combined.contains('sale')) {
       return 'cashier';
     }
     return 'barista';
@@ -59,11 +63,11 @@ class StaffUser {
   }
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'username': username,
-    'password': password,
-    'name': name,
-    'role': role,
-    'title': title,
-  };
+        'id': id,
+        'username': username,
+        'password': password,
+        'name': name,
+        'role': role,
+        'title': title,
+      };
 }

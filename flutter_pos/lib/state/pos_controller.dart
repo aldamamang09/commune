@@ -83,8 +83,40 @@ class PosController extends ChangeNotifier {
     }
     restocks = localStorage.getRestocks();
     shiftLogs = localStorage.getLoginActivity();
+    _restoreOnShiftBarista();
     recipesData = localStorage.getRecipesData();
     notifyListeners();
+  }
+
+  void _restoreOnShiftBarista() {
+    final events = shiftLogs
+        .where((entry) =>
+            entry.role.trim().toLowerCase() == 'barista' &&
+            entry.userId.isNotEmpty &&
+            (entry.type == 'login' || entry.type == 'logout'))
+        .toList();
+    events.sort((a, b) {
+      final first = DateTime.tryParse(a.at);
+      final second = DateTime.tryParse(b.at);
+      return first != null && second != null
+          ? first.compareTo(second)
+          : a.at.compareTo(b.at);
+    });
+
+    final openShifts = <String, LoginActivity>{};
+    for (final event in events) {
+      if (event.type == 'login') {
+        openShifts[event.userId] = event;
+      } else {
+        openShifts.remove(event.userId);
+      }
+    }
+
+    final active = openShifts.values.toList()
+      ..sort((a, b) => b.at.compareTo(a.at));
+    final onShift = active.firstOrNull;
+    currentBaristaName = onShift?.name ?? 'Barista';
+    currentBaristaUserId = onShift?.userId;
   }
 
   void _restoreActiveStaff() {
@@ -94,24 +126,16 @@ class PosController extends ChangeNotifier {
         localStorage.getActiveStaffProfile();
     if (staff == null || !staff.canUsePos) return;
     currentUser = staff;
-    currentBaristaName = staff.name;
-    currentBaristaUserId = staff.id;
   }
 
   Future<void> clearActiveSession() async {
     await localStorage.clearActiveStaffId();
     currentUser = null;
-    currentBaristaName = 'Barista';
-    currentBaristaUserId = null;
     notifyListeners();
   }
 
   Future<void> init() async {
     isPosOpen = localStorage.getPosIsOpen();
-    final openedBy = localStorage.getPosOpenedBy();
-    if (openedBy != null && openedBy.isNotEmpty) {
-      currentBaristaName = openedBy;
-    }
 
     // Load cached Admin state (no hardcoded fallback seeds)
     _refreshFromLocalStorage();
@@ -133,7 +157,9 @@ class PosController extends ChangeNotifier {
 
   bool isCupInventoryItem(InventoryItem item) {
     final lower = item.name.trim().toLowerCase();
-    if (lower.contains('cup') || lower.contains('lid') || lower.contains('straw')) {
+    if (lower.contains('cup') ||
+        lower.contains('lid') ||
+        lower.contains('straw')) {
       return true;
     }
     final recipeCostings = (recipesData['recipeCostings'] is List)
@@ -153,7 +179,8 @@ class PosController extends ChangeNotifier {
     double total = 0.0;
     for (final item in inventory) {
       if (isCupInventoryItem(item)) {
-        final ledger = getStockLedger(item, range: range, selectedDate: selectedDate);
+        final ledger =
+            getStockLedger(item, range: range, selectedDate: selectedDate);
         total += ledger['usedPerUnit'] ?? 0.0;
       }
     }
@@ -179,7 +206,10 @@ class PosController extends ChangeNotifier {
 
     double totalUsedInRange = 0;
     final usageLogs = (recipesData['usageLogs'] is List)
-        ? (recipesData['usageLogs'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+        ? (recipesData['usageLogs'] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList()
         : <Map<String, dynamic>>[];
 
     final loggedOrderIds = <String>{};
@@ -190,7 +220,8 @@ class PosController extends ChangeNotifier {
       final uItemName = (u['itemName']?.toString() ?? '').trim().toLowerCase();
       final matches = (uItemId.isNotEmpty && uItemId == item.id) ||
           uItemName == item.name.trim().toLowerCase();
-      if (matches && _isInRange(u['date']?.toString() ?? '', range, selectedDate)) {
+      if (matches &&
+          _isInRange(u['date']?.toString() ?? '', range, selectedDate)) {
         totalUsedInRange += (u['usedAmount'] as num?)?.toDouble() ?? 0.0;
       }
     }
@@ -201,24 +232,30 @@ class PosController extends ChangeNotifier {
       final deductions = syncService.buildDeductionsForOrder(order);
       for (final d in deductions) {
         if (d['inventoryItemId'] == item.id ||
-            (d['itemName']?.toString() ?? '').trim().toLowerCase() == item.name.trim().toLowerCase()) {
+            (d['itemName']?.toString() ?? '').trim().toLowerCase() ==
+                item.name.trim().toLowerCase()) {
           totalUsedInRange += (d['amount'] as num?)?.toDouble() ?? 0.0;
         }
       }
     }
 
-    final double pieceSize = (item.purchaseUnitSize != null && item.purchaseUnitSize! > 0)
-        ? item.purchaseUnitSize!
-        : 1.0;
+    final double pieceSize =
+        (item.purchaseUnitSize != null && item.purchaseUnitSize! > 0)
+            ? item.purchaseUnitSize!
+            : 1.0;
     final double remainingBase = item.stock;
-    final double openingBase = (remainingBase - totalRestockedInRange + totalUsedInRange).clamp(0.0, double.infinity);
+    final double openingBase =
+        (remainingBase - totalRestockedInRange + totalUsedInRange)
+            .clamp(0.0, double.infinity);
 
     final double openingPcs = openingBase / pieceSize;
     final double restockedPcs = totalRestockedInRange / pieceSize;
-    final double usedPcs = (item.purchaseUnitSize != null && item.purchaseUnitSize! > 0)
-        ? (totalUsedInRange / item.purchaseUnitSize!)
-        : -1.0;
-    final double remainingPcs = (remainingBase / pieceSize).clamp(0.0, double.infinity);
+    final double usedPcs =
+        (item.purchaseUnitSize != null && item.purchaseUnitSize! > 0)
+            ? (totalUsedInRange / item.purchaseUnitSize!)
+            : -1.0;
+    final double remainingPcs =
+        (remainingBase / pieceSize).clamp(0.0, double.infinity);
 
     // Exact Cups Left calculation from Admin (configuredCupsLeft or cupsMake if unit != 'pcs')
     double? cupsLeft;
@@ -245,7 +282,8 @@ class PosController extends ChangeNotifier {
     return menu.where((item) {
       if (!item.available) return false;
       if (selectedCategory != 'All' &&
-          item.category.trim().toLowerCase() != selectedCategory.trim().toLowerCase()) {
+          item.category.trim().toLowerCase() !=
+              selectedCategory.trim().toLowerCase()) {
         return false;
       }
       if (searchQuery.isNotEmpty) {
@@ -269,16 +307,23 @@ class PosController extends ChangeNotifier {
 
   // --- Cart Management ---
   double get subtotal => cart.fold(0.0, (sum, item) => sum + item.lineTotal);
-  double get total => (subtotal - discountAmount) > 0 ? (subtotal - discountAmount) : 0.0;
-  double get change => paymentMethod == 'cash' && tenderedAmount >= total ? (tenderedAmount - total) : 0.0;
+  double get total =>
+      (subtotal - discountAmount) > 0 ? (subtotal - discountAmount) : 0.0;
+  double get change => paymentMethod == 'cash' && tenderedAmount >= total
+      ? (tenderedAmount - total)
+      : 0.0;
 
-  void addToCart(MenuItem product, {String? style, List<OrderAddonSelection> addons = const [], int qty = 1}) {
+  void addToCart(MenuItem product,
+      {String? style,
+      List<OrderAddonSelection> addons = const [],
+      int qty = 1}) {
     final existingIndex = cart.indexWhere((line) {
       if (line.productId != product.id) return false;
       if (line.style != style) return false;
       if (line.addons.length != addons.length) return false;
       for (int i = 0; i < addons.length; i++) {
-        if (line.addons[i].name != addons[i].name || line.addons[i].qty != addons[i].qty) {
+        if (line.addons[i].name != addons[i].name ||
+            line.addons[i].qty != addons[i].qty) {
           return false;
         }
       }
@@ -371,9 +416,13 @@ class PosController extends ChangeNotifier {
 
       final existingTodayCount = orders.where((o) {
         final d = DateTime.tryParse(o.createdAt);
-        return d != null && d.year == now.year && d.month == now.month && d.day == now.day;
+        return d != null &&
+            d.year == now.year &&
+            d.month == now.month &&
+            d.day == now.day;
       }).length;
-      final localTicketNo = '#${(existingTodayCount + 1).toString().padLeft(3, '0')}';
+      final localTicketNo =
+          '#${(existingTodayCount + 1).toString().padLeft(3, '0')}';
 
       final order = Order(
         id: orderId,
@@ -399,7 +448,8 @@ class PosController extends ChangeNotifier {
       final pushRes = await supabaseService.pushOrderAtomic(order, deductions);
       if (pushRes['ok'] == true) {
         order.isSynced = true;
-        if (pushRes['ticketNo'] != null && pushRes['ticketNo'].toString().isNotEmpty) {
+        if (pushRes['ticketNo'] != null &&
+            pushRes['ticketNo'].toString().isNotEmpty) {
           order.ticketNo = pushRes['ticketNo'].toString();
         }
       }
@@ -410,10 +460,12 @@ class PosController extends ChangeNotifier {
 
       // Deduct inventory locally based on Admin recipe deductions
       for (final d in deductions) {
-        final stockItem = inventory.where((i) => i.id == d['inventoryItemId']).firstOrNull;
+        final stockItem =
+            inventory.where((i) => i.id == d['inventoryItemId']).firstOrNull;
         final amount = (d['amount'] as num?)?.toDouble() ?? 0.0;
         if (stockItem != null && amount > 0) {
-          stockItem.stock = (stockItem.stock - amount).clamp(0.0, double.infinity);
+          stockItem.stock =
+              (stockItem.stock - amount).clamp(0.0, double.infinity);
         }
       }
       await localStorage.saveInventory(inventory);
@@ -470,11 +522,18 @@ class PosController extends ChangeNotifier {
 
     // Fallback local verification if offline
     final manager = staffUsers.firstWhere(
-      (u) => u.username.toLowerCase() == managerUsername.trim().toLowerCase() && u.isManager,
-      orElse: () => const StaffUser(id: '', username: '', password: '', name: '', role: ''),
+      (u) =>
+          u.username.toLowerCase() == managerUsername.trim().toLowerCase() &&
+          u.isManager,
+      orElse: () => const StaffUser(
+          id: '', username: '', password: '', name: '', role: ''),
     );
     if (manager.id.isEmpty || manager.password != managerPassword) {
-      return {'ok': false, 'error': remoteVoid['error']?.toString() ?? 'Invalid manager credentials'};
+      return {
+        'ok': false,
+        'error':
+            remoteVoid['error']?.toString() ?? 'Invalid manager credentials'
+      };
     }
 
     order.voided = true;
@@ -509,7 +568,10 @@ class PosController extends ChangeNotifier {
         managerPassword,
       );
       if (auth['ok'] != true) {
-        return {'ok': false, 'error': auth['error'] ?? 'Manager approval required.'};
+        return {
+          'ok': false,
+          'error': auth['error'] ?? 'Manager approval required.'
+        };
       }
       final authenticated = auth['user'] as StaffUser;
       if (!authenticated.isManager) {
@@ -541,11 +603,15 @@ class PosController extends ChangeNotifier {
 
     final result = await supabaseService.pushOrderAtomic(order, const []);
     if (result['ok'] != true) {
-      return {'ok': false, 'error': result['error'] ?? 'Unable to void checkout.'};
+      return {
+        'ok': false,
+        'error': result['error'] ?? 'Unable to void checkout.'
+      };
     }
 
     order.isSynced = true;
-    if (result['ticketNo'] != null && result['ticketNo'].toString().isNotEmpty) {
+    if (result['ticketNo'] != null &&
+        result['ticketNo'].toString().isNotEmpty) {
       order.ticketNo = result['ticketNo'].toString();
     }
     await localStorage.addOrder(order);
@@ -563,14 +629,20 @@ class PosController extends ChangeNotifier {
   ) async {
     final requester = currentUser;
     if (requester == null || requester.id.isEmpty) {
-      return {'ok': false, 'error': 'Unable to identify the requesting staff member.'};
+      return {
+        'ok': false,
+        'error': 'Unable to identify the requesting staff member.'
+      };
     }
     if (reason.trim().isEmpty) {
       return {'ok': false, 'error': 'Enter a reason for voiding.'};
     }
     if (voidRequests.any((request) =>
         request.requestedById == requester.id && request.status == 'pending')) {
-      return {'ok': false, 'error': 'You already have a void request waiting for Admin approval.'};
+      return {
+        'ok': false,
+        'error': 'You already have a void request waiting for Admin approval.'
+      };
     }
 
     final targetOrder = orderId == null
@@ -689,12 +761,14 @@ class PosController extends ChangeNotifier {
     await syncService.syncAll();
   }
 
-  Future<void> restockItem(String inventoryItemId, double piecesQty, [String? notes]) async {
+  Future<void> restockItem(String inventoryItemId, double piecesQty,
+      [String? notes]) async {
     final item = inventory.where((i) => i.id == inventoryItemId).firstOrNull;
     if (item == null) return;
-    final unitSize = (item.purchaseUnitSize != null && item.purchaseUnitSize! > 0)
-        ? item.purchaseUnitSize!
-        : 1.0;
+    final unitSize =
+        (item.purchaseUnitSize != null && item.purchaseUnitSize! > 0)
+            ? item.purchaseUnitSize!
+            : 1.0;
     final baseQtyAdded = piecesQty * unitSize;
 
     await addRestockRecord(
@@ -724,11 +798,16 @@ class PosController extends ChangeNotifier {
     await localStorage.removePendingRestock(restockId);
 
     if (existing != null) {
-      final item = inventory.where((i) =>
-          (existing.inventoryItemId != null && i.id == existing.inventoryItemId) ||
-          i.name.trim().toLowerCase() == existing.itemName.trim().toLowerCase()).firstOrNull;
+      final item = inventory
+          .where((i) =>
+              (existing.inventoryItemId != null &&
+                  i.id == existing.inventoryItemId) ||
+              i.name.trim().toLowerCase() ==
+                  existing.itemName.trim().toLowerCase())
+          .firstOrNull;
       if (item != null) {
-        item.stock = (item.stock - existing.quantityAdded).clamp(0.0, double.infinity);
+        item.stock =
+            (item.stock - existing.quantityAdded).clamp(0.0, double.infinity);
         await localStorage.saveInventory(inventory);
       }
     }
@@ -741,6 +820,10 @@ class PosController extends ChangeNotifier {
 
   // --- Shift Clock In / Out ---
   Future<void> punchShift(StaffUser staff, String type) async {
+    if (!staff.canAccessBaristaShift || (type != 'login' && type != 'logout')) {
+      return;
+    }
+
     final now = ManilaTime.utcNowIso8601();
     final log = LoginActivity(
       id: 'log-${DateTime.now().millisecondsSinceEpoch}',
@@ -758,13 +841,7 @@ class PosController extends ChangeNotifier {
 
     await localStorage.addLoginActivity(log);
     shiftLogs.insert(0, log);
-
-    if (type == 'login') {
-      currentBaristaName = staff.name;
-      currentBaristaUserId = staff.id;
-      isPosOpen = true;
-      await localStorage.setPosState(isOpen: true, openedBy: staff.name, openedAt: now);
-    }
+    _restoreOnShiftBarista();
 
     syncService.updatePendingCount();
     notifyListeners();

@@ -57,8 +57,8 @@ export async function login(
   if (selectedRole === "admin" && effectiveRole !== "admin") {
     return { error: "Those credentials are not for the Admin role." };
   }
-  if (selectedRole === "cashier" && effectiveRole !== "cashier" && effectiveRole !== "manager" && effectiveRole !== "barista" && effectiveRole !== "admin") {
-    return { error: "Those credentials are not for the Staff role." };
+  if (selectedRole === "cashier" && effectiveRole !== "cashier") {
+    return { error: "Only Cashier accounts can log in to the POS." };
   }
 
   const session = toSession({ ...user, role: effectiveRole });

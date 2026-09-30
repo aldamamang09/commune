@@ -58,11 +58,13 @@ class _LoginScreenState extends State<LoginScreen> {
     StaffUser? authenticatedStaff;
 
     // 1. Authenticate directly against centralized Supabase database
-    final authRes = await widget.controller.supabaseService.authenticateStaff(username, password);
+    final authRes = await widget.controller.supabaseService
+        .authenticateStaff(username, password);
     if (authRes['ok'] == true && authRes['user'] is StaffUser) {
       authenticatedStaff = authRes['user'] as StaffUser;
       if (authRes['allStaff'] is List<StaffUser>) {
-        await widget.controller.localStorage.saveStaff(authRes['allStaff'] as List<StaffUser>);
+        await widget.controller.localStorage
+            .saveStaff(authRes['allStaff'] as List<StaffUser>);
       }
       await widget.controller.syncService.syncAll();
       await widget.controller.init();
@@ -77,33 +79,42 @@ class _LoginScreenState extends State<LoginScreen> {
               u.name.trim().toLowerCase() == username)
           .firstOrNull;
       if (matched != null &&
-          (matched.password == password || matched.password.trim() == password.trim()) &&
+          (matched.password == password ||
+              matched.password.trim() == password.trim()) &&
           matched.password.isNotEmpty) {
         authenticatedStaff = matched;
       }
     }
 
-    if (authenticatedStaff == null || !authenticatedStaff.canUsePos) {
+    if (authenticatedStaff == null) {
       setState(() {
         _isLoading = false;
-        _errorMessage = authRes['error']?.toString() ?? 'Invalid cashier or staff credentials';
+        _errorMessage =
+            authRes['error']?.toString() ?? 'Invalid Cashier credentials';
       });
       return;
     }
 
-    await widget.controller.localStorage.saveActiveStaffSession(authenticatedStaff);
+    if (!authenticatedStaff.canUsePos) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Only Cashier accounts can open the POS terminal.';
+      });
+      return;
+    }
+
+    await widget.controller.localStorage
+        .saveActiveStaffSession(authenticatedStaff);
     widget.controller.currentUser = authenticatedStaff;
-    widget.controller.currentBaristaName = authenticatedStaff.name;
-    widget.controller.currentBaristaUserId = authenticatedStaff.id;
     widget.controller.isPosOpen = true;
-    await widget.controller.punchShift(authenticatedStaff, 'login');
 
     setState(() => _isLoading = false);
 
     if (mounted) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => PosScreen(controller: widget.controller)),
+        MaterialPageRoute(
+            builder: (_) => PosScreen(controller: widget.controller)),
       );
     }
   }
@@ -124,7 +135,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: const [
-                  BoxShadow(color: Colors.black26, blurRadius: 30, offset: Offset(0, 10)),
+                  BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 30,
+                      offset: Offset(0, 10)),
                 ],
               ),
               child: Column(
@@ -140,54 +154,61 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: const Center(
                       child: Text(
                         'c',
-                        style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold),
                       ),
                     ),
                   ),
                   const SizedBox(height: 14),
                   const Text(
                     'commune',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: -0.5),
+                    style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: -0.5),
                   ),
                   const Text(
                     'POS Terminal • Live Admin Sync',
-                    style: TextStyle(fontSize: 12, color: CommuneTheme.textMuted),
+                    style:
+                        TextStyle(fontSize: 12, color: CommuneTheme.textMuted),
                   ),
                   const SizedBox(height: 28),
-
                   TextField(
                     controller: _usernameController,
                     decoration: InputDecoration(
                       labelText: 'Username',
-                      hintText: 'cashier / barista / manager',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      hintText: 'Cashier username',
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 14),
                     ),
                   ),
                   const SizedBox(height: 16),
-
                   TextField(
                     controller: _passwordController,
                     obscureText: true,
                     decoration: InputDecoration(
                       labelText: 'Password',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 14),
                     ),
                     onSubmitted: (_) => _handleLogin(),
                   ),
-
                   if (_errorMessage != null) ...[
                     const SizedBox(height: 12),
                     Text(
                       _errorMessage!,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: CommuneTheme.voidRed, fontSize: 12),
+                      style: const TextStyle(
+                          color: CommuneTheme.voidRed, fontSize: 12),
                     ),
                   ],
-
                   const SizedBox(height: 24),
-
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
@@ -195,18 +216,21 @@ class _LoginScreenState extends State<LoginScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: CommuneTheme.primary,
                         foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                         padding: const EdgeInsets.symmetric(vertical: 16),
                       ),
                       child: _isLoading
                           ? const SizedBox(
                               height: 20,
                               width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white),
                             )
                           : const Text(
                               'Open POS Terminal',
-                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                  fontSize: 15, fontWeight: FontWeight.bold),
                             ),
                     ),
                   ),
@@ -214,7 +238,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   const Text(
                     'Real-time auto-sync with Admin Panel database',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 11, color: CommuneTheme.textMuted),
+                    style:
+                        TextStyle(fontSize: 11, color: CommuneTheme.textMuted),
                   ),
                 ],
               ),

@@ -48,7 +48,7 @@ function refresh() {
 async function requirePosSession() {
   const session = await getSession();
   if (!session || !canUsePos(session.role)) {
-    throw new Error("Only cashier or manager can punch barista shifts.");
+    throw new Error("Only an active Cashier POS session can open the barista shift module.");
   }
   return session;
 }
@@ -57,9 +57,15 @@ function compactStaffKey(value: string) {
   return String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-function looksLikeBarista(user: StaffUser) {
-  if (user.role === "barista") return true;
-  return /barista/i.test(`${user.title} ${user.username} ${user.name}`);
+function hasBaristaCredentials(user: StaffUser, username: string, password: string) {
+  const normalizedUsername = username.trim().toLowerCase();
+  const normalizedPassword = password.trim();
+  return user.role === "barista" &&
+    user.password.trim().length > 0 &&
+    user.password.trim() === normalizedPassword &&
+    (user.username.trim().toLowerCase() === normalizedUsername ||
+      compactStaffKey(user.username) === compactStaffKey(normalizedUsername) ||
+      compactStaffKey(user.name) === compactStaffKey(normalizedUsername));
 }
 
 // Still mutates store.loginActivity in memory synchronously (so an
@@ -292,26 +298,14 @@ export async function punchBaristaShift(input: {
           compactStaffKey(entry.name) === compact
         );
       });
-      if (!user || String(user.password ?? "").trim() !== password) {
-        error = "Barista username or password is incorrect.";
-        return;
-      }
-      if (user.role === "admin" || !looksLikeBarista(user)) {
+      if (!user || !hasBaristaCredentials(user, username, password)) {
         error = "Use a barista account to clock in here.";
-        return;
-      }
-      if (!user.password) {
-        error = "This barista does not have a password yet. Ask admin to set one.";
         return;
       }
       if (openShifts.some((shift) => shift.userId === user.id)) {
         punched = { id: user.id, name: user.name, username: user.username };
         error = `${user.name} is already clocked in.`;
         return;
-      }
-      if (user.role !== "barista") {
-        user.role = "barista";
-        user.title = "Barista";
       }
       activity = appendPunch(store, user, "login", "barista");
       punched = { id: user.id, name: user.name, username: user.username };
@@ -327,6 +321,10 @@ export async function punchBaristaShift(input: {
     const user = store.users.find((entry) => entry.id === open.userId);
     if (!user) {
       error = "Barista account not found.";
+      return;
+    }
+    if (!hasBaristaCredentials(user, input.username ?? "", input.password ?? "")) {
+      error = "Use the on-shift Barista's own username and password to clock out.";
       return;
     }
     activity = appendPunch(store, user, "logout", "barista");
