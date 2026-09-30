@@ -25,10 +25,13 @@ class LocalStorageService {
   static const String _keyPosOpen = 'v2_cache_pos_is_open';
   static const String _keyPosOpenedBy = 'v2_cache_pos_opened_by';
   static const String _keyPosOpenedAt = 'v2_cache_pos_opened_at';
+  static const String _keyActiveStaffId = 'v1_active_staff_id';
+  static const String _keyActiveStaffProfile = 'v1_active_staff_profile';
 
   // Offline Queues (v2)
   static const String _queueOrders = 'v2_offline_queue_orders';
   static const String _queueRestocks = 'v2_offline_queue_restocks';
+  static const String _queueRestockDeletes = 'v1_offline_queue_restock_deletes';
   static const String _queueVoidRequests = 'v2_offline_queue_void_requests';
   static const String _queueLoginActivity = 'v2_offline_queue_login_activity';
 
@@ -40,6 +43,39 @@ class LocalStorageService {
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
+  }
+
+  String? getActiveStaffId() => _prefs.getString(_keyActiveStaffId);
+
+  StaffUser? getActiveStaffProfile() {
+    final raw = _prefs.getString(_keyActiveStaffProfile);
+    if (raw == null) return null;
+    try {
+      return StaffUser.fromJson(
+        Map<String, dynamic>.from(jsonDecode(raw) as Map),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveActiveStaffSession(StaffUser staff) async {
+    await _prefs.setString(_keyActiveStaffId, staff.id);
+    await _prefs.setString(
+      _keyActiveStaffProfile,
+      jsonEncode({
+        'id': staff.id,
+        'username': staff.username,
+        'name': staff.name,
+        'role': staff.role,
+        'title': staff.title,
+      }),
+    );
+  }
+
+  Future<void> clearActiveStaffId() async {
+    await _prefs.remove(_keyActiveStaffId);
+    await _prefs.remove(_keyActiveStaffProfile);
   }
 
   // --- Connection Config ---
@@ -237,6 +273,20 @@ class LocalStorageService {
     await _prefs.setString(_queueRestocks, jsonEncode(queue.map((r) => r.toJson()).toList()));
   }
 
+  List<String> getPendingRestockDeletes() =>
+      _prefs.getStringList(_queueRestockDeletes) ?? [];
+
+  Future<void> addPendingRestockDelete(String id) async {
+    final queue = getPendingRestockDeletes();
+    if (!queue.contains(id)) queue.add(id);
+    await _prefs.setStringList(_queueRestockDeletes, queue);
+  }
+
+  Future<void> removePendingRestockDelete(String id) async {
+    final queue = getPendingRestockDeletes()..removeWhere((pendingId) => pendingId == id);
+    await _prefs.setStringList(_queueRestockDeletes, queue);
+  }
+
   // --- Void Requests Cache & Queue ---
   Future<void> saveVoidRequests(List<VoidRequest> requests) async {
     await _prefs.setString(_keyVoidRequests, jsonEncode(requests.map((r) => r.toJson()).toList()));
@@ -366,6 +416,7 @@ class LocalStorageService {
   int getPendingSyncCount() {
     return getPendingOrders().length +
         getPendingRestocks().length +
+        getPendingRestockDeletes().length +
         getPendingVoidRequests().length +
         getPendingLoginActivity().length;
   }
@@ -373,6 +424,7 @@ class LocalStorageService {
   Future<void> clearPendingQueues() async {
     await _prefs.remove(_queueOrders);
     await _prefs.remove(_queueRestocks);
+    await _prefs.remove(_queueRestockDeletes);
     await _prefs.remove(_queueVoidRequests);
     await _prefs.remove(_queueLoginActivity);
   }

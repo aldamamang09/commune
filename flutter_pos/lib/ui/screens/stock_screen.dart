@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../../manila_time.dart';
 import '../../models/inventory_item.dart';
 import '../../state/pos_controller.dart';
 
@@ -31,7 +32,7 @@ class _StockScreenState extends State<StockScreen> {
   void initState() {
     super.initState();
     _dateController = TextEditingController(
-      text: DateFormat('MM/dd/yyyy').format(DateTime.now()),
+      text: DateFormat('MM/dd/yyyy').format(ManilaTime.now()),
     );
     widget.controller.addListener(_onControllerChange);
     widget.controller.syncService.addListener(_onControllerChange);
@@ -73,14 +74,25 @@ class _StockScreenState extends State<StockScreen> {
 
   DateTime? _parseSelectedDate() {
     try {
-      final parts = _dateController.text.trim().split('/');
-      if (parts.length == 3) {
-        return DateTime(int.parse(parts[2]), int.parse(parts[0]), int.parse(parts[1]));
-      }
-      return DateTime.tryParse(_dateController.text.trim());
+      return DateFormat('MM/dd/yyyy').parseStrict(_dateController.text.trim());
     } catch (_) {
       return null;
     }
+  }
+
+  Future<void> _pickDate() async {
+    final now = ManilaTime.now();
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: _parseSelectedDate() ?? now,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (selected == null || !mounted) return;
+    setState(() {
+      _dateController.text = DateFormat('MM/dd/yyyy').format(selected);
+      _range = 'Date';
+    });
   }
 
   Future<void> _handleSaveStockItem() async {
@@ -264,7 +276,7 @@ class _StockScreenState extends State<StockScreen> {
                         value: _range,
                         icon: const Icon(Icons.keyboard_arrow_down, size: 18),
                         style: const TextStyle(fontSize: 13, color: Colors.black, fontWeight: FontWeight.w500),
-                        items: ['Today', 'Yesterday', 'This Week', 'Last Week', 'This Month', 'Last Month'].map((r) {
+                        items: ['Today', 'This Week', 'Last Week', 'This Month', 'Last Month', 'This Year', 'Last Year'].map((r) {
                           return DropdownMenuItem(value: r, child: Text('Range:  $r'));
                         }).toList(),
                         onChanged: (val) {
@@ -288,16 +300,23 @@ class _StockScreenState extends State<StockScreen> {
                         Expanded(
                           child: TextField(
                             controller: _dateController,
+                            readOnly: true,
+                            onTap: _pickDate,
                             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
                             decoration: const InputDecoration(
                               border: InputBorder.none,
                               isDense: true,
                               contentPadding: EdgeInsets.zero,
                             ),
-                            onSubmitted: (_) => setState(() {}),
                           ),
                         ),
-                        const Icon(Icons.calendar_today_outlined, size: 16, color: Color(0xFF4B5563)),
+                        IconButton(
+                          tooltip: 'Choose date',
+                          onPressed: _pickDate,
+                          icon: const Icon(Icons.calendar_today_outlined, size: 16, color: Color(0xFF4B5563)),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(width: 24, height: 30),
+                        ),
                       ],
                     ),
                   ),
@@ -353,85 +372,137 @@ class _StockScreenState extends State<StockScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      crossAxisAlignment: WrapCrossAlignment.end,
-                      children: [
-                        _buildFormField(
-                          label: 'Item Name',
-                          hint: 'e.g. Coffee Beans',
-                          controller: _nameController,
-                          width: 170,
-                        ),
-                        _buildFormField(
-                          label: 'Total Unit Item',
-                          hint: 'e.g. 1000',
-                          controller: _totalUnitController,
-                          width: 140,
-                          isNumber: true,
-                          onChanged: (_) => setState(() {}),
-                        ),
-                        _buildFormField(
-                          label: 'Unit Item',
-                          hint: 'e.g. 9',
-                          controller: _unitItemController,
-                          width: 130,
-                          isNumber: true,
-                          onChanged: (_) => setState(() {}),
-                        ),
-                        _buildFormField(
-                          label: 'Quantity',
-                          hint: '0',
-                          controller: _qtyController,
-                          width: 120,
-                          isNumber: true,
-                        ),
-                        _buildFormField(
-                          label: 'Unit',
-                          hint: 'grams, ml, pcs',
-                          controller: _unitController,
-                          width: 130,
-                          onChanged: (_) => setState(() {}),
-                        ),
-                        _buildFormField(
-                          label: 'Cups make',
-                          hint: '—',
-                          controller: TextEditingController(text: _computedCupsMakeLabel()),
-                          width: 120,
-                          enabled: false,
-                        ),
-                        SizedBox(
-                          height: 38,
-                          child: ElevatedButton(
-                            onPressed: _handleSaveStockItem,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.black,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              padding: const EdgeInsets.symmetric(horizontal: 20),
-                              elevation: 0,
-                            ),
-                            child: Text(
-                              _editingItemId != null ? 'Update' : 'Add',
-                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final singleRow = constraints.maxWidth >= 960;
+
+                        Widget field({
+                          required String label,
+                          required String hint,
+                          required TextEditingController controller,
+                          required double width,
+                          required int flex,
+                          bool isNumber = false,
+                          bool enabled = true,
+                          ValueChanged<String>? onChanged,
+                        }) {
+                          return _buildFormField(
+                            label: label,
+                            hint: hint,
+                            controller: controller,
+                            width: singleRow ? null : width,
+                            flex: flex,
+                            isNumber: isNumber,
+                            enabled: enabled,
+                            onChanged: onChanged,
+                          );
+                        }
+
+                        final fields = [
+                          field(
+                            label: 'Item Name',
+                            hint: 'e.g. Coffee Beans',
+                            controller: _nameController,
+                            width: 185,
+                            flex: 3,
+                          ),
+                          field(
+                            label: 'Total Unit Item',
+                            hint: 'e.g. 1000',
+                            controller: _totalUnitController,
+                            width: 150,
+                            flex: 2,
+                            isNumber: true,
+                            onChanged: (_) => setState(() {}),
+                          ),
+                          field(
+                            label: 'Unit Item',
+                            hint: 'e.g. 9',
+                            controller: _unitItemController,
+                            width: 140,
+                            flex: 2,
+                            isNumber: true,
+                            onChanged: (_) => setState(() {}),
+                          ),
+                          field(
+                            label: 'Quantity',
+                            hint: '0',
+                            controller: _qtyController,
+                            width: 120,
+                            flex: 2,
+                            isNumber: true,
+                          ),
+                          field(
+                            label: 'Unit',
+                            hint: 'grams, ml, pcs',
+                            controller: _unitController,
+                            width: 145,
+                            flex: 2,
+                            onChanged: (_) => setState(() {}),
+                          ),
+                          field(
+                            label: 'Cups make',
+                            hint: '—',
+                            controller: TextEditingController(text: _computedCupsMakeLabel()),
+                            width: 115,
+                            flex: 2,
+                            enabled: false,
+                          ),
+                        ];
+
+                        final buttons = [
+                          SizedBox(
+                            height: 44,
+                            child: ElevatedButton(
+                              onPressed: _handleSaveStockItem,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.black,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                padding: const EdgeInsets.symmetric(horizontal: 14),
+                                elevation: 0,
+                              ),
+                              child: Text(
+                                _editingItemId != null ? 'Update' : 'Add',
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                              ),
                             ),
                           ),
-                        ),
-                        SizedBox(
-                          height: 38,
-                          child: OutlinedButton(
-                            onPressed: _handleClear,
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.black,
-                              side: const BorderSide(color: Color(0xFFD1D5DB)),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                          SizedBox(
+                            height: 44,
+                            child: OutlinedButton(
+                              onPressed: _handleClear,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.black,
+                                side: const BorderSide(color: Color(0xFFD1D5DB)),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                              ),
+                              child: const Text('Clear', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                             ),
-                            child: const Text('Clear', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
                           ),
-                        ),
-                      ],
+                        ];
+
+                        if (singleRow) {
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              for (final formField in fields) ...[
+                                formField,
+                                const SizedBox(width: 8),
+                              ],
+                              ...buttons,
+                            ],
+                          );
+                        }
+
+                        return Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          crossAxisAlignment: WrapCrossAlignment.end,
+                          children: [...fields, ...buttons],
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -638,32 +709,40 @@ class _StockScreenState extends State<StockScreen> {
     required String label,
     required String hint,
     required TextEditingController controller,
-    required double width,
+    required double? width,
+    required int flex,
     bool enabled = true,
     bool isNumber = false,
     ValueChanged<String>? onChanged,
   }) {
-    return SizedBox(
-      width: width,
-      child: Column(
+    final field = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280), fontWeight: FontWeight.w500)),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 11,
+              color: Color(0xFF6B7280),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
           const SizedBox(height: 4),
           SizedBox(
-            height: 38,
+            height: 44,
             child: TextField(
               controller: controller,
               enabled: enabled,
               keyboardType: isNumber ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
               onChanged: onChanged,
-              style: const TextStyle(fontSize: 12),
+              style: const TextStyle(fontSize: 14),
               decoration: InputDecoration(
                 hintText: hint,
-                hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
+                hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF9CA3AF)),
                 filled: true,
                 fillColor: enabled ? Colors.white : const Color(0xFFF3F4F6),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
@@ -680,7 +759,8 @@ class _StockScreenState extends State<StockScreen> {
             ),
           ),
         ],
-      ),
-    );
+      );
+    if (width == null) return Expanded(flex: flex, child: field);
+    return SizedBox(width: width, child: field);
   }
 }

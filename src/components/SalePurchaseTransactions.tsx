@@ -949,22 +949,28 @@ export function SalePurchaseTransactions({
 
   const handleDeleteRestock = async (id: string) => {
     const record = restocks.find((item) => item.id === id);
-    if (record) {
-      const nextStocks = stocks.map((item) =>
-        matchesInventoryRow(
-          { itemName: record.itemName, inventoryItemId: record.inventoryItemId },
-          { name: item.name, inventoryItemId: item.id },
-        )
-          ? { ...item, stock: Math.max(0, item.stock - record.quantityAdded) }
-          : item,
-      );
-      setStocks(nextStocks);
+    const previousStocks = stocks;
+    const previousRestocks = restocks;
+    try {
+      if (record) {
+        const nextStocks = stocks.map((item) =>
+          matchesInventoryRow(
+            { itemName: record.itemName, inventoryItemId: record.inventoryItemId },
+            { name: item.name, inventoryItemId: item.id },
+          )
+            ? { ...item, stock: Math.max(0, item.stock - record.quantityAdded) }
+            : item,
+        );
+        setStocks(nextStocks);
+      }
+      setRestocks((current) => current.filter((s) => s.id !== id));
+      // The RPC reverses inventory and deletes the ledger row in one transaction.
+      await deleteRestock({ id });
+    } catch (error) {
+      setStocks(previousStocks);
+      setRestocks(previousRestocks);
+      setStockNotice(error instanceof Error ? error.message : "Could not delete restock.");
     }
-    setRestocks((current) => current.filter((s) => s.id !== id));
-    // delete_restock_atomic locks the persisted row and reverses stock from
-    // its own inventory_item_id/quantity_added - the optimistic state update
-    // above is display-only and no longer affects correctness.
-    await deleteRestock({ id });
   };
 
   const handleSaveCosting = async (e: React.FormEvent) => {

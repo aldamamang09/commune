@@ -1,4 +1,5 @@
 import 'package:intl/intl.dart';
+import '../models/menu_item.dart';
 import '../models/order.dart';
 
 class PrinterService {
@@ -77,31 +78,46 @@ class PrinterService {
     return buffer.toString();
   }
 
+  static bool isDrinkCategory(String? category) {
+    if (category == null || category.trim().isEmpty) return false;
+    return !RegExp(r'^\s*(food|pastr)', caseSensitive: false).hasMatch(category);
+  }
+
+  static List<int> cupLabelItemIndexes(Order order, List<MenuItem> menu) {
+    final indexes = <int>[];
+    for (var itemIndex = 0; itemIndex < order.items.length; itemIndex++) {
+      final item = order.items[itemIndex];
+      final category = item.category ??
+          menu.where((menuItem) => menuItem.id == item.productId).firstOrNull?.category;
+      if (!isDrinkCategory(category)) continue;
+      for (var copy = 0; copy < item.qty; copy++) {
+        indexes.add(itemIndex);
+      }
+    }
+    return indexes;
+  }
+
   /// Formats drink cup label text
   static String formatCupLabel(Order order, int itemIndex) {
     if (itemIndex >= order.items.length) return '';
     final item = order.items[itemIndex];
     final buffer = StringBuffer();
 
-    buffer.writeln('MAKE THESE DRINKS');
-    buffer.writeln('-' * 20);
+    buffer.writeln('MAKE THIS DRINKS');
+    buffer.writeln('-' * 22);
     buffer.writeln('ORDER NO. ${order.ticketNo.isNotEmpty ? order.ticketNo : 'N/A'}');
-    buffer.writeln(DateFormat('MM/dd/yyyy hh:mm a').format(DateTime.tryParse(order.createdAt) ?? DateTime.now()));
-    buffer.writeln('');
-    buffer.writeln('Qty  Drink');
-    buffer.writeln('${item.qty}x ${item.name.toUpperCase()}');
+    buffer.writeln('-' * 22);
+    buffer.writeln('1X ${item.name.toUpperCase()}');
+    final options = <String>[];
     if (item.style != null && item.style!.isNotEmpty) {
-      buffer.writeln('Type: ${item.style!.toUpperCase()}');
-    }
-    if (item.optionsSummary.isNotEmpty) {
-      buffer.writeln(item.optionsSummary.toUpperCase());
+      options.add('(${item.style!.toUpperCase()})');
     }
     if (item.addons.isNotEmpty) {
-      buffer.writeln('ADD-ONS: ${item.addons.map((a) => '${a.name} x${a.qty}').join(', ').toUpperCase()}');
+      options.add(
+        '*addson ${item.addons.map((addon) => '+${addon.qty} ${addon.name}').join(', ')}',
+      );
     }
-    buffer.writeln('BARISTA: ${order.baristaName.toUpperCase()}');
-    buffer.writeln('');
-    buffer.writeln('${itemIndex + 1}/${order.items.length}');
+    if (options.isNotEmpty) buffer.writeln(options.join(' '));
     return buffer.toString();
   }
 }

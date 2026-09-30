@@ -137,75 +137,75 @@ class _CartPanelState extends State<CartPanel> {
                       ),
                     ),
                   )
-                : Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    child: Column(
-                      children: [
-                        for (int index = 0; index < controller.cart.length; index++) ...[
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Expanded(
-                                  flex: 5,
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        controller.cart[index].name,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 11,
-                                          color: Color(0xFF111827),
-                                        ),
-                                      ),
-                                      if (controller.cart[index].optionsSummary.isNotEmpty) ...[
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          controller.cart[index].optionsSummary,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontSize: 9,
-                                            color: Color(0xFF6B7280),
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                                Expanded(
-                                  flex: 3,
-                                  child: Text(
-                                    '${controller.cart[index].qty}',
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 10,
-                                    ),
-                                  ),
-                                ),
-                                Expanded(
-                                  flex: 3,
-                                  child: Text(
-                                    '₱${currency.format(controller.cart[index].lineTotal)}',
-                                    textAlign: TextAlign.right,
+                : ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(context).copyWith(
+                      scrollbars: false,
+                    ),
+                    child: ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      itemCount: controller.cart.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) => Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              flex: 5,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    controller.cart[index].name,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w600,
                                       fontSize: 11,
                                       color: Color(0xFF111827),
                                     ),
                                   ),
-                                ),
-                              ],
+                                  if (controller.cart[index].optionsSummary.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      controller.cart[index].optionsSummary,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 9,
+                                        color: Color(0xFF6B7280),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
                             ),
-                          ),
-                          if (index < controller.cart.length - 1) const Divider(height: 1),
-                        ],
-                      ],
+                            Expanded(
+                              flex: 3,
+                              child: Text(
+                                '${controller.cart[index].qty}',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              flex: 3,
+                              child: Text(
+                                '₱${currency.format(controller.cart[index].lineTotal)}',
+                                textAlign: TextAlign.right,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 11,
+                                  color: Color(0xFF111827),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
           ),

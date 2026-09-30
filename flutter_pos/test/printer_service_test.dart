@@ -1,9 +1,62 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:commune_pos/models/menu_item.dart';
 import 'package:commune_pos/models/order.dart';
 import 'package:commune_pos/models/order_item.dart';
 import 'package:commune_pos/services/printer_service.dart';
 
 void main() {
+  test('cup label category filter excludes food and pastries', () {
+    expect(PrinterService.isDrinkCategory('Coffee'), isTrue);
+    expect(PrinterService.isDrinkCategory('Food'), isFalse);
+    expect(PrinterService.isDrinkCategory('Pastries'), isFalse);
+    expect(PrinterService.isDrinkCategory(null), isFalse);
+  });
+
+  test('cup label indexes include every drink cup and exclude food', () {
+    final order = Order(
+      id: 'ord-labels',
+      createdAt: '2026-09-30T15:00:00Z',
+      baristaName: 'Nina',
+      items: [
+        OrderItem(
+          productId: 'latte',
+          name: 'Latte',
+          qty: 2,
+          price: 120,
+          category: 'Drinks',
+        ),
+        OrderItem(
+          productId: 'cake',
+          name: 'Cake',
+          qty: 1,
+          price: 90,
+          category: 'Pastries',
+        ),
+        OrderItem(
+          productId: 'tea',
+          name: 'Iced Tea',
+          qty: 1,
+          price: 80,
+        ),
+      ],
+      subtotal: 410,
+      total: 410,
+      paid: 410,
+      ticketNo: 'A-012',
+    );
+    final menu = [
+      const MenuItem(
+        id: 'tea',
+        name: 'Iced Tea',
+        price: 80,
+        category: 'Beverages',
+        image: '/images/drinks.jpg',
+      ),
+    ];
+
+    expect(PrinterService.cupLabelItemIndexes(order, menu), [0, 0, 2]);
+  });
+
   test('receipt format matches the compact customer receipt style', () {
     final order = Order(
       id: 'ord-1',
@@ -49,10 +102,14 @@ void main() {
       items: [
         OrderItem(
           productId: 'mocha',
-          name: 'Mocha',
-          qty: 1,
+          name: 'Hazelnut Blanc',
+          qty: 2,
           price: 110,
-          style: 'hot',
+          style: 'iced',
+          addons: [
+            OrderAddonSelection(name: 'Oat', qty: 1, price: 10),
+            OrderAddonSelection(name: 'Coffee Beans', qty: 1, price: 5),
+          ],
         ),
       ],
       subtotal: 110,
@@ -63,8 +120,17 @@ void main() {
 
     final label = PrinterService.formatCupLabel(order, 0);
 
-    expect(label, contains('MAKE THESE DRINKS'));
+    expect(label, contains('MAKE THIS DRINKS'));
     expect(label, contains('ORDER NO. A-011'));
-    expect(label, contains('MOCHA'));
+    expect(label, contains('1X HAZELNUT BLANC'));
+    expect(
+      label,
+      'MAKE THIS DRINKS\n'
+      '----------------------\n'
+      'ORDER NO. A-011\n'
+      '----------------------\n'
+      '1X HAZELNUT BLANC\n'
+      '(ICED) *addson +1 Oat, +1 Coffee Beans\n',
+    );
   });
 }

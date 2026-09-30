@@ -91,6 +91,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    await widget.controller.localStorage.saveActiveStaffSession(authenticatedStaff);
     widget.controller.currentUser = authenticatedStaff;
     widget.controller.currentBaristaName = authenticatedStaff.name;
     widget.controller.currentBaristaUserId = authenticatedStaff.id;

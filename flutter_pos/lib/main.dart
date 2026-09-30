@@ -5,6 +5,7 @@ import 'services/sync_service.dart';
 import 'state/pos_controller.dart';
 import 'ui/theme.dart';
 import 'ui/screens/login_screen.dart';
+import 'ui/screens/pos_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -50,7 +51,9 @@ class CommunePosApp extends StatelessWidget {
       title: 'Commune Coffee POS',
       debugShowCheckedModeBanner: false,
       theme: CommuneTheme.theme,
-      home: LoginScreen(controller: controller),
+        home: controller.currentUser == null
+          ? LoginScreen(controller: controller)
+          : PosScreen(controller: controller),
     );
   }
 }

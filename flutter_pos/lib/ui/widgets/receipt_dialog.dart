@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../models/menu_item.dart';
 import '../../models/order.dart';
 import '../../services/printer_service.dart';
 import '../theme.dart';
@@ -60,18 +61,20 @@ class _ThermalSlip extends StatelessWidget {
 
 class ReceiptDialog extends StatelessWidget {
   final Order order;
+  final List<MenuItem> menu;
   final Future<void> Function() onPrint;
 
   const ReceiptDialog({
     super.key,
     required this.order,
+    required this.menu,
     required this.onPrint,
   });
 
   @override
   Widget build(BuildContext context) {
     final receiptText = PrinterService.formatReceipt(order);
-    final labelText = PrinterService.formatCupLabel(order, 0);
+    final labelItemIndexes = PrinterService.cupLabelItemIndexes(order, menu);
 
     return Dialog(
       insetPadding: const EdgeInsets.all(16),
@@ -218,13 +221,35 @@ class ReceiptDialog extends StatelessWidget {
                                 ],
                               ),
                               const SizedBox(height: 10),
-                              Center(
-                                child: _ThermalSlip(
-                                  title: 'Label 1',
-                                  content: labelText,
-                                  width: 236,
-                                ),
-                              ),
+                              if (labelItemIndexes.isEmpty)
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 24),
+                                  child: Center(
+                                    child: Text(
+                                      'This order has no drink labels.',
+                                      style: TextStyle(
+                                        color: CommuneTheme.textMuted,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              else
+                                for (var labelIndex = 0;
+                                    labelIndex < labelItemIndexes.length;
+                                    labelIndex++) ...[
+                                  if (labelIndex > 0) const SizedBox(height: 16),
+                                  Center(
+                                    child: _ThermalSlip(
+                                      title: 'Label ${labelIndex + 1}',
+                                      content: PrinterService.formatCupLabel(
+                                        order,
+                                        labelItemIndexes[labelIndex],
+                                      ),
+                                      width: 236,
+                                    ),
+                                  ),
+                                ],
                             ],
                           ),
                         ),

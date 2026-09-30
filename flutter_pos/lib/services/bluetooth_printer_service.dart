@@ -4,8 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_classic_bluetooth/flutter_classic_bluetooth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/menu_item.dart';
 import '../models/order.dart';
-import '../models/order_item.dart';
 import 'printer_service.dart';
 
 enum PrinterRole { receipt, labels }
@@ -155,24 +155,25 @@ class BluetoothPrinterService extends ChangeNotifier {
     await connection.output.writeBytes(bytes);
   }
 
-  Future<void> printLabels(Order order) async {
+  Future<void> printLabels(
+    Order order, {
+    required List<MenuItem> menu,
+  }) async {
     final connection = _connections[PrinterRole.labels];
     if (connection == null || !connection.isConnected) {
       throw StateError('Connect a label printer from the POS menu first.');
     }
 
-    for (final item in order.items) {
-      for (var copy = 0; copy < item.qty; copy++) {
-        final commands = _labelLanguage == LabelPrinterLanguage.tspl
-            ? _tsplLabel(order, item, copy)
-            : _cpclLabel(order, item, copy);
-        await connection.output.writeBytes(utf8.encode(commands));
-      }
+    for (final itemIndex in PrinterService.cupLabelItemIndexes(order, menu)) {
+      final commands = _labelLanguage == LabelPrinterLanguage.tspl
+          ? _tsplLabel(order, itemIndex)
+          : _cpclLabel(order, itemIndex);
+      await connection.output.writeBytes(utf8.encode(commands));
     }
   }
 
-  String _tsplLabel(Order order, OrderItem item, int copy) {
-    final lines = _labelLines(order, item, copy);
+  String _tsplLabel(Order order, int itemIndex) {
+    final lines = _labelLines(order, itemIndex);
     final commands = StringBuffer()
       ..writeln('SIZE 58 mm,30 mm')
       ..writeln('GAP 2 mm,0')
@@ -180,9 +181,11 @@ class BluetoothPrinterService extends ChangeNotifier {
       ..writeln('CLS');
     var y = 16;
     for (var index = 0; index < lines.length; index++) {
-      final scale = index == 0 ? '1,1' : '1,1';
-      commands.writeln('TEXT 16,$y,"3",0,$scale,"${_quote(lines[index])}"');
-      y += index == 0 ? 30 : 25;
+      final isOptionsLine = index == 5;
+      final font = isOptionsLine ? '1' : '3';
+      final x = isOptionsLine ? 4 : 16;
+      commands.writeln('TEXT $x,$y,"$font",0,1,1,"${_quote(lines[index])}"');
+      y += index == 0 ? 30 : isOptionsLine ? 18 : 25;
     }
     commands
       ..writeln('PRINT 1,1')
@@ -190,15 +193,18 @@ class BluetoothPrinterService extends ChangeNotifier {
     return commands.toString();
   }
 
-  String _cpclLabel(Order order, OrderItem item, int copy) {
-    final lines = _labelLines(order, item, copy);
+  String _cpclLabel(Order order, int itemIndex) {
+    final lines = _labelLines(order, itemIndex);
     final commands = StringBuffer()
       ..writeln('! 0 200 200 240 1')
       ..writeln('PAGE-WIDTH 464');
     var y = 16;
     for (var index = 0; index < lines.length; index++) {
-      commands.writeln('TEXT 4 0 16 $y "${_quote(lines[index])}"');
-      y += index == 0 ? 34 : 28;
+      final isOptionsLine = index == 5;
+      final font = isOptionsLine ? 0 : 4;
+      final x = isOptionsLine ? 8 : 16;
+      commands.writeln('TEXT $font 0 $x $y "${_quote(lines[index])}"');
+      y += index == 0 ? 34 : isOptionsLine ? 18 : 28;
     }
     commands
       ..writeln('FORM')
@@ -207,19 +213,10 @@ class BluetoothPrinterService extends ChangeNotifier {
     return commands.toString();
   }
 
-  List<String> _labelLines(Order order, OrderItem item, int copy) {
-    final ticketNo = order.ticketNo.isEmpty ? 'N/A' : order.ticketNo;
-    final details = <String>[
-      '${item.qty}x ${item.name.toUpperCase()}',
-      if (item.style != null && item.style!.isNotEmpty)
-        item.style!.toUpperCase(),
-      if (item.optionsSummary.isNotEmpty) item.optionsSummary.toUpperCase(),
-    ];
-    return [
-      'MAKE THESE DRINKS',
-      'ORDER NO. $ticketNo',
-      ...details,
-    ];
+  List<String> _labelLines(Order order, int itemIndex) {
+    return PrinterService.formatCupLabel(order, itemIndex)
+        .trimRight()
+        .split('\n');
   }
 
   String _quote(String value) =>

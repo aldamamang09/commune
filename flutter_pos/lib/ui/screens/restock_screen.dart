@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../../models/inventory_item.dart';
+import '../../manila_time.dart';
 import '../../models/restock_record.dart';
 import '../../state/pos_controller.dart';
 
@@ -21,7 +21,7 @@ class _RestockScreenState extends State<RestockScreen> {
   void initState() {
     super.initState();
     _dateController = TextEditingController(
-      text: DateFormat('MM/dd/yyyy').format(DateTime.now()),
+      text: DateFormat('MM/dd/yyyy').format(ManilaTime.now()),
     );
     widget.controller.addListener(_onControllerChange);
     widget.controller.syncService.addListener(_onControllerChange);
@@ -42,38 +42,39 @@ class _RestockScreenState extends State<RestockScreen> {
     if (mounted) setState(() {});
   }
 
-  bool _matchesDateFilter(RestockRecord record) {
-    final parsed = DateTime.tryParse(record.date);
-    if (parsed == null) return true;
-    final itemDay = DateTime(parsed.year, parsed.month, parsed.day);
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    switch (_range) {
-      case 'Today':
-        return itemDay == today;
-      case 'Yesterday':
-        return itemDay == today.subtract(const Duration(days: 1));
-      case 'This Week':
-        final startOfWeek = today.subtract(Duration(days: today.weekday - 1));
-        return !itemDay.isBefore(startOfWeek) && !itemDay.isAfter(today);
-      case 'Last Week':
-        final startOfThisWeek = today.subtract(Duration(days: today.weekday - 1));
-        final startOfLastWeek = startOfThisWeek.subtract(const Duration(days: 7));
-        final endOfLastWeek = startOfThisWeek.subtract(const Duration(days: 1));
-        return !itemDay.isBefore(startOfLastWeek) && !itemDay.isAfter(endOfLastWeek);
-      case 'This Month':
-        return itemDay.year == today.year && itemDay.month == today.month;
-      case 'Last Month':
-        final lastMonth = DateTime(today.year, today.month - 1, 1);
-        return itemDay.year == lastMonth.year && itemDay.month == lastMonth.month;
-      default:
-        return true;
+  DateTime? _parseSelectedDate() {
+    try {
+      return DateFormat('MM/dd/yyyy').parseStrict(_dateController.text.trim());
+    } catch (_) {
+      return null;
     }
   }
 
+  Future<void> _pickDate() async {
+    final now = ManilaTime.now();
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: _parseSelectedDate() ?? now,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (selected == null || !mounted) return;
+    setState(() {
+      _dateController.text = DateFormat('MM/dd/yyyy').format(selected);
+      _range = 'Date';
+    });
+  }
+
+  bool _matchesDateFilter(RestockRecord record) {
+    final selectedDate = _parseSelectedDate();
+    final anchor = selectedDate == null
+        ? ManilaTime.today()
+        : DateTime.utc(selectedDate.year, selectedDate.month, selectedDate.day);
+    return ManilaTime.matchesRange(record.date, _range, anchor);
+  }
+
   String _formatDateTime(String iso) {
-    final parsed = DateTime.tryParse(iso)?.toLocal();
+    final parsed = ManilaTime.parse(iso);
     if (parsed == null) return iso;
     return DateFormat('MMM d, yyyy, h:mm a').format(parsed);
   }
@@ -91,84 +92,6 @@ class _RestockScreenState extends State<RestockScreen> {
         : 1.0;
     final pcs = r.quantityAdded / unitSize;
     return pcs % 1 == 0 ? '+${pcs.toInt()}' : '+${pcs.toStringAsFixed(2)}';
-  }
-
-  void _openAddRestockDialog() {
-    if (widget.controller.inventory.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add a stock item in Stock Inventory first.')),
-      );
-      return;
-    }
-    InventoryItem? selectedItem = widget.controller.inventory.first;
-    final qtyController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('Add Restock Entry', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 380),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DropdownButtonFormField<InventoryItem>(
-                  initialValue: selectedItem,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: 'Select Item',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  items: widget.controller.inventory.map((i) {
-                    return DropdownMenuItem(
-                      value: i,
-                      child: Text(
-                        '${i.name} (${i.unit})',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: (val) => setDialogState(() => selectedItem = val),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: qtyController,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: InputDecoration(
-                    labelText: 'Quantity to Add (pcs)',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.black,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () async {
-                final pieces = double.tryParse(qtyController.text.trim());
-                if (selectedItem == null || pieces == null || pieces <= 0) return;
-
-                await widget.controller.restockItem(selectedItem!.id, pieces);
-                if (ctx.mounted) {
-                  Navigator.pop(ctx);
-                }
-              },
-              child: const Text('Add Restock'),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   @override
@@ -218,11 +141,6 @@ class _RestockScreenState extends State<RestockScreen> {
           ],
         ),
         actions: [
-          TextButton.icon(
-            onPressed: _openAddRestockDialog,
-            icon: const Icon(Icons.add, color: Colors.white, size: 16),
-            label: const Text('Add Restock', style: TextStyle(color: Colors.white, fontSize: 12)),
-          ),
           IconButton(
             tooltip: 'Sync with Admin',
             icon: const Icon(Icons.sync, color: Colors.white, size: 18),
@@ -262,7 +180,7 @@ class _RestockScreenState extends State<RestockScreen> {
                         value: _range,
                         icon: const Icon(Icons.keyboard_arrow_down, size: 18),
                         style: const TextStyle(fontSize: 13, color: Colors.black, fontWeight: FontWeight.w500),
-                        items: ['Today', 'Yesterday', 'This Week', 'Last Week', 'This Month', 'Last Month'].map((r) {
+                        items: ['Today', 'This Week', 'Last Week', 'This Month', 'Last Month', 'This Year', 'Last Year'].map((r) {
                           return DropdownMenuItem(value: r, child: Text('Range:  $r'));
                         }).toList(),
                         onChanged: (val) {
@@ -286,6 +204,8 @@ class _RestockScreenState extends State<RestockScreen> {
                         Expanded(
                           child: TextField(
                             controller: _dateController,
+                            readOnly: true,
+                            onTap: _pickDate,
                             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
                             decoration: const InputDecoration(
                               border: InputBorder.none,
@@ -294,7 +214,13 @@ class _RestockScreenState extends State<RestockScreen> {
                             ),
                           ),
                         ),
-                        const Icon(Icons.calendar_today_outlined, size: 16, color: Color(0xFF4B5563)),
+                        IconButton(
+                          tooltip: 'Choose date',
+                          onPressed: _pickDate,
+                          icon: const Icon(Icons.calendar_today_outlined, size: 16, color: Color(0xFF4B5563)),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(width: 24, height: 30),
+                        ),
                       ],
                     ),
                   ),
@@ -385,7 +311,14 @@ class _RestockScreenState extends State<RestockScreen> {
                                   child: Center(
                                     child: IconButton(
                                       icon: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFDC2626)),
-                                      onPressed: () => widget.controller.deleteRestock(r.id),
+                                      onPressed: () async {
+                                        final result = await widget.controller.deleteRestock(r.id);
+                                        if (!context.mounted || result == RestockDeleteResult.deleted) return;
+                                        final message = result == RestockDeleteResult.queued
+                                            ? 'Restock deleted on this POS and queued to sync with Admin.'
+                                            : 'Could not delete restock. Check the connection and try again.';
+                                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+                                      },
                                       constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                                       padding: EdgeInsets.zero,
                                     ),

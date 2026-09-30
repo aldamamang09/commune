@@ -536,6 +536,10 @@ class SupabaseService {
       });
       return true;
     } catch (e) {
+      if (e.toString().contains('delete_restock_atomic: restock') &&
+          e.toString().contains('not found')) {
+        return true;
+      }
       debugPrint('Delete restock RPC error: $e');
       return false;
     }

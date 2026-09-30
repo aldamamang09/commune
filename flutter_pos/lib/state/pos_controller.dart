@@ -5,11 +5,14 @@ import '../models/order.dart';
 import '../models/inventory_item.dart';
 import '../models/void_request.dart';
 import '../models/restock_record.dart';
+import '../manila_time.dart';
 import '../models/staff_user.dart';
 import '../models/login_activity.dart';
 import '../services/local_storage_service.dart';
 import '../services/supabase_service.dart';
 import '../services/sync_service.dart';
+
+enum RestockDeleteResult { deleted, queued, failed }
 
 class PosController extends ChangeNotifier {
   final LocalStorageService localStorage;
@@ -84,6 +87,25 @@ class PosController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _restoreActiveStaff() {
+    final staffId = localStorage.getActiveStaffId();
+    if (staffId == null) return;
+    final staff = staffUsers.where((user) => user.id == staffId).firstOrNull ??
+        localStorage.getActiveStaffProfile();
+    if (staff == null || !staff.canUsePos) return;
+    currentUser = staff;
+    currentBaristaName = staff.name;
+    currentBaristaUserId = staff.id;
+  }
+
+  Future<void> clearActiveSession() async {
+    await localStorage.clearActiveStaffId();
+    currentUser = null;
+    currentBaristaName = 'Barista';
+    currentBaristaUserId = null;
+    notifyListeners();
+  }
+
   Future<void> init() async {
     isPosOpen = localStorage.getPosIsOpen();
     final openedBy = localStorage.getPosOpenedBy();
@@ -93,54 +115,20 @@ class PosController extends ChangeNotifier {
 
     // Load cached Admin state (no hardcoded fallback seeds)
     _refreshFromLocalStorage();
+    _restoreActiveStaff();
 
     // Immediately sync with centralized Admin database
     await syncService.syncAll();
     _refreshFromLocalStorage();
+    _restoreActiveStaff();
   }
 
   // --- Date Range Bounds Helper (Matches Admin Panel phPeriodBounds) ---
   bool _isInRange(String isoOrDateStr, String range, DateTime? customDate) {
-    final parsed = DateTime.tryParse(isoOrDateStr);
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    if (customDate != null && range == 'Date') {
-      if (parsed == null) return isoOrDateStr.startsWith(_formatYmd(customDate));
-      return parsed.year == customDate.year &&
-          parsed.month == customDate.month &&
-          parsed.day == customDate.day;
-    }
-
-    if (parsed == null) return true;
-    final itemDay = DateTime(parsed.year, parsed.month, parsed.day);
-
-    switch (range) {
-      case 'Today':
-        return itemDay == today;
-      case 'Yesterday':
-        final yesterday = today.subtract(const Duration(days: 1));
-        return itemDay == yesterday;
-      case 'This Week':
-        final startOfWeek = today.subtract(Duration(days: today.weekday - 1));
-        return !itemDay.isBefore(startOfWeek) && !itemDay.isAfter(today);
-      case 'Last Week':
-        final startOfThisWeek = today.subtract(Duration(days: today.weekday - 1));
-        final startOfLastWeek = startOfThisWeek.subtract(const Duration(days: 7));
-        final endOfLastWeek = startOfThisWeek.subtract(const Duration(days: 1));
-        return !itemDay.isBefore(startOfLastWeek) && !itemDay.isAfter(endOfLastWeek);
-      case 'This Month':
-        return itemDay.year == today.year && itemDay.month == today.month;
-      case 'Last Month':
-        final lastMonth = DateTime(today.year, today.month - 1, 1);
-        return itemDay.year == lastMonth.year && itemDay.month == lastMonth.month;
-      default:
-        return true;
-    }
-  }
-
-  String _formatYmd(DateTime d) {
-    return '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    final anchor = customDate == null
+        ? ManilaTime.today()
+        : DateTime.utc(customDate.year, customDate.month, customDate.day);
+    return ManilaTime.matchesRange(isoOrDateStr, range, anchor);
   }
 
   bool isCupInventoryItem(InventoryItem item) {
@@ -670,7 +658,7 @@ class PosController extends ChangeNotifier {
     double? purchaseQty,
     String? purchaseUnit,
   }) async {
-    final now = DateTime.now().toIso8601String();
+    final now = ManilaTime.utcNowIso8601();
     final record = RestockRecord(
       id: 'rst-${DateTime.now().millisecondsSinceEpoch}',
       inventoryItemId: inventoryItemId,
@@ -718,13 +706,27 @@ class PosController extends ChangeNotifier {
     );
   }
 
-  Future<void> deleteRestock(String restockId) async {
+  Future<RestockDeleteResult> deleteRestock(String restockId) async {
     final existing = restocks.where((r) => r.id == restockId).firstOrNull;
+    var deleted = await supabaseService.deleteRestockAtomic(restockId);
+    if (!deleted) {
+      try {
+        await localStorage.addPendingRestockDelete(restockId);
+      } catch (_) {
+        return RestockDeleteResult.failed;
+      }
+    } else {
+      await localStorage.removePendingRestockDelete(restockId);
+    }
+
     restocks.removeWhere((r) => r.id == restockId);
     await localStorage.saveRestocks(restocks);
+    await localStorage.removePendingRestock(restockId);
 
-    if (existing != null && existing.inventoryItemId != null) {
-      final item = inventory.where((i) => i.id == existing.inventoryItemId).firstOrNull;
+    if (existing != null) {
+      final item = inventory.where((i) =>
+          (existing.inventoryItemId != null && i.id == existing.inventoryItemId) ||
+          i.name.trim().toLowerCase() == existing.itemName.trim().toLowerCase()).firstOrNull;
       if (item != null) {
         item.stock = (item.stock - existing.quantityAdded).clamp(0.0, double.infinity);
         await localStorage.saveInventory(inventory);
@@ -732,13 +734,14 @@ class PosController extends ChangeNotifier {
     }
     notifyListeners();
 
-    await supabaseService.deleteRestockAtomic(restockId);
     await syncService.syncAll();
+    deleted = !localStorage.getPendingRestockDeletes().contains(restockId);
+    return deleted ? RestockDeleteResult.deleted : RestockDeleteResult.queued;
   }
 
   // --- Shift Clock In / Out ---
   Future<void> punchShift(StaffUser staff, String type) async {
-    final now = DateTime.now().toIso8601String();
+    final now = ManilaTime.utcNowIso8601();
     final log = LoginActivity(
       id: 'log-${DateTime.now().millisecondsSinceEpoch}',
       userId: staff.id,

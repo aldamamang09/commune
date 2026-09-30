@@ -126,6 +126,12 @@ class SyncService extends ChangeNotifier {
         }
       }
 
+      final pendingRestockDeletes = localStorage.getPendingRestockDeletes();
+      for (final restockId in pendingRestockDeletes) {
+        final ok = await supabaseService.deleteRestockAtomic(restockId);
+        if (ok) await localStorage.removePendingRestockDelete(restockId);
+      }
+
       final pendingVoids = localStorage.getPendingVoidRequests();
       for (final voidReq in pendingVoids) {
         final ok = await supabaseService.pushVoidRequest(voidReq);

@@ -72,7 +72,10 @@ class _PosScreenState extends State<PosScreen> {
       results.add('Receipt: $error');
     }
     try {
-      await _printerService.printLabels(order);
+      await _printerService.printLabels(
+        order,
+        menu: widget.controller.menu,
+      );
       results.add('Labels sent');
     } catch (error) {
       results.add('Labels: $error');
@@ -113,7 +116,8 @@ class _PosScreenState extends State<PosScreen> {
       context: context,
       builder: (_) => VoidDialog(
         cart: widget.controller.cart,
-        isManager: widget.controller.currentUser?.isManager ?? false,
+        isManager: (widget.controller.currentUser?.isManager ?? false) &&
+            (widget.controller.currentUser?.password.isNotEmpty ?? false),
         isRequestPending: widget.controller.isVoidRequestPending,
         onConfirmVoid: (reason, managerUser, managerPass) async {
           final username = managerUser.isNotEmpty
@@ -163,6 +167,7 @@ class _PosScreenState extends State<PosScreen> {
       context: context,
       builder: (_) => ReceiptDialog(
         order: order,
+        menu: widget.controller.menu,
         onPrint: () => _printOrder(order),
       ),
     );
@@ -461,7 +466,9 @@ class _PosScreenState extends State<PosScreen> {
                       : 'Clear checkout first',
                     ),
                 onTap: canLogout
-                    ? () {
+                  ? () async {
+                    await controller.clearActiveSession();
+                    if (!context.mounted) return;
                         Navigator.pushReplacement(
                           context,
                           MaterialPageRoute(builder: (_) => LoginScreen(controller: controller)),
@@ -556,9 +563,9 @@ class _PosScreenState extends State<PosScreen> {
                             } else if (constraints.maxWidth < 520) {
                               crossAxisCount = 2;
                               aspectRatio = 1.35;
-                            } else if (constraints.maxWidth < 800) {
-                              crossAxisCount = 3;
-                              aspectRatio = 1.4;
+                            } else {
+                              crossAxisCount = 4;
+                              aspectRatio = 1.65;
                             }
                             return GridView.builder(
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

@@ -48,7 +48,7 @@ class ProductCard extends StatelessWidget {
         splashColor: const Color(0xFFF3F4F6),
         highlightColor: const Color(0xFFE5E7EB),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
           child: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -62,35 +62,34 @@ class ProductCard extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 13,
+                      fontSize: 12,
                       fontWeight: FontWeight.bold,
                       color: Color(0xFF111827),
-                      letterSpacing: -0.2,
-                      height: 1.2,
+                      height: 1.1,
                     ),
                   ),
                 ),
                 if (subtitle.isNotEmpty) ...[
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
                     subtitle,
                     textAlign: TextAlign.center,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 10.5,
+                      fontSize: 9.5,
                       color: Color(0xFF6B7280),
                     ),
                   ),
                 ],
-                const SizedBox(height: 3),
+                const SizedBox(height: 2),
                 Text(
                   '₱${item.price.toInt()}',
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 12.5,
+                    fontSize: 11.5,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF111827),
                   ),
