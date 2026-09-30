@@ -14,7 +14,12 @@ class RestockScreen extends StatefulWidget {
 }
 
 class _RestockScreenState extends State<RestockScreen> {
+  String _filterMode = 'range';
   String _range = 'Today';
+  static const List<String> _rangeOptions = [
+    'Today', 'This Week', 'Last Week', 'This Month', 'Last Month', 'This Year', 'Last Year',
+  ];
+  String get _activeRange => _rangeOptions.contains(_range) ? _range : 'Today';
   late final TextEditingController _dateController;
 
   @override
@@ -61,16 +66,15 @@ class _RestockScreenState extends State<RestockScreen> {
     if (selected == null || !mounted) return;
     setState(() {
       _dateController.text = DateFormat('MM/dd/yyyy').format(selected);
-      _range = 'Date';
     });
   }
 
   bool _matchesDateFilter(RestockRecord record) {
-    final selectedDate = _parseSelectedDate();
-    final anchor = selectedDate == null
-        ? ManilaTime.today()
-        : DateTime.utc(selectedDate.year, selectedDate.month, selectedDate.day);
-    return ManilaTime.matchesRange(record.date, _range, anchor);
+    if (_filterMode == 'date') {
+      final selectedDate = _parseSelectedDate() ?? ManilaTime.today();
+      return ManilaTime.matchesRange(record.date, 'Today', selectedDate);
+    }
+    return ManilaTime.matchesRange(record.date, _activeRange, ManilaTime.today());
   }
 
   String _formatDateTime(String iso) {
@@ -167,6 +171,17 @@ class _RestockScreenState extends State<RestockScreen> {
                 runSpacing: 10,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'range', label: Text('Range')),
+                      ButtonSegment(value: 'date', label: Text('Date')),
+                    ],
+                    selected: {_filterMode},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (selection) {
+                      setState(() => _filterMode = selection.first);
+                    },
+                  ),
                   Container(
                     height: 38,
                     padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -177,15 +192,17 @@ class _RestockScreenState extends State<RestockScreen> {
                     ),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
-                        value: _range,
+                        value: _activeRange,
                         icon: const Icon(Icons.keyboard_arrow_down, size: 18),
                         style: const TextStyle(fontSize: 13, color: Colors.black, fontWeight: FontWeight.w500),
-                        items: ['Today', 'This Week', 'Last Week', 'This Month', 'Last Month', 'This Year', 'Last Year'].map((r) {
+                        items: _rangeOptions.map((r) {
                           return DropdownMenuItem(value: r, child: Text('Range:  $r'));
                         }).toList(),
-                        onChanged: (val) {
-                          if (val != null) setState(() => _range = val);
-                        },
+                        onChanged: _filterMode == 'range'
+                            ? (val) {
+                                if (val != null) setState(() => _range = val);
+                              }
+                            : null,
                       ),
                     ),
                   ),
@@ -194,7 +211,7 @@ class _RestockScreenState extends State<RestockScreen> {
                     width: 190,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: _filterMode == 'date' ? Colors.white : const Color(0xFFF3F4F6),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: const Color(0xFFD1D5DB)),
                     ),
@@ -204,6 +221,7 @@ class _RestockScreenState extends State<RestockScreen> {
                         Expanded(
                           child: TextField(
                             controller: _dateController,
+                            enabled: _filterMode == 'date',
                             readOnly: true,
                             onTap: _pickDate,
                             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
@@ -216,7 +234,7 @@ class _RestockScreenState extends State<RestockScreen> {
                         ),
                         IconButton(
                           tooltip: 'Choose date',
-                          onPressed: _pickDate,
+                          onPressed: _filterMode == 'date' ? _pickDate : null,
                           icon: const Icon(Icons.calendar_today_outlined, size: 16, color: Color(0xFF4B5563)),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints.tightFor(width: 24, height: 30),

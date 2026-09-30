@@ -27,6 +27,8 @@ void main() {
     final anchor = DateTime.utc(2026, 10, 1);
 
     expect(ManilaTime.matchesRange('2026-09-30T16:00:00Z', 'Today', anchor), isTrue);
+    expect(ManilaTime.matchesRange('2026-09-30T16:00:00Z', 'Date', anchor), isTrue);
+    expect(ManilaTime.matchesRange('2026-10-01T16:00:00Z', 'Date', anchor), isFalse);
     expect(ManilaTime.matchesRange('2026-09-29T16:00:00Z', 'This Week', anchor), isTrue);
     expect(ManilaTime.matchesRange('2026-09-26T16:00:00Z', 'Last Week', anchor), isTrue);
     expect(ManilaTime.matchesRange('2026-09-30T15:00:00Z', 'Last Month', anchor), isTrue);

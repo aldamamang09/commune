@@ -36,6 +36,7 @@ class ManilaTime {
     final anchorDay = DateTime.utc(anchor.year, anchor.month, anchor.day);
 
     switch (range) {
+      case 'Date':
       case 'Today':
         return itemDay == anchorDay;
       case 'This Week':

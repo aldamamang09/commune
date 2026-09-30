@@ -14,7 +14,13 @@ class StockScreen extends StatefulWidget {
 }
 
 class _StockScreenState extends State<StockScreen> {
+  String _filterMode = 'range';
   String _range = 'Today';
+  static const List<String> _rangeOptions = [
+    'Today', 'This Week', 'Last Week', 'This Month', 'Last Month', 'This Year', 'Last Year',
+  ];
+  String get _activeRange => _rangeOptions.contains(_range) ? _range : 'Today';
+  String get _filterRange => _filterMode == 'date' ? 'Date' : _activeRange;
   late final TextEditingController _dateController;
   String? _editingItemId;
 
@@ -91,7 +97,6 @@ class _StockScreenState extends State<StockScreen> {
     if (selected == null || !mounted) return;
     setState(() {
       _dateController.text = DateFormat('MM/dd/yyyy').format(selected);
-      _range = 'Date';
     });
   }
 
@@ -188,9 +193,9 @@ class _StockScreenState extends State<StockScreen> {
   @override
   Widget build(BuildContext context) {
     final inventory = widget.controller.inventory;
-    final selectedDate = _parseSelectedDate();
+    final selectedDate = _filterMode == 'date' ? _parseSelectedDate() : null;
     final totalCupsUsed = widget.controller.getTotalCupsUsed(
-      range: _range,
+      range: _filterRange,
       selectedDate: selectedDate,
     );
 
@@ -263,6 +268,17 @@ class _StockScreenState extends State<StockScreen> {
                 runSpacing: 10,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'range', label: Text('Range')),
+                      ButtonSegment(value: 'date', label: Text('Date')),
+                    ],
+                    selected: {_filterMode},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (selection) {
+                      setState(() => _filterMode = selection.first);
+                    },
+                  ),
                   Container(
                     height: 38,
                     padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -273,15 +289,17 @@ class _StockScreenState extends State<StockScreen> {
                     ),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
-                        value: _range,
+                        value: _activeRange,
                         icon: const Icon(Icons.keyboard_arrow_down, size: 18),
                         style: const TextStyle(fontSize: 13, color: Colors.black, fontWeight: FontWeight.w500),
-                        items: ['Today', 'This Week', 'Last Week', 'This Month', 'Last Month', 'This Year', 'Last Year'].map((r) {
+                        items: _rangeOptions.map((r) {
                           return DropdownMenuItem(value: r, child: Text('Range:  $r'));
                         }).toList(),
-                        onChanged: (val) {
-                          if (val != null) setState(() => _range = val);
-                        },
+                        onChanged: _filterMode == 'range'
+                            ? (val) {
+                                if (val != null) setState(() => _range = val);
+                              }
+                            : null,
                       ),
                     ),
                   ),
@@ -290,7 +308,7 @@ class _StockScreenState extends State<StockScreen> {
                     width: 190,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: _filterMode == 'date' ? Colors.white : const Color(0xFFF3F4F6),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: const Color(0xFFD1D5DB)),
                     ),
@@ -300,6 +318,7 @@ class _StockScreenState extends State<StockScreen> {
                         Expanded(
                           child: TextField(
                             controller: _dateController,
+                            enabled: _filterMode == 'date',
                             readOnly: true,
                             onTap: _pickDate,
                             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
@@ -312,7 +331,7 @@ class _StockScreenState extends State<StockScreen> {
                         ),
                         IconButton(
                           tooltip: 'Choose date',
-                          onPressed: _pickDate,
+                          onPressed: _filterMode == 'date' ? _pickDate : null,
                           icon: const Icon(Icons.calendar_today_outlined, size: 16, color: Color(0xFF4B5563)),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints.tightFor(width: 24, height: 30),
@@ -538,7 +557,7 @@ class _StockScreenState extends State<StockScreen> {
                   rows: inventory.map((item) {
                     final ledger = widget.controller.getStockLedger(
                       item,
-                      range: _range,
+                      range: _filterRange,
                       selectedDate: selectedDate,
                     );
                     final openingPcs = ledger['openingPcs'] ?? 0.0;
