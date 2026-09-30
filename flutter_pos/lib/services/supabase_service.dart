@@ -16,6 +16,7 @@ class SupabaseService {
 
   bool get isInitialized => true;
   String? get activeAdminApiUrl => _activeAdminApiUrl;
+  bool get hasPosApiToken => _posApiToken?.isNotEmpty == true;
 
   void setPosApiToken(String? token) {
     _posApiToken = token;

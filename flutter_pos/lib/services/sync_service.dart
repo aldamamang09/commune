@@ -88,6 +88,13 @@ class SyncService extends ChangeNotifier {
   }
 
   Future<void> _performSync() async {
+    if (!supabaseService.hasPosApiToken) {
+      status = SyncStatus.idle;
+      lastError = null;
+      updatePendingCount();
+      return;
+    }
+
     status = SyncStatus.syncing;
     lastError = null;
     notifyListeners();
