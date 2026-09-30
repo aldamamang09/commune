@@ -4,6 +4,7 @@ import { phIsoTimestamp } from "@/lib/datetime";
 import { ingredientsForOrderLine, roundQty } from "@/lib/inventory";
 import { normalizeMenuAddons, normalizeMenuStyles } from "@/lib/menu";
 import { parsePayment } from "@/lib/payments";
+import { createPosApiToken, readPosApiToken } from "@/lib/pos-api-auth";
 import {
   createOrderAtomic,
   createRestockAtomic,
@@ -26,11 +27,56 @@ const corsHeaders = {
   "Cache-Control": "no-store, no-cache, must-revalidate",
 };
 
+function orderItemsFromApi(value: unknown): OrderItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((rawItem) => {
+    if (!rawItem || typeof rawItem !== "object") return [];
+    const item = rawItem as Record<string, unknown>;
+    return [{
+      productId: String(item.productId ?? ""),
+      name: String(item.name ?? ""),
+      qty: Math.max(1, Number(item.qty) || 1),
+      price: Number(item.price) || 0,
+      style: item.style === "hot" || item.style === "iced" ? item.style : undefined,
+      addons: Array.isArray(item.addons)
+        ? item.addons.flatMap((rawAddon) => {
+            if (!rawAddon || typeof rawAddon !== "object") return [];
+            const addon = rawAddon as Record<string, unknown>;
+            return [{
+              id: typeof addon.id === "string" ? addon.id : "",
+              name: String(addon.name ?? ""),
+              price: Number(addon.price) || 0,
+              qty: Math.max(1, Number(addon.qty) || 1),
+              inventoryItemId: typeof addon.inventoryItemId === "string" ? addon.inventoryItemId : undefined,
+              usageAmount: addon.usageAmount != null ? Number(addon.usageAmount) : undefined,
+              usageUnit: typeof addon.usageUnit === "string" ? addon.usageUnit : undefined,
+            }];
+          })
+        : undefined,
+      category: typeof item.category === "string" ? item.category : undefined,
+    }];
+  });
+}
+
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders });
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const claims = readPosApiToken(request.headers.get("authorization"));
+  if (!claims) {
+    return NextResponse.json(
+      { ok: false, error: "POS session expired. Sign in again." },
+      { status: 401, headers: corsHeaders },
+    );
+  }
+  if (claims.role === "barista") {
+    return NextResponse.json(
+      { ok: false, error: "This account cannot access the POS store." },
+      { status: 403, headers: corsHeaders },
+    );
+  }
+
   try {
     const store = await getFreshStore();
     return NextResponse.json(
@@ -59,7 +105,6 @@ export async function GET() {
           return {
             id: u.id,
             username: u.username,
-            password: u.password,
             name: u.name,
             role: resolvedRole,
             title:
@@ -130,6 +175,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           ok: true,
+          token: createPosApiToken({
+            userId: user.id,
+            username: user.username,
+            name: user.name,
+            role: resolvedRole,
+          }),
           user: {
             id: user.id,
             username: user.username,
@@ -142,8 +193,31 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const claims = readPosApiToken(req.headers.get("authorization"));
+    if (!claims) {
+      return NextResponse.json(
+        { ok: false, error: "POS session expired. Sign in again." },
+        { status: 401, headers: corsHeaders },
+      );
+    }
+    if (claims.role === "barista") {
+      return NextResponse.json(
+        { ok: false, error: "This account cannot perform POS actions." },
+        { status: 403, headers: corsHeaders },
+      );
+    }
+
     if (action === "create_order") {
       const rawOrder = body.order ?? {};
+      if (!claims || !["cashier", "manager", "admin"].includes(claims.role)) {
+        return NextResponse.json({ ok: false, error: "Cashier access required." }, { status: 403, headers: corsHeaders });
+      }
+      if (rawOrder.voided) {
+        return NextResponse.json(
+          { ok: false, error: "Use the authenticated void checkout action." },
+          { status: 400, headers: corsHeaders },
+        );
+      }
       const store = await getFreshStore();
       const existingOrder = store.orders.find((o) => o.id === rawOrder.id);
       if (existingOrder) {
@@ -153,32 +227,12 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const orderItems: OrderItem[] = Array.isArray(rawOrder.items)
-        ? rawOrder.items.map((item: Record<string, unknown>) => ({
-            productId: String(item.productId ?? ""),
-            name: String(item.name ?? ""),
-            qty: Math.max(1, Number(item.qty) || 1),
-            price: Number(item.price) || 0,
-            style: item.style === "hot" || item.style === "iced" ? item.style : undefined,
-            addons: Array.isArray(item.addons)
-              ? item.addons.map((a: Record<string, unknown>) => ({
-                  id: typeof a.id === "string" ? a.id : undefined,
-                  name: String(a.name ?? ""),
-                  price: Number(a.price) || 0,
-                  qty: Math.max(1, Number(a.qty) || 1),
-                  inventoryItemId: typeof a.inventoryItemId === "string" ? a.inventoryItemId : undefined,
-                  usageAmount: a.usageAmount != null ? Number(a.usageAmount) : undefined,
-                  usageUnit: typeof a.usageUnit === "string" ? a.usageUnit : undefined,
-                }))
-              : undefined,
-            category: typeof item.category === "string" ? item.category : undefined,
-          }))
-        : [];
+      const orderItems = orderItemsFromApi(rawOrder.items);
 
       const order: Order = {
         id: String(rawOrder.id || `ord-${Date.now()}`),
         createdAt: phIsoTimestamp(String(rawOrder.createdAt ?? "")) || new Date().toISOString(),
-        baristaName: String(rawOrder.baristaName || "Barista"),
+        baristaName: claims.name,
         items: orderItems,
         subtotal: Number(rawOrder.subtotal) || 0,
         discount: Number(rawOrder.discount) || 0,
@@ -241,14 +295,70 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (action === "void_checkout") {
+      const rawOrder = body.order ?? {};
+      const reason = String(body.reason ?? rawOrder.voidReason ?? "").trim();
+      const items = orderItemsFromApi(rawOrder.items);
+      if (items.length === 0 || !reason) {
+        return NextResponse.json({ ok: false, error: "Checkout items and void reason are required." }, { status: 400, headers: corsHeaders });
+      }
+
+      let voidedBy = claims.userId;
+      if (claims.role !== "manager" && claims.role !== "admin") {
+        const managerUsername = String(body.managerUsername ?? "").trim().toLowerCase();
+        const managerPassword = String(body.managerPassword ?? "");
+        const store = await getFreshStore();
+        const manager = store.users.find((user) => user.username.trim().toLowerCase() === managerUsername);
+        const managerRole = manager ? parseRole(String(manager.title ?? manager.role ?? "barista")) : "barista";
+        const validPassword = manager && (manager.password.startsWith("$2")
+          ? await bcrypt.compare(managerPassword, manager.password)
+          : manager.password === managerPassword);
+        if (!manager || !validPassword || (managerRole !== "manager" && managerRole !== "admin")) {
+          return NextResponse.json({ ok: false, error: "Manager or Admin credentials required to void." }, { status: 403, headers: corsHeaders });
+        }
+        voidedBy = manager.id;
+      }
+
+      const order: Order = {
+        id: String(rawOrder.id || `ord-${Date.now()}`),
+        createdAt: phIsoTimestamp(String(rawOrder.createdAt ?? "")) || new Date().toISOString(),
+        baristaName: claims.name,
+        items,
+        subtotal: Number(rawOrder.subtotal) || 0,
+        discount: Number(rawOrder.discount) || 0,
+        promoLabel: typeof rawOrder.promoLabel === "string" ? rawOrder.promoLabel : undefined,
+        total: Number(rawOrder.total) || 0,
+        paymentMethod: parsePayment(rawOrder.paymentMethod),
+        ticketNo: "",
+        paid: 0,
+        change: 0,
+        voided: true,
+        voidReason: reason,
+      };
+      const result = await createOrderAtomic({ order, deductions: [], voidedBy });
+      if (!result.ok) {
+        return NextResponse.json({ ok: false, error: result.error }, { status: 400, headers: corsHeaders });
+      }
+      order.ticketNo = result.ticketNo;
+      return NextResponse.json({ ok: true, ticketNo: order.ticketNo, order }, { headers: corsHeaders });
+    }
+
     if (action === "void_order") {
       const orderId = String(body.orderId ?? "").trim();
       const reason = String(body.reason ?? "Voided from POS").trim();
-      const voidedBy = typeof body.voidedBy === "string" ? body.voidedBy : null;
       const managerUsername = typeof body.managerUsername === "string" ? body.managerUsername.trim().toLowerCase() : "";
       const managerPassword = typeof body.managerPassword === "string" ? body.managerPassword : "";
 
-      if (managerUsername && managerPassword) {
+      let voidedBy: string | null = null;
+      if (claims.role === "admin" || claims.role === "manager") {
+        voidedBy = claims.userId;
+      } else {
+        if (!managerUsername || !managerPassword) {
+          return NextResponse.json(
+            { ok: false, error: "Manager approval required to void an order." },
+            { status: 403, headers: corsHeaders },
+          );
+        }
         const store = await getFreshStore();
         const manager = store.users.find((u) => u.username.trim().toLowerCase() === managerUsername);
         const role = manager ? parseRole(String(manager.title ?? manager.role ?? "barista")) : "barista";
@@ -267,6 +377,7 @@ export async function POST(req: NextRequest) {
             { status: 403, headers: corsHeaders },
           );
         }
+        voidedBy = manager.id;
       }
 
       const res = await voidOrderAtomic(orderId, reason, voidedBy);
@@ -374,8 +485,8 @@ export async function POST(req: NextRequest) {
       const reqRecord: VoidRequest = {
         id: String(raw.id || `vr-${Date.now()}`),
         requestedAt: phIsoTimestamp(String(raw.requestedAt ?? "")) || new Date().toISOString(),
-        requestedById: String(raw.requestedById || "cashier"),
-        requestedByName: String(raw.requestedByName || "Cashier"),
+        requestedById: claims.userId,
+        requestedByName: claims.name,
         reason: String(raw.reason || "Void requested"),
         status: "pending",
         orderId: typeof raw.orderId === "string" ? raw.orderId : undefined,
@@ -392,12 +503,18 @@ export async function POST(req: NextRequest) {
 
     if (action === "login_activity") {
       const raw = body.activity ?? body;
+      const userId = claims.userId;
+      const store = await getFreshStore();
+      const staff = store.users.find((user) => user.id === userId);
+      if (!staff) {
+        return NextResponse.json({ ok: false, error: "Staff user not found." }, { status: 404, headers: corsHeaders });
+      }
       const entry = {
         id: String(raw.id || `log-${Date.now()}`),
-        userId: String(raw.userId || "staff"),
-        username: String(raw.username || "staff"),
-        name: String(raw.name || "Staff"),
-        role: parseRole(String(raw.role || "barista")),
+        userId: staff.id,
+        username: staff.username,
+        name: staff.name,
+        role: parseRole(String(staff.title ?? ""), staff.role),
         type: (raw.type === "logout" ? "logout" : "login") as "login" | "logout",
         at: phIsoTimestamp(String(raw.at ?? "")) || new Date().toISOString(),
       };
