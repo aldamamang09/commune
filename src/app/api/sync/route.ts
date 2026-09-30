@@ -501,11 +501,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, request: reqRecord }, { headers: corsHeaders });
     }
 
-    if (action === "login_activity") {
+    if (action === "login_activity" || action === "barista_shift_activity") {
+      const isBaristaShift = action === "barista_shift_activity";
       const raw = body.activity ?? body;
-      const userId = claims.userId;
       const store = await getFreshStore();
-      const staff = store.users.find((user) => user.id === userId);
+      let staff = store.users.find((user) => user.id === claims.userId);
+      if (isBaristaShift) {
+        if (!["cashier", "manager", "admin"].includes(claims.role)) {
+          return NextResponse.json({ ok: false, error: "Cashier access required to record a barista shift." }, { status: 403, headers: corsHeaders });
+        }
+        const requestedUserId = typeof raw.userId === "string" ? raw.userId : "";
+        staff = store.users.find((user) => user.id === requestedUserId);
+        const staffRole = staff ? parseRole(String(staff.title ?? ""), staff.role) : null;
+        if (!staff || staffRole !== "barista") {
+          return NextResponse.json({ ok: false, error: "Barista account not found." }, { status: 404, headers: corsHeaders });
+        }
+      }
       if (!staff) {
         return NextResponse.json({ ok: false, error: "Staff user not found." }, { status: 404, headers: corsHeaders });
       }
@@ -519,7 +530,7 @@ export async function POST(req: NextRequest) {
         at: phIsoTimestamp(String(raw.at ?? "")) || new Date().toISOString(),
       };
       await insertLoginActivityRecord(entry);
-      if (entry.type === "login") {
+      if (!isBaristaShift && entry.type === "login") {
         await updateStore((store) => {
           store.pos.isOpen = true;
           store.pos.openedBy = entry.name;

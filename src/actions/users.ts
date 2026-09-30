@@ -1,5 +1,6 @@
 "use server";
 
+import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import {
@@ -60,9 +61,12 @@ function compactStaffKey(value: string) {
 function hasBaristaCredentials(user: StaffUser, username: string, password: string) {
   const normalizedUsername = username.trim().toLowerCase();
   const normalizedPassword = password.trim();
+  const passwordMatches = user.password.startsWith("$2")
+    ? bcrypt.compareSync(normalizedPassword, user.password)
+    : user.password.trim() === normalizedPassword;
   return user.role === "barista" &&
     user.password.trim().length > 0 &&
-    user.password.trim() === normalizedPassword &&
+    passwordMatches &&
     (user.username.trim().toLowerCase() === normalizedUsername ||
       compactStaffKey(user.username) === compactStaffKey(normalizedUsername) ||
       compactStaffKey(user.name) === compactStaffKey(normalizedUsername));
