@@ -35,7 +35,7 @@ function startOfDayPH(date: Date): Date {
 }
 
 export function liveOrders(orders: Order[]): Order[] {
-  return orders.filter((order) => !order.voided);
+  return orders.filter((order) => !order.voided && !order.deletedAt);
 }
 
 export function sumSales(orders: Order[]): number {

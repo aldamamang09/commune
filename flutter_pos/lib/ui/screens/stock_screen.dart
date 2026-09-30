@@ -3,11 +3,17 @@ import 'package:intl/intl.dart';
 import '../../manila_time.dart';
 import '../../models/inventory_item.dart';
 import '../../state/pos_controller.dart';
+import '../widgets/pos_navigation_drawer.dart';
 
 class StockScreen extends StatefulWidget {
   final PosController controller;
+  final PosDrawerBuilder drawerBuilder;
 
-  const StockScreen({super.key, required this.controller});
+  const StockScreen({
+    super.key,
+    required this.controller,
+    required this.drawerBuilder,
+  });
 
   @override
   State<StockScreen> createState() => _StockScreenState();
@@ -17,7 +23,13 @@ class _StockScreenState extends State<StockScreen> {
   String _filterMode = 'range';
   String _range = 'Today';
   static const List<String> _rangeOptions = [
-    'Today', 'This Week', 'Last Week', 'This Month', 'Last Month', 'This Year', 'Last Year',
+    'Today',
+    'This Week',
+    'Last Week',
+    'This Month',
+    'Last Month',
+    'This Year',
+    'Last Year',
   ];
   String get _activeRange => _rangeOptions.contains(_range) ? _range : 'Today';
   String get _filterRange => _filterMode == 'date' ? 'Date' : _activeRange;
@@ -107,7 +119,9 @@ class _StockScreenState extends State<StockScreen> {
     final pieces = double.tryParse(_qtyController.text.trim()) ?? 0;
     if (pieces < 0) return;
 
-    final unit = _unitController.text.trim().isEmpty ? 'pcs' : _unitController.text.trim();
+    final unit = _unitController.text.trim().isEmpty
+        ? 'pcs'
+        : _unitController.text.trim();
     final purchaseUnitSize = double.tryParse(_totalUnitController.text.trim());
     final cupUsageAmount = double.tryParse(_unitItemController.text.trim());
     final cupsMake = (unit.isNotEmpty &&
@@ -118,7 +132,9 @@ class _StockScreenState extends State<StockScreen> {
         ? (purchaseUnitSize / cupUsageAmount)
         : null;
 
-    final pieceSize = (purchaseUnitSize != null && purchaseUnitSize > 0) ? purchaseUnitSize : 1.0;
+    final pieceSize = (purchaseUnitSize != null && purchaseUnitSize > 0)
+        ? purchaseUnitSize
+        : 1.0;
     final baseStock = pieces * pieceSize;
 
     final item = InventoryItem(
@@ -129,8 +145,12 @@ class _StockScreenState extends State<StockScreen> {
       unit: unit,
       cost: 0,
       maxStock: baseStock > 0 ? baseStock : 100,
-      purchaseUnitSize: (purchaseUnitSize != null && purchaseUnitSize > 0) ? purchaseUnitSize : null,
-      cupUsageAmount: (cupUsageAmount != null && cupUsageAmount > 0) ? cupUsageAmount : null,
+      purchaseUnitSize: (purchaseUnitSize != null && purchaseUnitSize > 0)
+          ? purchaseUnitSize
+          : null,
+      cupUsageAmount: (cupUsageAmount != null && cupUsageAmount > 0)
+          ? cupUsageAmount
+          : null,
       cupsMake: cupsMake,
     );
 
@@ -140,17 +160,22 @@ class _StockScreenState extends State<StockScreen> {
   }
 
   void _handleEditItem(InventoryItem item) {
-    final pieceSize = (item.purchaseUnitSize != null && item.purchaseUnitSize! > 0)
-        ? item.purchaseUnitSize!
-        : 1.0;
+    final pieceSize =
+        (item.purchaseUnitSize != null && item.purchaseUnitSize! > 0)
+            ? item.purchaseUnitSize!
+            : 1.0;
     final pieces = (item.openingStock ?? item.stock) / pieceSize;
 
     setState(() {
       _editingItemId = item.id;
       _nameController.text = item.name;
-      _totalUnitController.text = item.purchaseUnitSize != null ? item.purchaseUnitSize.toString() : '';
-      _unitItemController.text = item.cupUsageAmount != null ? item.cupUsageAmount.toString() : '';
-      _qtyController.text = pieces % 1 == 0 ? pieces.toInt().toString() : pieces.toStringAsFixed(2);
+      _totalUnitController.text =
+          item.purchaseUnitSize != null ? item.purchaseUnitSize.toString() : '';
+      _unitItemController.text =
+          item.cupUsageAmount != null ? item.cupUsageAmount.toString() : '';
+      _qtyController.text = pieces % 1 == 0
+          ? pieces.toInt().toString()
+          : pieces.toStringAsFixed(2);
       _unitController.text = item.unit;
     });
   }
@@ -185,7 +210,8 @@ class _StockScreenState extends State<StockScreen> {
     final res = await widget.controller.deleteInventoryItem(item.id);
     if (res['ok'] != true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(res['error']?.toString() ?? 'Could not delete item')),
+        SnackBar(
+            content: Text(res['error']?.toString() ?? 'Could not delete item')),
       );
     }
   }
@@ -204,9 +230,12 @@ class _StockScreenState extends State<StockScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white, size: 20),
-          onPressed: () => Navigator.pop(context),
+        leading: Builder(
+          builder: (context) => IconButton(
+            tooltip: 'Open navigation menu',
+            icon: const Icon(Icons.menu, color: Colors.white, size: 20),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
         ),
         titleSpacing: 0,
         title: Row(
@@ -250,15 +279,20 @@ class _StockScreenState extends State<StockScreen> {
           const SizedBox(width: 8),
         ],
       ),
+      drawer: widget.drawerBuilder(PosSection.stock),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        padding: EdgeInsets.symmetric(
+          horizontal: MediaQuery.sizeOf(context).width < 600 ? 8 : 16,
+          vertical: MediaQuery.sizeOf(context).width < 600 ? 12 : 20,
+        ),
         child: Container(
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: const Color(0xFFE5E7EB)),
           ),
-          padding: const EdgeInsets.all(20),
+          padding:
+              EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 12 : 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -291,9 +325,13 @@ class _StockScreenState extends State<StockScreen> {
                       child: DropdownButton<String>(
                         value: _activeRange,
                         icon: const Icon(Icons.keyboard_arrow_down, size: 18),
-                        style: const TextStyle(fontSize: 13, color: Colors.black, fontWeight: FontWeight.w500),
+                        style: const TextStyle(
+                            fontSize: 13,
+                            color: Colors.black,
+                            fontWeight: FontWeight.w500),
                         items: _rangeOptions.map((r) {
-                          return DropdownMenuItem(value: r, child: Text('Range:  $r'));
+                          return DropdownMenuItem(
+                              value: r, child: Text('Range:  $r'));
                         }).toList(),
                         onChanged: _filterMode == 'range'
                             ? (val) {
@@ -308,20 +346,25 @@ class _StockScreenState extends State<StockScreen> {
                     width: 190,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
-                      color: _filterMode == 'date' ? Colors.white : const Color(0xFFF3F4F6),
+                      color: _filterMode == 'date'
+                          ? Colors.white
+                          : const Color(0xFFF3F4F6),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: const Color(0xFFD1D5DB)),
                     ),
                     child: Row(
                       children: [
-                        const Text('Date: ', style: TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+                        const Text('Date: ',
+                            style: TextStyle(
+                                fontSize: 13, color: Color(0xFF6B7280))),
                         Expanded(
                           child: TextField(
                             controller: _dateController,
                             enabled: _filterMode == 'date',
                             readOnly: true,
                             onTap: _pickDate,
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                            style: const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w500),
                             decoration: const InputDecoration(
                               border: InputBorder.none,
                               isDense: true,
@@ -332,9 +375,11 @@ class _StockScreenState extends State<StockScreen> {
                         IconButton(
                           tooltip: 'Choose date',
                           onPressed: _filterMode == 'date' ? _pickDate : null,
-                          icon: const Icon(Icons.calendar_today_outlined, size: 16, color: Color(0xFF4B5563)),
+                          icon: const Icon(Icons.calendar_today_outlined,
+                              size: 16, color: Color(0xFF4B5563)),
                           padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(width: 24, height: 30),
+                          constraints: const BoxConstraints.tightFor(
+                              width: 24, height: 30),
                         ),
                       ],
                     ),
@@ -346,7 +391,8 @@ class _StockScreenState extends State<StockScreen> {
               // Metric: Total Cups Used (matches Admin box)
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
                   color: const Color(0xFFFAFAFA),
                   borderRadius: BorderRadius.circular(10),
@@ -357,12 +403,18 @@ class _StockScreenState extends State<StockScreen> {
                   children: [
                     const Text(
                       'Total Cups Used',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF6B7280)),
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF6B7280)),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       '${totalCupsUsed.toStringAsFixed(2)} cups',
-                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black),
+                      style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black),
                     ),
                   ],
                 ),
@@ -382,7 +434,9 @@ class _StockScreenState extends State<StockScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _editingItemId != null ? 'EDIT STOCK ITEM' : 'ADD STOCK ITEM',
+                      _editingItemId != null
+                          ? 'EDIT STOCK ITEM'
+                          : 'ADD STOCK ITEM',
                       style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
@@ -462,7 +516,8 @@ class _StockScreenState extends State<StockScreen> {
                           field(
                             label: 'Cups make',
                             hint: '—',
-                            controller: TextEditingController(text: _computedCupsMakeLabel()),
+                            controller: TextEditingController(
+                                text: _computedCupsMakeLabel()),
                             width: 115,
                             flex: 2,
                             enabled: false,
@@ -477,13 +532,16 @@ class _StockScreenState extends State<StockScreen> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.black,
                                 foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                padding: const EdgeInsets.symmetric(horizontal: 14),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8)),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 14),
                                 elevation: 0,
                               ),
                               child: Text(
                                 _editingItemId != null ? 'Update' : 'Add',
-                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                    fontSize: 14, fontWeight: FontWeight.bold),
                               ),
                             ),
                           ),
@@ -493,11 +551,17 @@ class _StockScreenState extends State<StockScreen> {
                               onPressed: _handleClear,
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: Colors.black,
-                                side: const BorderSide(color: Color(0xFFD1D5DB)),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                side:
+                                    const BorderSide(color: Color(0xFFD1D5DB)),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8)),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 12),
                               ),
-                              child: const Text('Clear', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                              child: const Text('Clear',
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500)),
                             ),
                           ),
                         ];
@@ -529,182 +593,246 @@ class _StockScreenState extends State<StockScreen> {
               const SizedBox(height: 24),
 
               // Stock Inventory Table (Matches Admin Panel 100%)
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: DataTable(
-                  headingRowHeight: 44,
-                  dataRowMinHeight: 48,
-                  dataRowMaxHeight: 54,
-                  horizontalMargin: 12,
-                  columnSpacing: 24,
-                  headingTextStyle: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF111827),
-                  ),
-                  columns: const [
-                    DataColumn(label: Text('Item')),
-                    DataColumn(label: Text('Opening')),
-                    DataColumn(label: Text('Restock')),
-                    DataColumn(label: Text('Used per Unit')),
-                    DataColumn(label: Text('Unit')),
-                    DataColumn(label: Text('Used per Pcs')),
-                    DataColumn(label: Text('Remaining')),
-                    DataColumn(label: Text('Cups Left')),
-                    DataColumn(label: Text('Restock')),
-                    DataColumn(label: Text('Actions')),
-                  ],
-                  rows: inventory.map((item) {
-                    final ledger = widget.controller.getStockLedger(
-                      item,
-                      range: _filterRange,
-                      selectedDate: selectedDate,
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  if (constraints.maxWidth < 720) {
+                    return Column(
+                      children: inventory
+                          .map(
+                              (item) => _buildInventoryCard(item, selectedDate))
+                          .toList(),
                     );
-                    final openingPcs = ledger['openingPcs'] ?? 0.0;
-                    final restockedPcs = ledger['restockedPcs'] ?? 0.0;
-                    final usedPerUnit = ledger['usedPerUnit'] ?? 0.0;
-                    final usedPcs = ledger['usedPcs'] ?? -1.0;
-                    final remainingPcs = ledger['remainingPcs'] ?? 0.0;
-                    final cupsLeftVal = ledger['cupsLeft'] ?? -1.0;
+                  }
+                  return SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
+                      headingRowHeight: 44,
+                      dataRowMinHeight: 48,
+                      dataRowMaxHeight: 54,
+                      horizontalMargin: 12,
+                      columnSpacing: 24,
+                      headingTextStyle: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF111827),
+                      ),
+                      columns: const [
+                        DataColumn(label: Text('Item')),
+                        DataColumn(label: Text('Opening')),
+                        DataColumn(label: Text('Restock')),
+                        DataColumn(label: Text('Used per Unit')),
+                        DataColumn(label: Text('Unit')),
+                        DataColumn(label: Text('Used per Pcs')),
+                        DataColumn(label: Text('Remaining')),
+                        DataColumn(label: Text('Cups Left')),
+                        DataColumn(label: Text('Restock')),
+                        DataColumn(label: Text('Actions')),
+                      ],
+                      rows: inventory.map((item) {
+                        final ledger = widget.controller.getStockLedger(
+                          item,
+                          range: _filterRange,
+                          selectedDate: selectedDate,
+                        );
+                        final openingPcs = ledger['openingPcs'] ?? 0.0;
+                        final restockedPcs = ledger['restockedPcs'] ?? 0.0;
+                        final usedPerUnit = ledger['usedPerUnit'] ?? 0.0;
+                        final usedPcs = ledger['usedPcs'] ?? -1.0;
+                        final remainingPcs = ledger['remainingPcs'] ?? 0.0;
+                        final cupsLeftVal = ledger['cupsLeft'] ?? -1.0;
 
-                    final isPcsUnit = item.unit.trim().toLowerCase() == 'pcs';
-                    final cupsLeftText = (!isPcsUnit && cupsLeftVal >= 0)
-                        ? '${cupsLeftVal.toStringAsFixed(1)} cups'
-                        : '—';
-                    final usedPerPcsText = usedPcs >= 0
-                        ? '${usedPcs.toStringAsFixed(2)} pc'
-                        : '—';
+                        final isPcsUnit =
+                            item.unit.trim().toLowerCase() == 'pcs';
+                        final cupsLeftText = (!isPcsUnit && cupsLeftVal >= 0)
+                            ? '${cupsLeftVal.toStringAsFixed(1)} cups'
+                            : '—';
+                        final usedPerPcsText = usedPcs >= 0
+                            ? '${usedPcs.toStringAsFixed(2)} pc'
+                            : '—';
 
-                    _restockControllers.putIfAbsent(item.id, () => TextEditingController());
-                    final rCtrl = _restockControllers[item.id]!;
+                        _restockControllers.putIfAbsent(
+                            item.id, () => TextEditingController());
+                        final rCtrl = _restockControllers[item.id]!;
 
-                    return DataRow(
-                      cells: [
-                        DataCell(Text(item.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13))),
-                        DataCell(Text('${openingPcs.toStringAsFixed(2)} pcs', style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563)))),
-                        DataCell(Text(
-                          restockedPcs > 0 ? '+${restockedPcs.toStringAsFixed(2)} pcs' : '0.00 pcs',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: restockedPcs > 0 ? FontWeight.bold : FontWeight.normal,
-                            color: restockedPcs > 0 ? const Color(0xFF111827) : const Color(0xFF4B5563),
-                          ),
-                        )),
-                        DataCell(
-                          Container(
-                            width: 68,
-                            height: 28,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFFD1D5DB)),
-                            ),
-                            child: Center(
-                              child: Text(
-                                usedPerUnit > 0
-                                    ? (usedPerUnit % 1 == 0 ? usedPerUnit.toInt().toString() : usedPerUnit.toStringAsFixed(2))
-                                    : '0',
-                                style: const TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.bold, fontSize: 12),
+                        return DataRow(
+                          cells: [
+                            DataCell(Text(item.name,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13))),
+                            DataCell(Text(
+                                '${openingPcs.toStringAsFixed(2)} pcs',
+                                style: const TextStyle(
+                                    fontSize: 12, color: Color(0xFF4B5563)))),
+                            DataCell(Text(
+                              restockedPcs > 0
+                                  ? '+${restockedPcs.toStringAsFixed(2)} pcs'
+                                  : '0.00 pcs',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: restockedPcs > 0
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                                color: restockedPcs > 0
+                                    ? const Color(0xFF111827)
+                                    : const Color(0xFF4B5563),
                               ),
-                            ),
-                          ),
-                        ),
-                        DataCell(Text(item.unit, style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563)))),
-                        DataCell(Text(usedPerPcsText, style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563)))),
-                        DataCell(
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
+                            )),
+                            DataCell(
                               Container(
-                                width: 72,
+                                width: 68,
                                 height: 28,
                                 decoration: BoxDecoration(
                                   color: Colors.white,
                                   borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: const Color(0xFFD1D5DB)),
+                                  border: Border.all(
+                                      color: const Color(0xFFD1D5DB)),
                                 ),
                                 child: Center(
                                   child: Text(
-                                    remainingPcs.toStringAsFixed(2),
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                    usedPerUnit > 0
+                                        ? (usedPerUnit % 1 == 0
+                                            ? usedPerUnit.toInt().toString()
+                                            : usedPerUnit.toStringAsFixed(2))
+                                        : '0',
+                                    style: const TextStyle(
+                                        color: Color(0xFFDC2626),
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12),
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 6),
-                              const Text('pcs', style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
-                            ],
-                          ),
-                        ),
-                        DataCell(Text(cupsLeftText, style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563)))),
-                        DataCell(
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SizedBox(
-                                width: 64,
-                                height: 28,
-                                child: TextField(
-                                  controller: rCtrl,
-                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                  style: const TextStyle(fontSize: 11),
-                                  decoration: InputDecoration(
-                                    hintText: '+Qty',
-                                    hintStyle: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-                                    border: OutlineInputBorder(
+                            ),
+                            DataCell(Text(item.unit,
+                                style: const TextStyle(
+                                    fontSize: 12, color: Color(0xFF4B5563)))),
+                            DataCell(Text(usedPerPcsText,
+                                style: const TextStyle(
+                                    fontSize: 12, color: Color(0xFF4B5563)))),
+                            DataCell(
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 72,
+                                    height: 28,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
                                       borderRadius: BorderRadius.circular(6),
-                                      borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+                                      border: Border.all(
+                                          color: const Color(0xFFD1D5DB)),
                                     ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(6),
-                                      borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+                                    child: Center(
+                                      child: Text(
+                                        remainingPcs.toStringAsFixed(2),
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12),
+                                      ),
                                     ),
                                   ),
-                                  onSubmitted: (_) => _handleRestock(item),
-                                ),
+                                  const SizedBox(width: 6),
+                                  const Text('pcs',
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFF6B7280))),
+                                ],
                               ),
-                              const SizedBox(width: 6),
-                              SizedBox(
-                                height: 28,
-                                child: ElevatedButton(
-                                  onPressed: () => _handleRestock(item),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.black,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                                    elevation: 0,
+                            ),
+                            DataCell(Text(cupsLeftText,
+                                style: const TextStyle(
+                                    fontSize: 12, color: Color(0xFF4B5563)))),
+                            DataCell(
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  SizedBox(
+                                    width: 64,
+                                    height: 28,
+                                    child: TextField(
+                                      controller: rCtrl,
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                              decimal: true),
+                                      style: const TextStyle(fontSize: 11),
+                                      decoration: InputDecoration(
+                                        hintText: '+Qty',
+                                        hintStyle: const TextStyle(
+                                            fontSize: 11,
+                                            color: Color(0xFF9CA3AF)),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 0),
+                                        border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                          borderSide: const BorderSide(
+                                              color: Color(0xFFD1D5DB)),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                          borderSide: const BorderSide(
+                                              color: Color(0xFFD1D5DB)),
+                                        ),
+                                      ),
+                                      onSubmitted: (_) => _handleRestock(item),
+                                    ),
                                   ),
-                                  child: const Text('Add', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                ),
+                                  const SizedBox(width: 6),
+                                  SizedBox(
+                                    height: 28,
+                                    child: ElevatedButton(
+                                      onPressed: () => _handleRestock(item),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.black,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10),
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(6)),
+                                        elevation: 0,
+                                      ),
+                                      child: const Text('Add',
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold)),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                        ),
-                        DataCell(
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF6B7280)),
-                                onPressed: () => _handleEditItem(item),
-                                constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-                                padding: EdgeInsets.zero,
+                            ),
+                            DataCell(
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.edit_outlined,
+                                        size: 16, color: Color(0xFF6B7280)),
+                                    onPressed: () => _handleEditItem(item),
+                                    constraints: const BoxConstraints(
+                                        minWidth: 26, minHeight: 26),
+                                    padding: EdgeInsets.zero,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline,
+                                        size: 16, color: Color(0xFF6B7280)),
+                                    onPressed: () => _handleDeleteItem(item),
+                                    constraints: const BoxConstraints(
+                                        minWidth: 26, minHeight: 26),
+                                    padding: EdgeInsets.zero,
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 4),
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline, size: 16, color: Color(0xFF6B7280)),
-                                onPressed: () => _handleDeleteItem(item),
-                                constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-                                padding: EdgeInsets.zero,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
-                  }).toList(),
-                ),
+                            ),
+                          ],
+                        );
+                      }).toList(),
+                    ),
+                  );
+                },
               ),
               if (inventory.isEmpty)
                 Container(
@@ -724,6 +852,130 @@ class _StockScreenState extends State<StockScreen> {
     );
   }
 
+  Widget _buildInventoryCard(InventoryItem item, DateTime? selectedDate) {
+    final ledger = widget.controller.getStockLedger(
+      item,
+      range: _filterRange,
+      selectedDate: selectedDate,
+    );
+    final openingPcs = ledger['openingPcs'] ?? 0.0;
+    final restockedPcs = ledger['restockedPcs'] ?? 0.0;
+    final usedPerUnit = ledger['usedPerUnit'] ?? 0.0;
+    final remainingPcs = ledger['remainingPcs'] ?? 0.0;
+    final cupsLeft = ledger['cupsLeft'] ?? -1.0;
+    final isPcsUnit = item.unit.trim().toLowerCase() == 'pcs';
+    final restockController = _restockControllers.putIfAbsent(
+      item.id,
+      () => TextEditingController(),
+    );
+
+    Widget metric(String label, String value) {
+      return SizedBox(
+        width: 108,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label,
+                style: const TextStyle(fontSize: 10, color: Color(0xFF6B7280))),
+            const SizedBox(height: 3),
+            Text(value,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  item.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Edit ${item.name}',
+                onPressed: () => _handleEditItem(item),
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                visualDensity: VisualDensity.compact,
+              ),
+              IconButton(
+                tooltip: 'Delete ${item.name}',
+                onPressed: () => _handleDeleteItem(item),
+                icon: const Icon(Icons.delete_outline, size: 18),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 12,
+            runSpacing: 10,
+            children: [
+              metric('Opening', '${openingPcs.toStringAsFixed(2)} pcs'),
+              metric('Restocked', '${restockedPcs.toStringAsFixed(2)} pcs'),
+              metric('Used per unit',
+                  '${usedPerUnit.toStringAsFixed(2)} ${item.unit}'),
+              metric('Remaining', '${remainingPcs.toStringAsFixed(2)} pcs'),
+              metric(
+                  'Cups left',
+                  isPcsUnit || cupsLeft < 0
+                      ? '—'
+                      : '${cupsLeft.toStringAsFixed(1)} cups'),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: restockController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Restock quantity',
+                    hintText: '+Qty',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  onSubmitted: (_) => _handleRestock(item),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () => _handleRestock(item),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(64, 46),
+                ),
+                child: const Text('Add'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildFormField({
     required String label,
     required String hint,
@@ -735,50 +987,54 @@ class _StockScreenState extends State<StockScreen> {
     ValueChanged<String>? onChanged,
   }) {
     final field = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 11,
-              color: Color(0xFF6B7280),
-              fontWeight: FontWeight.w500,
-            ),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 11,
+            color: Color(0xFF6B7280),
+            fontWeight: FontWeight.w500,
           ),
-          const SizedBox(height: 4),
-          SizedBox(
-            height: 44,
-            child: TextField(
-              controller: controller,
-              enabled: enabled,
-              keyboardType: isNumber ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
-              onChanged: onChanged,
-              style: const TextStyle(fontSize: 14),
-              decoration: InputDecoration(
-                hintText: hint,
-                hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF9CA3AF)),
-                filled: true,
-                fillColor: enabled ? Colors.white : const Color(0xFFF3F4F6),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
-                ),
-                disabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                ),
+        ),
+        const SizedBox(height: 4),
+        SizedBox(
+          height: 44,
+          child: TextField(
+            controller: controller,
+            enabled: enabled,
+            keyboardType: isNumber
+                ? const TextInputType.numberWithOptions(decimal: true)
+                : TextInputType.text,
+            onChanged: onChanged,
+            style: const TextStyle(fontSize: 14),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle:
+                  const TextStyle(fontSize: 13, color: Color(0xFF9CA3AF)),
+              filled: true,
+              fillColor: enabled ? Colors.white : const Color(0xFFF3F4F6),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+              ),
+              disabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
               ),
             ),
           ),
-        ],
-      );
+        ),
+      ],
+    );
     if (width == null) return Expanded(flex: flex, child: field);
     return SizedBox(width: width, child: field);
   }

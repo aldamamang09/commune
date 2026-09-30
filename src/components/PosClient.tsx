@@ -201,7 +201,7 @@ export function PosClient({
   const appliedPromoId = PROMOTIONS_ENABLED ? promoId : null;
   const availableOrders = useMemo(() => {
     const byId = new Map(
-      orders.filter((order) => !order.voided).map((order) => [order.id, order]),
+      orders.filter((order) => !order.voided && !order.deletedAt).map((order) => [order.id, order]),
     );
     const lastOrderVoided = Boolean(
       lastOrder && orders.some((order) => order.id === lastOrder.id && order.voided),
@@ -1446,7 +1446,7 @@ export function PosClient({
                   </label>
                   <textarea
                     rows={2}
-                    placeholder="e.g., Customer changed mind, wrong order input..."
+                    placeholder=""
                     value={voidReason}
                     onChange={(e) => setVoidReason(e.target.value)}
                     className="w-full resize-none rounded-xl border border-neutral-200 bg-neutral-50 px-3.5 py-2.5 text-xs text-neutral-900 outline-none transition focus:border-black focus:bg-white focus:ring-1 focus:ring-black"

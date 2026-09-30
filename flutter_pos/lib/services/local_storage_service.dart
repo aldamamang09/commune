@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/supabase_config.dart';
 import '../models/menu_item.dart';
 import '../models/order.dart';
+import '../models/order_item.dart';
 import '../models/inventory_item.dart';
 import '../models/void_request.dart';
 import '../models/restock_record.dart';
@@ -27,6 +28,7 @@ class LocalStorageService {
   static const String _keyPosOpenedAt = 'v2_cache_pos_opened_at';
   static const String _keyActiveStaffId = 'v1_active_staff_id';
   static const String _keyActiveStaffProfile = 'v1_active_staff_profile';
+  static const String _keyActiveCheckout = 'v1_active_checkout';
 
   // Offline Queues (v2)
   static const String _queueOrders = 'v2_offline_queue_orders';
@@ -81,11 +83,12 @@ class LocalStorageService {
   // --- Connection Config ---
   String? getSupabaseUrl() => SupabaseConfig.projectUrl;
 
-  String? getSupabaseAnonKey() => SupabaseConfig.serviceRoleKey;
+  String? getSupabaseAnonKey() => SupabaseConfig.anonKey;
 
   String? getAdminApiUrl() => null;
 
-  Future<void> setSupabaseConfig(String url, String anonKey, {String? adminApiUrl}) async {
+  Future<void> setSupabaseConfig(String url, String anonKey,
+      {String? adminApiUrl}) async {
     await _prefs.remove(_keySupabaseUrl);
     await _prefs.remove(_keySupabaseAnonKey);
     await _prefs.remove(_keyAdminApiUrl);
@@ -100,10 +103,52 @@ class LocalStorageService {
   String? getPosOpenedBy() => _prefs.getString(_keyPosOpenedBy);
   String? getPosOpenedAt() => _prefs.getString(_keyPosOpenedAt);
 
-  Future<void> setPosState({required bool isOpen, String? openedBy, String? openedAt}) async {
+  Future<void> setPosState(
+      {required bool isOpen, String? openedBy, String? openedAt}) async {
     await _prefs.setBool(_keyPosOpen, isOpen);
     if (openedBy != null) await _prefs.setString(_keyPosOpenedBy, openedBy);
     if (openedAt != null) await _prefs.setString(_keyPosOpenedAt, openedAt);
+  }
+
+  Future<void> saveActiveCheckout({
+    required List<OrderItem> items,
+    required String paymentMethod,
+    required double tenderedAmount,
+    required double discountAmount,
+    String? promoId,
+    String? promoLabel,
+    String? pendingVoidRequestId,
+  }) async {
+    if (items.isEmpty) {
+      await clearActiveCheckout();
+      return;
+    }
+    await _prefs.setString(
+      _keyActiveCheckout,
+      jsonEncode({
+        'items': items.map((item) => item.toJson()).toList(),
+        'paymentMethod': paymentMethod,
+        'tenderedAmount': tenderedAmount,
+        'discountAmount': discountAmount,
+        'promoId': promoId,
+        'promoLabel': promoLabel,
+        'pendingVoidRequestId': pendingVoidRequestId,
+      }),
+    );
+  }
+
+  Map<String, dynamic>? getActiveCheckout() {
+    final raw = _prefs.getString(_keyActiveCheckout);
+    if (raw == null) return null;
+    try {
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> clearActiveCheckout() async {
+    await _prefs.remove(_keyActiveCheckout);
   }
 
   // --- Menu Cache ---
@@ -117,7 +162,9 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => MenuItem.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      return list
+          .map((e) => MenuItem.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
     } catch (_) {
       return [];
     }
@@ -130,7 +177,8 @@ class LocalStorageService {
       final trimmed = c.trim();
       if (trimmed.isNotEmpty &&
           trimmed.toLowerCase() != 'all' &&
-          !normalized.any((existing) => existing.toLowerCase() == trimmed.toLowerCase())) {
+          !normalized.any(
+              (existing) => existing.toLowerCase() == trimmed.toLowerCase())) {
         normalized.add(trimmed);
       }
     }
@@ -152,7 +200,10 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => InventoryItem.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      return list
+          .map((e) =>
+              InventoryItem.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
     } catch (_) {
       return [];
     }
@@ -184,7 +235,9 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => Order.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      return list
+          .map((e) => Order.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
     } catch (_) {
       return [];
     }
@@ -206,7 +259,8 @@ class LocalStorageService {
     final queue = getPendingOrders();
     queue.removeWhere((o) => o.id == order.id);
     queue.add(order);
-    await _prefs.setString(_queueOrders, jsonEncode(queue.map((o) => o.toJson()).toList()));
+    await _prefs.setString(
+        _queueOrders, jsonEncode(queue.map((o) => o.toJson()).toList()));
   }
 
   List<Order> getPendingOrders() {
@@ -214,7 +268,9 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => Order.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      return list
+          .map((e) => Order.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
     } catch (_) {
       return [];
     }
@@ -223,12 +279,14 @@ class LocalStorageService {
   Future<void> removePendingOrder(String id) async {
     final queue = getPendingOrders();
     queue.removeWhere((o) => o.id == id);
-    await _prefs.setString(_queueOrders, jsonEncode(queue.map((o) => o.toJson()).toList()));
+    await _prefs.setString(
+        _queueOrders, jsonEncode(queue.map((o) => o.toJson()).toList()));
   }
 
   // --- Restocks Cache & Queue ---
   Future<void> saveRestocks(List<RestockRecord> records) async {
-    await _prefs.setString(_keyRestocks, jsonEncode(records.map((r) => r.toJson()).toList()));
+    await _prefs.setString(
+        _keyRestocks, jsonEncode(records.map((r) => r.toJson()).toList()));
   }
 
   List<RestockRecord> getRestocks() {
@@ -236,7 +294,10 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => RestockRecord.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      return list
+          .map((e) =>
+              RestockRecord.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
     } catch (_) {
       return [];
     }
@@ -252,7 +313,8 @@ class LocalStorageService {
       final queue = getPendingRestocks();
       queue.removeWhere((r) => r.id == record.id);
       queue.add(record);
-      await _prefs.setString(_queueRestocks, jsonEncode(queue.map((r) => r.toJson()).toList()));
+      await _prefs.setString(
+          _queueRestocks, jsonEncode(queue.map((r) => r.toJson()).toList()));
     }
   }
 
@@ -261,7 +323,10 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => RestockRecord.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      return list
+          .map((e) =>
+              RestockRecord.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
     } catch (_) {
       return [];
     }
@@ -270,7 +335,8 @@ class LocalStorageService {
   Future<void> removePendingRestock(String id) async {
     final queue = getPendingRestocks();
     queue.removeWhere((r) => r.id == id);
-    await _prefs.setString(_queueRestocks, jsonEncode(queue.map((r) => r.toJson()).toList()));
+    await _prefs.setString(
+        _queueRestocks, jsonEncode(queue.map((r) => r.toJson()).toList()));
   }
 
   List<String> getPendingRestockDeletes() =>
@@ -283,13 +349,15 @@ class LocalStorageService {
   }
 
   Future<void> removePendingRestockDelete(String id) async {
-    final queue = getPendingRestockDeletes()..removeWhere((pendingId) => pendingId == id);
+    final queue = getPendingRestockDeletes()
+      ..removeWhere((pendingId) => pendingId == id);
     await _prefs.setStringList(_queueRestockDeletes, queue);
   }
 
   // --- Void Requests Cache & Queue ---
   Future<void> saveVoidRequests(List<VoidRequest> requests) async {
-    await _prefs.setString(_keyVoidRequests, jsonEncode(requests.map((r) => r.toJson()).toList()));
+    await _prefs.setString(
+        _keyVoidRequests, jsonEncode(requests.map((r) => r.toJson()).toList()));
   }
 
   List<VoidRequest> getVoidRequests() {
@@ -297,7 +365,9 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => VoidRequest.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      return list
+          .map((e) => VoidRequest.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
     } catch (_) {
       return [];
     }
@@ -313,7 +383,8 @@ class LocalStorageService {
       final queue = getPendingVoidRequests();
       queue.removeWhere((r) => r.id == request.id);
       queue.add(request);
-      await _prefs.setString(_queueVoidRequests, jsonEncode(queue.map((r) => r.toJson()).toList()));
+      await _prefs.setString(_queueVoidRequests,
+          jsonEncode(queue.map((r) => r.toJson()).toList()));
     }
   }
 
@@ -322,7 +393,9 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => VoidRequest.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      return list
+          .map((e) => VoidRequest.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
     } catch (_) {
       return [];
     }
@@ -331,12 +404,14 @@ class LocalStorageService {
   Future<void> removePendingVoidRequest(String id) async {
     final queue = getPendingVoidRequests();
     queue.removeWhere((r) => r.id == id);
-    await _prefs.setString(_queueVoidRequests, jsonEncode(queue.map((r) => r.toJson()).toList()));
+    await _prefs.setString(
+        _queueVoidRequests, jsonEncode(queue.map((r) => r.toJson()).toList()));
   }
 
   // --- Staff Users Cache ---
   Future<void> saveStaff(List<StaffUser> staff) async {
-    await _prefs.setString(_keyStaff, jsonEncode(staff.map((s) => s.toJson()).toList()));
+    await _prefs.setString(
+        _keyStaff, jsonEncode(staff.map((s) => s.toJson()).toList()));
   }
 
   List<StaffUser> getStaff() {
@@ -344,7 +419,9 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => StaffUser.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      return list
+          .map((e) => StaffUser.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
     } catch (_) {
       return [];
     }
@@ -352,7 +429,8 @@ class LocalStorageService {
 
   // --- Login Activity / Shift Punches ---
   Future<void> saveLoginActivity(List<LoginActivity> logs) async {
-    await _prefs.setString(_keyLoginActivity, jsonEncode(logs.map((l) => l.toJson()).toList()));
+    await _prefs.setString(
+        _keyLoginActivity, jsonEncode(logs.map((l) => l.toJson()).toList()));
   }
 
   List<LoginActivity> getLoginActivity() {
@@ -360,7 +438,10 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => LoginActivity.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      return list
+          .map((e) =>
+              LoginActivity.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
     } catch (_) {
       return [];
     }
@@ -376,7 +457,8 @@ class LocalStorageService {
       final queue = getPendingLoginActivity();
       queue.removeWhere((l) => l.id == activity.id);
       queue.add(activity);
-      await _prefs.setString(_queueLoginActivity, jsonEncode(queue.map((l) => l.toJson()).toList()));
+      await _prefs.setString(_queueLoginActivity,
+          jsonEncode(queue.map((l) => l.toJson()).toList()));
     }
   }
 
@@ -385,7 +467,10 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => LoginActivity.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      return list
+          .map((e) =>
+              LoginActivity.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
     } catch (_) {
       return [];
     }
@@ -394,12 +479,14 @@ class LocalStorageService {
   Future<void> removePendingLoginActivity(String id) async {
     final queue = getPendingLoginActivity();
     queue.removeWhere((l) => l.id == id);
-    await _prefs.setString(_queueLoginActivity, jsonEncode(queue.map((l) => l.toJson()).toList()));
+    await _prefs.setString(
+        _queueLoginActivity, jsonEncode(queue.map((l) => l.toJson()).toList()));
   }
 
   // --- Print Jobs ---
   Future<void> savePrintJobs(List<PrintJob> jobs) async {
-    await _prefs.setString(_keyPrintJobs, jsonEncode(jobs.map((j) => j.toJson()).toList()));
+    await _prefs.setString(
+        _keyPrintJobs, jsonEncode(jobs.map((j) => j.toJson()).toList()));
   }
 
   List<PrintJob> getPrintJobs() {
@@ -407,7 +494,9 @@ class LocalStorageService {
     if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
-      return list.map((e) => PrintJob.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      return list
+          .map((e) => PrintJob.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
     } catch (_) {
       return [];
     }

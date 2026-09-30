@@ -11,6 +11,7 @@ import '../widgets/receipt_dialog.dart';
 import '../widgets/void_dialog.dart';
 import '../widgets/barista_shift_dialog.dart';
 import '../widgets/bluetooth_printer_picker_dialog.dart';
+import '../widgets/pos_navigation_drawer.dart';
 import '../../services/bluetooth_printer_service.dart';
 import '../theme.dart';
 import 'stock_screen.dart';
@@ -56,7 +57,6 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Future<void> _openPrinterPicker(PrinterRole role) async {
-    Navigator.pop(context);
     await Future<void>.delayed(Duration.zero);
     if (!mounted) return;
     await showDialog<void>(
@@ -122,6 +122,7 @@ class _PosScreenState extends State<PosScreen> {
         isManager: (widget.controller.currentUser?.isManager ?? false) &&
             (widget.controller.currentUser?.password.isNotEmpty ?? false),
         isRequestPending: widget.controller.isVoidRequestPending,
+        isOnline: widget.controller.syncService.isOnline,
         onConfirmVoid: (reason, managerUser, managerPass) async {
           final username = managerUser.isNotEmpty
               ? managerUser
@@ -258,6 +259,81 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
+  void _navigateToPos() {
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  void _navigateToStock() {
+    _navigateToPos();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => StockScreen(
+          controller: widget.controller,
+          drawerBuilder: _buildPosDrawer,
+        ),
+      ),
+    );
+  }
+
+  void _navigateToRestock() {
+    _navigateToPos();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RestockScreen(
+          controller: widget.controller,
+          drawerBuilder: _buildPosDrawer,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPosDrawer(PosSection section) {
+    final controller = widget.controller;
+    final canLogout = controller.cart.isEmpty &&
+        !controller.isVoidRequestPending &&
+        !_isLoggingOut;
+
+    return PosNavigationDrawer(
+      selectedSection: section,
+      cashierName: controller.currentUser?.name ?? 'Cashier',
+      labelsConnection: _printerService.connectionSummary(PrinterRole.labels),
+      receiptConnection: _printerService.connectionSummary(PrinterRole.receipt),
+      syncStatus: controller.syncService.isOnline ? 'Online' : 'Offline',
+      canLogout: canLogout,
+      logoutDisabledMessage: controller.isVoidRequestPending
+          ? 'Wait for void approval first'
+          : 'Clear checkout first',
+      onOpenTerminal: _navigateToPos,
+      onOpenStock: _navigateToStock,
+      onOpenRestock: _navigateToRestock,
+      onOpenBaristas: _openBaristaShiftDialog,
+      onConnectLabels: () => _openPrinterPicker(PrinterRole.labels),
+      onConnectReceipt: () => _openPrinterPicker(PrinterRole.receipt),
+      onSync: () => controller.syncService.syncAll(),
+      onLogout: _handleLogout,
+    );
+  }
+
+  Future<void> _handleLogout() async {
+    setState(() => _isLoggingOut = true);
+    final cashier = widget.controller.currentUser;
+    try {
+      if (cashier != null) {
+        await widget.controller.recordCashierSessionEvent(cashier, 'logout');
+      }
+      await widget.controller.clearActiveSession();
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => LoginScreen(controller: widget.controller),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoggingOut = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
@@ -267,11 +343,11 @@ class _PosScreenState extends State<PosScreen> {
     final canLogout = controller.cart.isEmpty &&
         !controller.isVoidRequestPending &&
         !_isLoggingOut;
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
 
     final syncStatusLabel = sync.isOnline ? 'Online' : 'Offline';
-    final syncDotColor = sync.isOnline
-        ? const Color(0xFF22C55E)
-        : const Color(0xFF9CA3AF);
+    final syncDotColor =
+        sync.isOnline ? const Color(0xFF22C55E) : const Color(0xFF9CA3AF);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -388,29 +464,13 @@ class _PosScreenState extends State<PosScreen> {
                       leading: const Icon(Icons.inventory_2_outlined,
                           color: Colors.black87),
                       title: const Text('Stock inventory'),
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) =>
-                                  StockScreen(controller: controller)),
-                        );
-                      },
+                      onTap: _navigateToStock,
                     ),
                     ListTile(
                       leading: const Icon(Icons.add_shopping_cart_outlined,
                           color: Colors.black87),
                       title: const Text('Restock'),
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) =>
-                                  RestockScreen(controller: controller)),
-                        );
-                      },
+                      onTap: _navigateToRestock,
                     ),
                     ListTile(
                       leading: const Icon(Icons.badge_outlined,
@@ -439,7 +499,10 @@ class _PosScreenState extends State<PosScreen> {
                       title: const Text('Connect labels'),
                       subtitle: Text(_printerService
                           .connectionSummary(PrinterRole.labels)),
-                      onTap: () => _openPrinterPicker(PrinterRole.labels),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _openPrinterPicker(PrinterRole.labels);
+                      },
                     ),
                     ListTile(
                       leading: const Icon(Icons.receipt_long_outlined,
@@ -447,7 +510,10 @@ class _PosScreenState extends State<PosScreen> {
                       title: const Text('Connect receipt'),
                       subtitle: Text(_printerService
                           .connectionSummary(PrinterRole.receipt)),
-                      onTap: () => _openPrinterPicker(PrinterRole.receipt),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _openPrinterPicker(PrinterRole.receipt);
+                      },
                     ),
                     ListTile(
                       leading: const Icon(Icons.sync, color: Colors.black87),
@@ -520,8 +586,7 @@ class _PosScreenState extends State<PosScreen> {
         builder: (context, screenConstraints) {
           final checkoutPanelWidth =
               screenConstraints.maxWidth >= 1280 ? 400.0 : 370.0;
-          final isWide = screenConstraints.maxWidth >= 960 &&
-              screenConstraints.maxHeight >= 480;
+          final isWide = screenConstraints.maxWidth >= 960;
           final cartItemCount =
               controller.cart.fold<int>(0, (sum, i) => sum + i.qty);
 
@@ -600,16 +665,10 @@ class _PosScreenState extends State<PosScreen> {
                       : LayoutBuilder(
                           builder: (context, constraints) {
                             int crossAxisCount = 4;
-                            double aspectRatio = 1.45;
                             if (constraints.maxWidth < 360) {
                               crossAxisCount = 1;
-                              aspectRatio = 2.4;
                             } else if (constraints.maxWidth < 520) {
                               crossAxisCount = 2;
-                              aspectRatio = 1.35;
-                            } else {
-                              crossAxisCount = 4;
-                              aspectRatio = 1.65;
                             }
                             return GridView.builder(
                               padding: const EdgeInsets.symmetric(
@@ -617,7 +676,7 @@ class _PosScreenState extends State<PosScreen> {
                               gridDelegate:
                                   SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: crossAxisCount,
-                                childAspectRatio: aspectRatio,
+                                mainAxisExtent: 72,
                                 crossAxisSpacing: 12,
                                 mainAxisSpacing: 12,
                               ),
@@ -636,59 +695,60 @@ class _PosScreenState extends State<PosScreen> {
                 ),
 
                 // Bottom Category Bar (Strictly synced with Admin Categories)
-                Container(
-                  height: 54,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFF9FAFB),
-                    border: Border(
-                      top: BorderSide(color: Color(0xFFE5E7EB)),
+                if (!keyboardOpen)
+                  Container(
+                    height: 54,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFF9FAFB),
+                      border: Border(
+                        top: BorderSide(color: Color(0xFFE5E7EB)),
+                      ),
                     ),
-                  ),
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: controller.categories.length,
-                    separatorBuilder: (context, index) =>
-                        const SizedBox(width: 8),
-                    itemBuilder: (context, index) {
-                      final cat = controller.categories[index];
-                      final isSelected = controller.selectedCategory == cat;
-                      return InkWell(
-                        onTap: () => controller.setCategory(cat),
-                        borderRadius: BorderRadius.circular(20),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: isSelected ? Colors.black : Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: isSelected
-                                  ? Colors.black
-                                  : const Color(0xFFD1D5DB),
-                            ),
-                          ),
-                          child: Center(
-                            child: Text(
-                              cat,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: controller.categories.length,
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(width: 8),
+                      itemBuilder: (context, index) {
+                        final cat = controller.categories[index];
+                        final isSelected = controller.selectedCategory == cat;
+                        return InkWell(
+                          onTap: () => controller.setCategory(cat),
+                          borderRadius: BorderRadius.circular(20),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: isSelected ? Colors.black : Colors.white,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
                                 color: isSelected
-                                    ? Colors.white
-                                    : const Color(0xFF111827),
+                                    ? Colors.black
+                                    : const Color(0xFFD1D5DB),
+                              ),
+                            ),
+                            child: Center(
+                              child: Text(
+                                cat,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.normal,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : const Color(0xFF111827),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
-                ),
 
                 // Mobile/Narrow Checkout Summary Bar
-                if (!isWide)
+                if (!isWide && !keyboardOpen)
                   Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 10),

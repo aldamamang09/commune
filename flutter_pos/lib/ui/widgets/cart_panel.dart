@@ -26,6 +26,7 @@ class CartPanel extends StatefulWidget {
 
 class _CartPanelState extends State<CartPanel> {
   final TextEditingController _amountController = TextEditingController();
+  final FocusNode _amountFocusNode = FocusNode();
 
   @override
   void initState() {
@@ -38,16 +39,20 @@ class _CartPanelState extends State<CartPanel> {
   @override
   void didUpdateWidget(covariant CartPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.controller.paymentMethod != 'cash') {
-      _amountController.text = widget.controller.total.toInt().toString();
-    } else if (widget.controller.cart.isEmpty && widget.controller.tenderedAmount == 0) {
-      _amountController.text = '0';
+    if (_amountFocusNode.hasFocus) return;
+
+    final amountText = widget.controller.paymentMethod != 'cash'
+        ? widget.controller.total.toInt().toString()
+        : widget.controller.tenderedAmount.toInt().toString();
+    if (_amountController.text != amountText) {
+      _amountController.text = amountText;
     }
   }
 
   @override
   void dispose() {
     _amountController.dispose();
+    _amountFocusNode.dispose();
     super.dispose();
   }
 
@@ -142,7 +147,8 @@ class _CartPanelState extends State<CartPanel> {
                       scrollbars: false,
                     ),
                     child: ListView.separated(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 4),
                       itemCount: controller.cart.length,
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (context, index) => Padding(
@@ -165,7 +171,8 @@ class _CartPanelState extends State<CartPanel> {
                                       color: Color(0xFF111827),
                                     ),
                                   ),
-                                  if (controller.cart[index].optionsSummary.isNotEmpty) ...[
+                                  if (controller.cart[index].optionsSummary
+                                      .isNotEmpty) ...[
                                     const SizedBox(height: 2),
                                     Text(
                                       controller.cart[index].optionsSummary,
@@ -209,233 +216,276 @@ class _CartPanelState extends State<CartPanel> {
                     ),
                   ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(top: BorderSide(color: Color(0xFFE5E7EB))),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Pay with',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Color(0xFF6B7280),
-                  ),
+          Flexible(
+            fit: FlexFit.loose,
+            child: SingleChildScrollView(
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  border: Border(top: BorderSide(color: Color(0xFFE5E7EB))),
                 ),
-                const SizedBox(height: 3),
-                Row(
-                  children: [
-                    _buildPaymentButton(
-                      label: 'Cash',
-                      isSelected: controller.paymentMethod == 'cash',
-                      onTap: () {
-                        controller.setPaymentMethod('cash');
-                        setState(() {
-                          _amountController.text = controller.tenderedAmount > 0
-                              ? controller.tenderedAmount.toInt().toString()
-                              : '0';
-                        });
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    _buildPaymentButton(
-                      label: 'GCash',
-                      isSelected: controller.paymentMethod == 'gcash',
-                      onTap: () {
-                        controller.setPaymentMethod('gcash');
-                        setState(() {
-                          _amountController.text = controller.total.toInt().toString();
-                        });
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    _buildPaymentButton(
-                      label: 'Maya',
-                      isSelected: controller.paymentMethod == 'maya',
-                      onTap: () {
-                        controller.setPaymentMethod('maya');
-                        setState(() {
-                          _amountController.text = controller.total.toInt().toString();
-                        });
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     const Text(
-                      'Amount',
-                      style: TextStyle(fontSize: 12, color: Color(0xFF374151)),
+                      'Pay with',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Color(0xFF6B7280),
+                      ),
                     ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        _buildPaymentButton(
+                          label: 'Cash',
+                          isSelected: controller.paymentMethod == 'cash',
+                          onTap: () {
+                            controller.setPaymentMethod('cash');
+                            setState(() {
+                              _amountController.text =
+                                  controller.tenderedAmount > 0
+                                      ? controller.tenderedAmount
+                                          .toInt()
+                                          .toString()
+                                      : '0';
+                            });
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        _buildPaymentButton(
+                          label: 'GCash',
+                          isSelected: controller.paymentMethod == 'gcash',
+                          onTap: () {
+                            controller.setPaymentMethod('gcash');
+                            setState(() {
+                              _amountController.text =
+                                  controller.total.toInt().toString();
+                            });
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        _buildPaymentButton(
+                          label: 'Maya',
+                          isSelected: controller.paymentMethod == 'maya',
+                          onTap: () {
+                            controller.setPaymentMethod('maya');
+                            setState(() {
+                              _amountController.text =
+                                  controller.total.toInt().toString();
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Amount',
+                          style:
+                              TextStyle(fontSize: 12, color: Color(0xFF374151)),
+                        ),
+                        SizedBox(
+                          width: 92,
+                          height: 28,
+                          child: TextField(
+                            controller: _amountController,
+                            focusNode: _amountFocusNode,
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                                fontSize: 11, fontWeight: FontWeight.w600),
+                            decoration: InputDecoration(
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide:
+                                    const BorderSide(color: Color(0xFFD1D5DB)),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide:
+                                    const BorderSide(color: Color(0xFFD1D5DB)),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(
+                                    color: Colors.black, width: 1.5),
+                              ),
+                            ),
+                            onChanged: (val) {
+                              final parsed = double.tryParse(val) ?? 0;
+                              controller.setTenderedAmount(parsed);
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          _buildPresetPill(
+                            label: 'Exact',
+                            onTap: () {
+                              controller.setTenderedAmount(controller.total);
+                              setState(() {
+                                _amountController.text =
+                                    controller.total.toInt().toString();
+                              });
+                            },
+                          ),
+                          const SizedBox(width: 6),
+                          _buildPresetPill(
+                            label: '₱500',
+                            onTap: () {
+                              controller.setTenderedAmount(500);
+                              setState(() => _amountController.text = '500');
+                            },
+                          ),
+                          const SizedBox(width: 6),
+                          _buildPresetPill(
+                            label: '₱1,000',
+                            onTap: () {
+                              controller.setTenderedAmount(1000);
+                              setState(() => _amountController.text = '1000');
+                            },
+                          ),
+                          const SizedBox(width: 6),
+                          _buildPresetPill(
+                            label: '₱2,000',
+                            onTap: () {
+                              controller.setTenderedAmount(2000);
+                              setState(() => _amountController.text = '2000');
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Subtotal',
+                            style: TextStyle(
+                                fontSize: 11, color: Color(0xFF4B5563))),
+                        Text('₱${currency.format(controller.subtotal)}',
+                            style: const TextStyle(
+                                fontSize: 11, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Total',
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black),
+                        ),
+                        Text(
+                          '₱${currency.format(controller.total)}',
+                          style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Change',
+                            style: TextStyle(
+                                fontSize: 11, color: Color(0xFF4B5563))),
+                        Text('₱${currency.format(controller.change)}',
+                            style: const TextStyle(
+                                fontSize: 11, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: controller.isVoidRequestPending
+                                ? null
+                                : widget.onPrint,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF374151),
+                              side: const BorderSide(color: Color(0xFFD1D5DB)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10)),
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                            ),
+                            child: const Text('Print',
+                                style: TextStyle(
+                                    fontSize: 10, fontWeight: FontWeight.w500)),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: widget.onVoid,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF374151),
+                              side: const BorderSide(color: Color(0xFFD1D5DB)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10)),
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                            ),
+                            child: const Text('Void',
+                                style: TextStyle(
+                                    fontSize: 10, fontWeight: FontWeight.w500)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
                     SizedBox(
-                      width: 92,
-                      height: 28,
-                      child: TextField(
-                        controller: _amountController,
-                        keyboardType: TextInputType.number,
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                        decoration: InputDecoration(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: const BorderSide(color: Colors.black, width: 1.5),
-                          ),
-                        ),
-                        onChanged: (val) {
-                          final parsed = double.tryParse(val) ?? 0;
-                          controller.setTenderedAmount(parsed);
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      _buildPresetPill(
-                        label: 'Exact',
-                        onTap: () {
-                          controller.setTenderedAmount(controller.total);
-                          setState(() {
-                            _amountController.text = controller.total.toInt().toString();
-                          });
-                        },
-                      ),
-                      const SizedBox(width: 6),
-                      _buildPresetPill(
-                        label: '₱500',
-                        onTap: () {
-                          controller.setTenderedAmount(500);
-                          setState(() => _amountController.text = '500');
-                        },
-                      ),
-                      const SizedBox(width: 6),
-                      _buildPresetPill(
-                        label: '₱1,000',
-                        onTap: () {
-                          controller.setTenderedAmount(1000);
-                          setState(() => _amountController.text = '1000');
-                        },
-                      ),
-                      const SizedBox(width: 6),
-                      _buildPresetPill(
-                        label: '₱2,000',
-                        onTap: () {
-                          controller.setTenderedAmount(2000);
-                          setState(() => _amountController.text = '2000');
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Subtotal', style: TextStyle(fontSize: 11, color: Color(0xFF4B5563))),
-                    Text('₱${currency.format(controller.subtotal)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Total',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black),
-                    ),
-                    Text(
-                      '₱${currency.format(controller.total)}',
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Change', style: TextStyle(fontSize: 11, color: Color(0xFF4B5563))),
-                    Text('₱${currency.format(controller.change)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-                  ],
-                ),
-                const SizedBox(height: 5),
-                Row(
-                  children: [
-                    Expanded(
+                      width: double.infinity,
                       child: OutlinedButton(
-                        onPressed: controller.isVoidRequestPending
+                        onPressed: controller.cart.isEmpty ||
+                                controller.isProcessing ||
+                                controller.isVoidRequestPending
                             ? null
-                            : widget.onPrint,
+                            : widget.onProceedOrder,
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF374151),
-                          side: const BorderSide(color: Color(0xFFD1D5DB)),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          foregroundColor: Colors.black,
+                          side:
+                              const BorderSide(color: Colors.black, width: 1.2),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          disabledForegroundColor: const Color(0xFF9CA3AF),
                         ),
-                        child: const Text('Print', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500)),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: widget.onVoid,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF374151),
-                          side: const BorderSide(color: Color(0xFFD1D5DB)),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                        ),
-                        child: const Text('Void', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500)),
+                        child: controller.isProcessing
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.black),
+                              )
+                            : const Text(
+                                'Proceed Order',
+                                style: TextStyle(
+                                    fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    onPressed: controller.cart.isEmpty ||
-                            controller.isProcessing ||
-                            controller.isVoidRequestPending
-                        ? null
-                        : widget.onProceedOrder,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.black,
-                      side: const BorderSide(color: Colors.black, width: 1.2),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      disabledForegroundColor: const Color(0xFF9CA3AF),
-                    ),
-                    child: controller.isProcessing
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
-                          )
-                        : const Text(
-                            'Proceed Order',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                          ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ],

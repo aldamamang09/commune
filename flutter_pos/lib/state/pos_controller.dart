@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/menu_item.dart';
 import '../models/order_item.dart';
@@ -145,6 +146,7 @@ class PosController extends ChangeNotifier {
 
   Future<void> init() async {
     isPosOpen = localStorage.getPosIsOpen();
+    _restoreActiveCheckout();
 
     // Load cached Admin state (no hardcoded fallback seeds)
     _refreshFromLocalStorage();
@@ -154,6 +156,54 @@ class PosController extends ChangeNotifier {
     await syncService.syncAll();
     _refreshFromLocalStorage();
     _restoreActiveStaff();
+  }
+
+  void _restoreActiveCheckout() {
+    final saved = localStorage.getActiveCheckout();
+    if (saved == null) return;
+
+    try {
+      final rawItems = saved['items'];
+      if (rawItems is List) {
+        cart = rawItems
+            .whereType<Map>()
+            .map((item) => OrderItem.fromJson(Map<String, dynamic>.from(item)))
+            .toList();
+      }
+      final method = saved['paymentMethod'];
+      if (method == 'cash' || method == 'gcash' || method == 'maya') {
+        paymentMethod = method as String;
+      }
+      tenderedAmount = (saved['tenderedAmount'] as num?)?.toDouble() ?? 0;
+      discountAmount = (saved['discountAmount'] as num?)?.toDouble() ?? 0;
+      promoId = saved['promoId'] as String?;
+      promoLabel = saved['promoLabel'] as String?;
+      pendingCartVoidRequestId = saved['pendingVoidRequestId'] as String?;
+      if (cart.isEmpty) unawaited(localStorage.clearActiveCheckout());
+    } catch (_) {
+      cart = [];
+      paymentMethod = 'cash';
+      tenderedAmount = 0;
+      discountAmount = 0;
+      promoId = null;
+      promoLabel = null;
+      pendingCartVoidRequestId = null;
+      unawaited(localStorage.clearActiveCheckout());
+    }
+  }
+
+  void _persistActiveCheckout() {
+    unawaited(
+      localStorage.saveActiveCheckout(
+        items: List<OrderItem>.from(cart),
+        paymentMethod: paymentMethod,
+        tenderedAmount: tenderedAmount,
+        discountAmount: discountAmount,
+        promoId: promoId,
+        promoLabel: promoLabel,
+        pendingVoidRequestId: pendingCartVoidRequestId,
+      ),
+    );
   }
 
   // --- Date Range Bounds Helper (Matches Admin Panel phPeriodBounds) ---
@@ -355,6 +405,7 @@ class PosController extends ChangeNotifier {
     if (paymentMethod != 'cash') {
       tenderedAmount = total;
     }
+    _persistActiveCheckout();
     notifyListeners();
   }
 
@@ -368,6 +419,7 @@ class PosController extends ChangeNotifier {
       if (paymentMethod != 'cash') {
         tenderedAmount = total;
       }
+      _persistActiveCheckout();
       notifyListeners();
     }
   }
@@ -378,6 +430,7 @@ class PosController extends ChangeNotifier {
       if (paymentMethod != 'cash') {
         tenderedAmount = total;
       }
+      _persistActiveCheckout();
       notifyListeners();
     }
   }
@@ -388,6 +441,7 @@ class PosController extends ChangeNotifier {
     discountAmount = 0.0;
     promoId = null;
     promoLabel = null;
+    _persistActiveCheckout();
     notifyListeners();
   }
 
@@ -396,11 +450,13 @@ class PosController extends ChangeNotifier {
     if (method != 'cash') {
       tenderedAmount = total;
     }
+    _persistActiveCheckout();
     notifyListeners();
   }
 
   void setTenderedAmount(double amount) {
     tenderedAmount = amount;
+    _persistActiveCheckout();
     notifyListeners();
   }
 
@@ -420,11 +476,11 @@ class PosController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final now = DateTime.now();
+      final now = ManilaTime.now();
       final orderId = 'ord-${now.millisecondsSinceEpoch}';
 
       final existingTodayCount = orders.where((o) {
-        final d = DateTime.tryParse(o.createdAt);
+        final d = ManilaTime.parse(o.createdAt);
         return d != null &&
             d.year == now.year &&
             d.month == now.month &&
@@ -435,7 +491,7 @@ class PosController extends ChangeNotifier {
 
       final order = Order(
         id: orderId,
-        createdAt: now.toIso8601String(),
+        createdAt: ManilaTime.utcNowIso8601(),
         baristaName: currentBaristaName,
         baristaUserId: currentBaristaUserId,
         items: List.from(cart),
@@ -589,10 +645,10 @@ class PosController extends ChangeNotifier {
       manager = authenticated;
     }
 
-    final now = DateTime.now();
+    final now = ManilaTime.now();
     final order = Order(
       id: 'ord-${now.millisecondsSinceEpoch}',
-      createdAt: now.toIso8601String(),
+      createdAt: ManilaTime.utcNowIso8601(),
       baristaName: currentBaristaName,
       baristaUserId: currentBaristaUserId,
       items: List<OrderItem>.from(cart),
@@ -671,10 +727,10 @@ class PosController extends ChangeNotifier {
       return {'ok': false, 'error': 'No items to void.'};
     }
 
-    final requestedAt = DateTime.now().toUtc();
+    final requestedAt = ManilaTime.utcNowIso8601();
     final request = VoidRequest(
-      id: 'void-request-${requestedAt.millisecondsSinceEpoch}',
-      requestedAt: requestedAt.toIso8601String(),
+      id: 'void-request-${DateTime.now().millisecondsSinceEpoch}',
+      requestedAt: requestedAt,
       requestedById: requester.id,
       requestedByName: requester.name,
       reason: reason.trim(),
@@ -691,6 +747,7 @@ class PosController extends ChangeNotifier {
     await localStorage.addVoidRequest(request);
     voidRequests.insert(0, request);
     if (targetOrder == null) pendingCartVoidRequestId = request.id;
+    if (targetOrder == null) _persistActiveCheckout();
 
     final synced = await supabaseService.pushVoidRequest(request);
     if (synced) {

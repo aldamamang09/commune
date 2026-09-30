@@ -32,7 +32,6 @@ class _DrinkOptionsDialogState extends State<DrinkOptionsDialog> {
 
   @override
   Widget build(BuildContext context) {
-    // Strictly use ONLY addons configured in the Admin panel for this item (NEVER hardcode addons)
     final addonsList = widget.item.addons;
 
     double extraTotal = 0;

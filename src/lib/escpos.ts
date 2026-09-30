@@ -2,6 +2,7 @@ import { CAFE } from "@/lib/cafe";
 import { ordersOnDay } from "@/lib/analytics";
 import { paymentLabel } from "@/lib/payments";
 import { drinkDisplayName, orderLineOptionsLabel } from "@/lib/menu";
+import { phDateTimeLabel, phTimestamp } from "@/lib/datetime";
 import type { MenuItem, Order, OrderItem, PaymentMethod } from "@/lib/types";
 
 export type PaperWidth = 58 | 80;
@@ -97,7 +98,7 @@ export function receiptFromOrder(
     paymentMethod: order.paymentMethod,
     paid,
     change: order.change ?? (digital ? 0 : Math.max(0, paid - order.total)),
-    at: new Date(order.createdAt),
+    at: new Date(phTimestamp(order.createdAt)),
   };
 }
 
@@ -106,13 +107,7 @@ export function receiptMoney(amount: number): string {
 }
 
 export function receiptWhen(date: Date): string {
-  return date.toLocaleString("en-PH", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  return phDateTimeLabel(date);
 }
 
 export function itemCount(items: OrderItem[]): number {

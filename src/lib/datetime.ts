@@ -1,5 +1,17 @@
 const PH_TZ = "Asia/Manila";
 
+function dateFromValue(value: string | Date): Date {
+  if (value instanceof Date) return value;
+
+  const trimmed = value.trim();
+  const localDateTime = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)$/;
+  if (localDateTime.test(trimmed)) {
+    return new Date(`${trimmed.replace(" ", "T")}+08:00`);
+  }
+
+  return new Date(trimmed);
+}
+
 function partsOf(date: Date) {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: PH_TZ,
@@ -28,7 +40,7 @@ export function phDateString(value: string | Date = new Date()): string {
     return value.trim();
   }
 
-  const date = value instanceof Date ? value : new Date(value);
+  const date = dateFromValue(value);
   if (Number.isNaN(date.getTime())) {
     const match = String(value).match(/^(\d{4}-\d{2}-\d{2})/);
     return match?.[1] ?? "";
@@ -49,7 +61,7 @@ export function phDateTimeLabel(value: string | Date): string {
     }).format(date);
   }
 
-  const date = value instanceof Date ? value : new Date(value);
+  const date = dateFromValue(value);
   if (Number.isNaN(date.getTime())) {
     return phDateString(value);
   }
@@ -66,7 +78,7 @@ export function phDateTimeLabel(value: string | Date): string {
 }
 
 export function phDateTimeInputValue(value: string | Date): string {
-  const date = value instanceof Date ? value : new Date(value);
+  const date = dateFromValue(value);
   if (Number.isNaN(date.getTime())) return "";
 
   const { year, month, day, hour, minute } = partsOf(date);
@@ -119,8 +131,13 @@ export function phTimestamp(value: string | Date): number {
     return new Date(`${trimmed.replace(" ", "T")}+08:00`).getTime();
   }
 
-  const date = new Date(trimmed);
+  const date = dateFromValue(trimmed);
   return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+export function phIsoTimestamp(value: string | Date): string {
+  const timestamp = phTimestamp(value);
+  return timestamp ? new Date(timestamp).toISOString() : "";
 }
 
 export type PeriodRange =

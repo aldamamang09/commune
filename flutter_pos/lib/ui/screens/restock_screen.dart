@@ -3,11 +3,17 @@ import 'package:intl/intl.dart';
 import '../../manila_time.dart';
 import '../../models/restock_record.dart';
 import '../../state/pos_controller.dart';
+import '../widgets/pos_navigation_drawer.dart';
 
 class RestockScreen extends StatefulWidget {
   final PosController controller;
+  final PosDrawerBuilder drawerBuilder;
 
-  const RestockScreen({super.key, required this.controller});
+  const RestockScreen({
+    super.key,
+    required this.controller,
+    required this.drawerBuilder,
+  });
 
   @override
   State<RestockScreen> createState() => _RestockScreenState();
@@ -17,7 +23,13 @@ class _RestockScreenState extends State<RestockScreen> {
   String _filterMode = 'range';
   String _range = 'Today';
   static const List<String> _rangeOptions = [
-    'Today', 'This Week', 'Last Week', 'This Month', 'Last Month', 'This Year', 'Last Year',
+    'Today',
+    'This Week',
+    'Last Week',
+    'This Month',
+    'Last Month',
+    'This Year',
+    'Last Year',
   ];
   String get _activeRange => _rangeOptions.contains(_range) ? _range : 'Today';
   late final TextEditingController _dateController;
@@ -74,7 +86,8 @@ class _RestockScreenState extends State<RestockScreen> {
       final selectedDate = _parseSelectedDate() ?? ManilaTime.today();
       return ManilaTime.matchesRange(record.date, 'Today', selectedDate);
     }
-    return ManilaTime.matchesRange(record.date, _activeRange, ManilaTime.today());
+    return ManilaTime.matchesRange(
+        record.date, _activeRange, ManilaTime.today());
   }
 
   String _formatDateTime(String iso) {
@@ -88,28 +101,104 @@ class _RestockScreenState extends State<RestockScreen> {
       final q = r.purchaseQty!;
       return q % 1 == 0 ? '+${q.toInt()}' : '+${q.toStringAsFixed(2)}';
     }
-    final stockItem = widget.controller.inventory.where((i) =>
-        (r.inventoryItemId != null && i.id == r.inventoryItemId) ||
-        i.name.trim().toLowerCase() == r.itemName.trim().toLowerCase()).firstOrNull;
-    final unitSize = (stockItem?.purchaseUnitSize != null && stockItem!.purchaseUnitSize! > 0)
+    final stockItem = widget.controller.inventory
+        .where((i) =>
+            (r.inventoryItemId != null && i.id == r.inventoryItemId) ||
+            i.name.trim().toLowerCase() == r.itemName.trim().toLowerCase())
+        .firstOrNull;
+    final unitSize = (stockItem?.purchaseUnitSize != null &&
+            stockItem!.purchaseUnitSize! > 0)
         ? stockItem.purchaseUnitSize!
         : 1.0;
     final pcs = r.quantityAdded / unitSize;
     return pcs % 1 == 0 ? '+${pcs.toInt()}' : '+${pcs.toStringAsFixed(2)}';
   }
 
+  Future<void> _deleteRestock(RestockRecord record) async {
+    final result = await widget.controller.deleteRestock(record.id);
+    if (!mounted || result == RestockDeleteResult.deleted) return;
+    final message = result == RestockDeleteResult.queued
+        ? 'Restock deleted on this POS and queued to sync with Admin.'
+        : 'Could not delete restock. Check the connection and try again.';
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Widget _buildRestockCard(RestockRecord record) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_formatDateTime(record.date),
+                        style: const TextStyle(
+                            fontSize: 11, color: Color(0xFF6B7280))),
+                    const SizedBox(height: 5),
+                    Text(record.itemName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Delete restock',
+                onPressed: () => _deleteRestock(record),
+                icon: const Icon(Icons.delete_outline,
+                    size: 20, color: Color(0xFFDC2626)),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+          const Divider(height: 18),
+          Row(
+            children: [
+              const Text('Added',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+              const Spacer(),
+              Text(
+                '${_formatAddedQty(record)} ${record.purchaseUnit ?? 'pcs'}',
+                style:
+                    const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final filteredRestocks = widget.controller.restocks.where(_matchesDateFilter).toList();
+    final filteredRestocks =
+        widget.controller.restocks.where(_matchesDateFilter).toList();
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.black,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white, size: 20),
-          onPressed: () => Navigator.pop(context),
+        leading: Builder(
+          builder: (context) => IconButton(
+            tooltip: 'Open navigation menu',
+            icon: const Icon(Icons.menu, color: Colors.white, size: 20),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
         ),
         titleSpacing: 0,
         title: Row(
@@ -153,15 +242,20 @@ class _RestockScreenState extends State<RestockScreen> {
           const SizedBox(width: 8),
         ],
       ),
+      drawer: widget.drawerBuilder(PosSection.restock),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        padding: EdgeInsets.symmetric(
+          horizontal: MediaQuery.sizeOf(context).width < 600 ? 8 : 16,
+          vertical: MediaQuery.sizeOf(context).width < 600 ? 12 : 20,
+        ),
         child: Container(
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: const Color(0xFFE5E7EB)),
           ),
-          padding: const EdgeInsets.all(20),
+          padding:
+              EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 12 : 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -194,9 +288,13 @@ class _RestockScreenState extends State<RestockScreen> {
                       child: DropdownButton<String>(
                         value: _activeRange,
                         icon: const Icon(Icons.keyboard_arrow_down, size: 18),
-                        style: const TextStyle(fontSize: 13, color: Colors.black, fontWeight: FontWeight.w500),
+                        style: const TextStyle(
+                            fontSize: 13,
+                            color: Colors.black,
+                            fontWeight: FontWeight.w500),
                         items: _rangeOptions.map((r) {
-                          return DropdownMenuItem(value: r, child: Text('Range:  $r'));
+                          return DropdownMenuItem(
+                              value: r, child: Text('Range:  $r'));
                         }).toList(),
                         onChanged: _filterMode == 'range'
                             ? (val) {
@@ -211,20 +309,25 @@ class _RestockScreenState extends State<RestockScreen> {
                     width: 190,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
-                      color: _filterMode == 'date' ? Colors.white : const Color(0xFFF3F4F6),
+                      color: _filterMode == 'date'
+                          ? Colors.white
+                          : const Color(0xFFF3F4F6),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: const Color(0xFFD1D5DB)),
                     ),
                     child: Row(
                       children: [
-                        const Text('Date: ', style: TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+                        const Text('Date: ',
+                            style: TextStyle(
+                                fontSize: 13, color: Color(0xFF6B7280))),
                         Expanded(
                           child: TextField(
                             controller: _dateController,
                             enabled: _filterMode == 'date',
                             readOnly: true,
                             onTap: _pickDate,
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                            style: const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w500),
                             decoration: const InputDecoration(
                               border: InputBorder.none,
                               isDense: true,
@@ -235,9 +338,11 @@ class _RestockScreenState extends State<RestockScreen> {
                         IconButton(
                           tooltip: 'Choose date',
                           onPressed: _filterMode == 'date' ? _pickDate : null,
-                          icon: const Icon(Icons.calendar_today_outlined, size: 16, color: Color(0xFF4B5563)),
+                          icon: const Icon(Icons.calendar_today_outlined,
+                              size: 16, color: Color(0xFF4B5563)),
                           padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(width: 24, height: 30),
+                          constraints: const BoxConstraints.tightFor(
+                              width: 24, height: 30),
                         ),
                       ],
                     ),
@@ -247,108 +352,172 @@ class _RestockScreenState extends State<RestockScreen> {
               const SizedBox(height: 20),
 
               // Table with solid black header row (matches Admin Restock table)
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Column(
-                  children: [
-                    Container(
-                      color: Colors.black,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      child: const Row(
-                        children: [
-                          Expanded(flex: 3, child: Text('Date & Time', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
-                          Expanded(flex: 4, child: Text('Item Name', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
-                          Expanded(flex: 2, child: Text('Added Qty', textAlign: TextAlign.right, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
-                          SizedBox(width: 16),
-                          Expanded(flex: 2, child: Text('Unit', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
-                          Expanded(flex: 2, child: Text('Actions', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
-                        ],
-                      ),
-                    ),
-                    if (filteredRestocks.isEmpty)
-                      Container(
-                        padding: const EdgeInsets.symmetric(vertical: 48),
-                        child: const Center(
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  if (constraints.maxWidth < 620) {
+                    if (filteredRestocks.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 32),
+                        child: Center(
                           child: Text(
                             'No restock data for this date range.',
+                            textAlign: TextAlign.center,
                             style: TextStyle(
-                              fontSize: 13,
-                              color: Color(0xFF6B7280),
-                            ),
+                                fontSize: 13, color: Color(0xFF6B7280)),
                           ),
                         ),
-                      )
-                    else
-                      ListView.separated(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: filteredRestocks.length,
-                        separatorBuilder: (context, index) => const Divider(height: 1),
-                        itemBuilder: (context, index) {
-                          final r = filteredRestocks[index];
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            child: Row(
-                              children: [
-                                Expanded(
+                      );
+                    }
+                    return Column(
+                      children:
+                          filteredRestocks.map(_buildRestockCard).toList(),
+                    );
+                  }
+
+                  return Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE5E7EB)),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Column(
+                      children: [
+                        Container(
+                          color: Colors.black,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
+                          child: const Row(
+                            children: [
+                              Expanded(
                                   flex: 3,
-                                  child: Text(
-                                    _formatDateTime(r.date),
-                                    style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563)),
-                                  ),
-                                ),
-                                Expanded(
+                                  child: Text('Date & Time',
+                                      style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12))),
+                              Expanded(
                                   flex: 4,
-                                  child: Text(
-                                    r.itemName,
-                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                                  ),
-                                ),
-                                Expanded(
+                                  child: Text('Item Name',
+                                      style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12))),
+                              Expanded(
                                   flex: 2,
-                                  child: Text(
-                                    _formatAddedQty(r),
-                                    textAlign: TextAlign.right,
-                                    style: const TextStyle(fontSize: 12, color: Colors.black, fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
+                                  child: Text('Added Qty',
+                                      textAlign: TextAlign.right,
+                                      style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12))),
+                              SizedBox(width: 16),
+                              Expanded(
                                   flex: 2,
-                                  child: Text(
-                                    r.purchaseUnit ?? 'pcs',
-                                    style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563)),
-                                  ),
-                                ),
-                                Expanded(
+                                  child: Text('Unit',
+                                      style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12))),
+                              Expanded(
                                   flex: 2,
-                                  child: Center(
-                                    child: IconButton(
-                                      icon: const Icon(Icons.delete_outline, size: 16, color: Color(0xFFDC2626)),
-                                      onPressed: () async {
-                                        final result = await widget.controller.deleteRestock(r.id);
-                                        if (!context.mounted || result == RestockDeleteResult.deleted) return;
-                                        final message = result == RestockDeleteResult.queued
-                                            ? 'Restock deleted on this POS and queued to sync with Admin.'
-                                            : 'Could not delete restock. Check the connection and try again.';
-                                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-                                      },
-                                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                                      padding: EdgeInsets.zero,
-                                    ),
-                                  ),
+                                  child: Text('Actions',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12))),
+                            ],
+                          ),
+                        ),
+                        if (filteredRestocks.isEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(vertical: 48),
+                            child: const Center(
+                              child: Text(
+                                'No restock data for this date range.',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Color(0xFF6B7280),
                                 ),
-                              ],
+                              ),
                             ),
-                          );
-                        },
-                      ),
-                  ],
-                ),
+                          )
+                        else
+                          ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: filteredRestocks.length,
+                            separatorBuilder: (context, index) =>
+                                const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final r = filteredRestocks[index];
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 10),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      flex: 3,
+                                      child: Text(
+                                        _formatDateTime(r.date),
+                                        style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Color(0xFF4B5563)),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      flex: 4,
+                                      child: Text(
+                                        r.itemName,
+                                        style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      flex: 2,
+                                      child: Text(
+                                        _formatAddedQty(r),
+                                        textAlign: TextAlign.right,
+                                        style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.black,
+                                            fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      flex: 2,
+                                      child: Text(
+                                        r.purchaseUnit ?? 'pcs',
+                                        style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Color(0xFF4B5563)),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      flex: 2,
+                                      child: Center(
+                                        child: IconButton(
+                                          icon: const Icon(Icons.delete_outline,
+                                              size: 16,
+                                              color: Color(0xFFDC2626)),
+                                          onPressed: () => _deleteRestock(r),
+                                          constraints: const BoxConstraints(
+                                              minWidth: 28, minHeight: 28),
+                                          padding: EdgeInsets.zero,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                      ],
+                    ),
+                  );
+                },
               ),
             ],
           ),

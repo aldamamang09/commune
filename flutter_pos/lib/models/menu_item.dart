@@ -104,7 +104,8 @@ class MenuItem {
     final isFoodOrPastry = RegExp(r'^\s*(food|pastr)', caseSensitive: false).hasMatch(category);
 
     List<String> parsedStyles = [];
-    if (json['styles'] is List) {
+    final hasStoredStyles = json['styles'] is List;
+    if (hasStoredStyles) {
       for (final e in (json['styles'] as List)) {
         final s = e.toString().trim().toLowerCase();
         if ((s == 'hot' || s == 'iced') && !parsedStyles.contains(s)) {
@@ -112,13 +113,11 @@ class MenuItem {
         }
       }
     }
-    if (parsedStyles.isEmpty && (legacy['styles'] as List<String>).isNotEmpty) {
+    if (!hasStoredStyles && (legacy['styles'] as List<String>).isNotEmpty) {
       parsedStyles = List<String>.from(legacy['styles'] as List<String>);
     }
     if (isFoodOrPastry) {
       parsedStyles = [];
-    } else if (parsedStyles.isEmpty) {
-      parsedStyles = ['hot', 'iced'];
     }
 
     // Strictly parse ONLY addons configured in the Admin panel (never fallback to hardcoded addons)

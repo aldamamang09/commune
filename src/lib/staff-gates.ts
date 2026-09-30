@@ -47,5 +47,5 @@ export function roleForLoginGate(gate: string, gates: LoginGates): "admin" | "ca
 
 export function loginPathForRole(role: "admin" | "cashier", gates: LoginGates) {
   if (role === "admin") return `/${gates.admin}`;
-  return gates.cashier ? `/${gates.cashier}` : "/pos";
+  return gates.cashier ? `/${gates.cashier}` : "/";
 }

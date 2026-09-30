@@ -1,7 +1,19 @@
 class ManilaTime {
   static const Duration _utcOffset = Duration(hours: 8);
 
-  static DateTime now() => DateTime.now().toUtc().add(_utcOffset);
+  static DateTime now() {
+    final local = DateTime.now();
+    return DateTime.utc(
+      local.year,
+      local.month,
+      local.day,
+      local.hour,
+      local.minute,
+      local.second,
+      local.millisecond,
+      local.microsecond,
+    );
+  }
 
   static DateTime today() {
     final current = now();
@@ -61,5 +73,16 @@ class ManilaTime {
     }
   }
 
-  static String utcNowIso8601() => DateTime.now().toUtc().toIso8601String();
+  static String utcIsoFromManilaWallTime(DateTime value) => DateTime.utc(
+        value.year,
+        value.month,
+        value.day,
+        value.hour - _utcOffset.inHours,
+        value.minute,
+        value.second,
+        value.millisecond,
+        value.microsecond,
+      ).toIso8601String();
+
+  static String utcNowIso8601() => utcIsoFromManilaWallTime(DateTime.now());
 }

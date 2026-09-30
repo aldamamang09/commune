@@ -1,4 +1,5 @@
 import 'package:intl/intl.dart';
+import '../manila_time.dart';
 import '../models/menu_item.dart';
 import '../models/order.dart';
 
@@ -38,7 +39,7 @@ class PrinterService {
     buffer.writeln('-' * width);
     buffer.writeln(_center('Customer Copy'));
     buffer.writeln(_center('Order No. ${order.ticketNo.isNotEmpty ? order.ticketNo : 'N/A'}'));
-    buffer.writeln(_center(DateFormat('MM/dd/yyyy hh:mm a').format(DateTime.tryParse(order.createdAt) ?? DateTime.now())));
+    buffer.writeln(_center(DateFormat('MM/dd/yyyy hh:mm a').format(ManilaTime.parse(order.createdAt) ?? ManilaTime.now())));
     buffer.writeln(_center('Cashier: ${order.baristaName}'));
     buffer.writeln('-' * width);
 

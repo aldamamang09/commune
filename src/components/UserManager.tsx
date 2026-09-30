@@ -344,7 +344,7 @@ export function UserManager({ users, session, loginActivity, offRequests, loginG
                     className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
                   />
                   <span className="text-sm font-medium text-neutral-700 select-none">
-                    {selectedDate ? new Date(selectedDate).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : "Select date"}
+                    {selectedDate ? new Date(selectedDate).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: '2-digit', day: '2-digit', year: 'numeric' }) : "Select date"}
                   </span>
                   <svg viewBox="0 0 24 24" className="h-4 w-4 text-neutral-500 ml-1 pointer-events-none" fill="none" stroke="currentColor">
                     <rect x="3" y="4" width="18" height="18" rx="2" ry="2" strokeWidth="1.7" />
@@ -560,7 +560,7 @@ export function UserManager({ users, session, loginActivity, offRequests, loginG
                     className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
                   />
                   <span className="text-sm font-medium text-neutral-700 select-none">
-                    {offSelectedDate ? new Date(offSelectedDate).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : "Select date"}
+                    {offSelectedDate ? new Date(offSelectedDate).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: '2-digit', day: '2-digit', year: 'numeric' }) : "Select date"}
                   </span>
                   <svg viewBox="0 0 24 24" className="h-4 w-4 text-neutral-500 ml-1 pointer-events-none" fill="none" stroke="currentColor">
                     <rect x="3" y="4" width="18" height="18" rx="2" ry="2" strokeWidth="1.7" />

@@ -3,7 +3,7 @@
 import { useState, useEffect, useTransition } from "react";
 import { approveVoidRequest } from "@/actions/pos";
 import { drinkDisplayName, formatMoney, orderLineListLabel, orderLineOptionsLabel } from "@/lib/menu";
-import { phDateTimeLabel } from "@/lib/datetime";
+import { phDateTimeLabel, phPeriodBounds, phTimestamp, type PeriodRange } from "@/lib/datetime";
 import { paymentLabel } from "@/lib/payments";
 import { ingredientsForOrderLine } from "@/lib/inventory";
 import {
@@ -193,68 +193,24 @@ export function AdminDashboard({ store }: { store: StoreData }) {
   const [newCredReason, setNewCredReason] = useState("");
   const [newCredAmount, setNewCredAmount] = useState("");
 
-  let now = new Date();
-  const startOfPeriod = new Date();
-
-  const isTodaySelected = activeFilterMode === "date" || (activeFilterMode === "range" && rangeType === "today");
-
-  if (activeFilterMode === "date" && filterDateStr) {
-    now = new Date(`${filterDateStr}T23:59:59+08:00`);
-    startOfPeriod.setTime(now.getTime());
-    startOfPeriod.setHours(0, 0, 0, 0);
-  } else {
-    now = new Date();
-    startOfPeriod.setTime(now.getTime());
-    
-    if (rangeType === "today") {
-      startOfPeriod.setHours(0, 0, 0, 0);
-    } else if (rangeType === "week") {
-      startOfPeriod.setDate(now.getDate() - 6);
-      startOfPeriod.setHours(0, 0, 0, 0);
-    } else if (rangeType === "lastWeek") {
-      const dayOfWeek = now.getDay();
-      const diffToLastMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-      const lastMonday = new Date(now);
-      lastMonday.setDate(now.getDate() - diffToLastMonday - 7);
-      lastMonday.setHours(0, 0, 0, 0);
-
-      const lastSunday = new Date(lastMonday);
-      lastSunday.setDate(lastMonday.getDate() + 6);
-      lastSunday.setHours(23, 59, 59, 999);
-
-      startOfPeriod.setTime(lastMonday.getTime());
-      now.setTime(lastSunday.getTime());
-    } else if (rangeType === "month") {
-      startOfPeriod.setDate(1);
-      startOfPeriod.setHours(0, 0, 0, 0);
-    } else if (rangeType === "lastMonth") {
-      startOfPeriod.setMonth(now.getMonth() - 1);
-      startOfPeriod.setDate(1);
-      startOfPeriod.setHours(0, 0, 0, 0);
-      now.setDate(0);
-      now.setHours(23, 59, 59, 999);
-    } else if (rangeType === "thisYear") {
-      startOfPeriod.setMonth(0, 1);
-      startOfPeriod.setHours(0, 0, 0, 0);
-    } else if (rangeType === "lastYear") {
-      const prevYear = now.getFullYear() - 1;
-      startOfPeriod.setFullYear(prevYear, 0, 1);
-      startOfPeriod.setHours(0, 0, 0, 0);
-      now.setFullYear(prevYear, 11, 31);
-      now.setHours(23, 59, 59, 999);
-    }
-  }
+  const todayStr = toInputDateStr(new Date());
+  const isTodaySelected = activeFilterMode === "date"
+    ? filterDateStr === todayStr
+    : rangeType === "today";
+  const periodBounds = activeFilterMode === "date" && filterDateStr
+    ? { from: filterDateStr, to: filterDateStr }
+    : phPeriodBounds(rangeType as PeriodRange);
+  const startOfPeriod = new Date(`${periodBounds.from}T00:00:00+08:00`);
+  const now = new Date(`${periodBounds.to}T23:59:59.999+08:00`);
 
   const todayDateStr = formatDateStr(now);
-  const yesterdayDate = new Date(now);
-  yesterdayDate.setDate(now.getDate() - 1);
+  const yesterdayDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const yesterdayDateStr = formatDateStr(yesterdayDate);
 
   const today = ordersOnDay(store.orders, now);
   const yesterday = ordersOnDay(store.orders, yesterdayDate);
   const week = lastNDays(store.orders, 7, now);
-  const currentWeekStart = new Date(now);
-  currentWeekStart.setDate(now.getDate() - 6);
+  const currentWeekStart = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000);
   const currentWeekRangeStr = `${formatDateStr(currentWeekStart)} – ${todayDateStr}`;
 
   let trackingItems: { key: string; label: string; value: number; caption: string; display: string }[] = [];
@@ -262,7 +218,7 @@ export function AdminDashboard({ store }: { store: StoreData }) {
   let trackingSubtitle = "";
 
   if (rangeType === "month" || rangeType === "lastMonth") {
-    const daysInMonth = rangeType === "month" ? now.getDate() : 30;
+    const daysInMonth = Number(periodBounds.to.slice(8, 10));
     const monthDays = lastNDays(store.orders, daysInMonth, now);
     trackingTitle = `Sales tracking · ${rangeType === "month" ? "This Month" : "Last Month"}`;
     trackingItems = monthDays.map((d) => ({
@@ -274,7 +230,7 @@ export function AdminDashboard({ store }: { store: StoreData }) {
     }));
   } else if (rangeType === "thisYear") {
     trackingTitle = "Sales tracking · This Year (Monthly)";
-    const yearMonths = salesByYearMonths(store.orders);
+    const yearMonths = salesByYearMonths(store.orders, Number(periodBounds.to.slice(0, 4)));
     trackingItems = yearMonths.map((m) => ({
       key: m.key,
       label: m.label,
@@ -284,7 +240,7 @@ export function AdminDashboard({ store }: { store: StoreData }) {
     }));
   } else if (rangeType === "lastYear") {
     trackingTitle = "Sales tracking · Last Year (Monthly)";
-    const targetYear = now.getFullYear();
+    const targetYear = Number(periodBounds.to.slice(0, 4));
     const yearMonths = salesByYearMonths(store.orders, targetYear);
     trackingItems = yearMonths.map((m) => ({
       key: m.key,
@@ -363,7 +319,6 @@ export function AdminDashboard({ store }: { store: StoreData }) {
   const periodCredits = credits.filter((entry) => entryInPeriod(entry.date, startOfPeriod, now));
   const totalExpensesAmount = periodExpenses.reduce((sum, e) => sum + e.amount, 0);
   const totalCreditsAmount = periodCredits.reduce((sum, c) => sum + c.amount, 0);
-  const todayStr = toInputDateStr(new Date());
   const canEditLedgers =
     (activeFilterMode === "range" && rangeType === "today") ||
     (activeFilterMode === "date" && filterDateStr === todayStr);
@@ -415,7 +370,8 @@ export function AdminDashboard({ store }: { store: StoreData }) {
 
   const latest = [...store.orders]
     .filter((order) => {
-      const orderTime = new Date(order.createdAt).getTime();
+      if (order.deletedAt) return false;
+      const orderTime = phTimestamp(order.createdAt);
       return orderTime >= startOfPeriod.getTime() && orderTime <= now.getTime();
     })
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -1087,14 +1043,7 @@ export function AdminDashboard({ store }: { store: StoreData }) {
                 >
                   <div className="min-w-0">
                     <p className="text-sm leading-5 text-neutral-700">
-                      {new Date(order.createdAt).toLocaleString("en-US", {
-                        timeZone: "Asia/Manila",
-                        month: "short",
-                        day: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        hour12: true,
-                      })}
+                      {phDateTimeLabel(order.createdAt)}
                     </p>
                     <p className="mt-0.5 text-xs text-neutral-500 lg:hidden">{order.baristaName}</p>
                     {isVoided(order) ? (

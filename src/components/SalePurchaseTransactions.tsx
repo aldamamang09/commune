@@ -347,6 +347,8 @@ export function SalePurchaseTransactions({
 
   const [restocks, setRestocks] = useState<RestockRecord[]>(store.restocks ?? []);
   const [costings, setCostings] = useState<CostingItem[]>(store.costings ?? []);
+  const [costingNotice, setCostingNotice] = useState<string | null>(null);
+  const [savingCosting, setSavingCosting] = useState(false);
 
   const [usages, setUsages] = useState<UsageRecord[]>(persistedUsages);
 
@@ -532,9 +534,14 @@ export function SalePurchaseTransactions({
   }
 
   async function handleSaveRecipes() {
+    const previousCostings = recipeCostings;
+    setCostingNotice(null);
     setSavingRecipes(true);
     try {
       await saveCostings();
+    } catch (error) {
+      setRecipeCostings(previousCostings);
+      setCostingNotice(error instanceof Error ? error.message : "Could not save recipe costing.");
     } finally {
       setSavingRecipes(false);
     }
@@ -977,19 +984,29 @@ export function SalePurchaseTransactions({
     e.preventDefault();
     if (!costingProduct) return;
 
+    const previousCostings = costings;
+    let nextCostings: CostingItem[];
     if (editCostingId) {
-      const nextCostings = costings.map((c) => c.id === editCostingId ? { ...c, productName: costingProduct, ingredients: costingIngs } : c);
-      setCostings(nextCostings);
-      await saveAdminData({ costings: nextCostings });
-      setEditCostingId(null);
+      nextCostings = costings.map((c) => c.id === editCostingId ? { ...c, productName: costingProduct, ingredients: costingIngs } : c);
     } else {
       const newCosting: CostingItem = { id: Date.now().toString(), productName: costingProduct, ingredients: costingIngs };
-      const nextCostings = [...costings, newCosting];
-      setCostings(nextCostings);
-      await saveAdminData({ costings: nextCostings });
+      nextCostings = [...costings, newCosting];
     }
-    setCostingProduct("");
-    setCostingIngs([{ name: "", amount: 0, unit: "", outputCups: 0 }]);
+
+    setCostingNotice(null);
+    setSavingCosting(true);
+    setCostings(nextCostings);
+    try {
+      await saveAdminData({ costings: nextCostings });
+      setEditCostingId(null);
+      setCostingProduct("");
+      setCostingIngs([{ name: "", amount: 0, unit: "", outputCups: 0 }]);
+    } catch (error) {
+      setCostings(previousCostings);
+      setCostingNotice(error instanceof Error ? error.message : "Could not save costing.");
+    } finally {
+      setSavingCosting(false);
+    }
   };
 
   const handleEditCosting = (c: CostingItem) => {
@@ -999,20 +1016,34 @@ export function SalePurchaseTransactions({
   };
 
   const deleteRecipeCosting = async (index: number) => {
+    const previousCostings = recipeCostings;
     const nextCostings = recipeCostings.filter((_, rowIndex) => rowIndex !== index);
+    setCostingNotice(null);
     setRecipeCostings(nextCostings);
     setEditingCostingIndex((current) => {
       if (current === null) return null;
       if (current === index) return null;
       return current > index ? current - 1 : current;
     });
-    await saveCostings(nextCostings);
+    try {
+      await saveCostings(nextCostings);
+    } catch (error) {
+      setRecipeCostings(previousCostings);
+      setCostingNotice(error instanceof Error ? error.message : "Could not delete recipe costing.");
+    }
   };
 
   const handleDeleteCosting = async (id: string) => {
+    const previousCostings = costings;
     const nextCostings = costings.filter((c) => c.id !== id);
+    setCostingNotice(null);
     setCostings(nextCostings);
-    await saveAdminData({ costings: nextCostings });
+    try {
+      await saveAdminData({ costings: nextCostings });
+    } catch (error) {
+      setCostings(previousCostings);
+      setCostingNotice(error instanceof Error ? error.message : "Could not delete costing.");
+    }
   };
 
   const period = filterMode === "date"
@@ -1141,6 +1172,7 @@ export function SalePurchaseTransactions({
 
       {activeTab === "recipes" && (
         <div className="space-y-4">
+          {costingNotice ? <p role="alert" className="text-sm text-red-600">{costingNotice}</p> : null}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-sm font-semibold text-neutral-900">Costing</h3>
             <div className="flex items-center gap-2">
@@ -1713,6 +1745,7 @@ export function SalePurchaseTransactions({
 
       {activeTab === "costing" && (
         <div className="space-y-6">
+          {costingNotice ? <p role="alert" className="text-sm text-red-600">{costingNotice}</p> : null}
           <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-400 space-y-4">
             <h3 className="text-xs font-bold text-neutral-700 uppercase">{editCostingId ? "Edit Costing Config" : "Configure Product Costing & Ingredients"}</h3>
             <form onSubmit={handleSaveCosting} className="space-y-4">
@@ -1766,7 +1799,7 @@ export function SalePurchaseTransactions({
               </div>
 
               <div className="flex gap-2 pt-2">
-                <button type="submit" className="bg-black text-white px-4 py-1.5 rounded text-sm font-medium">{editCostingId ? "Update Costing" : "Save Costing"}</button>
+                <button type="submit" disabled={savingCosting} className="bg-black text-white px-4 py-1.5 rounded text-sm font-medium disabled:opacity-50">{savingCosting ? "Saving…" : editCostingId ? "Update Costing" : "Save Costing"}</button>
                 <button type="button" onClick={() => { setEditCostingId(null); setCostingProduct(""); setCostingIngs([{ name: "", amount: 0, unit: "", outputCups: 0 }]); }} className="border border-neutral-300 bg-white text-black hover:bg-neutral-100 px-4 py-1.5 rounded text-sm font-medium">Clear</button>
               </div>
             </form>

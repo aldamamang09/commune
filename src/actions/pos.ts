@@ -202,9 +202,8 @@ export async function deleteAdminRecord(kind: "order" | "inventory" | "restock" 
   await requireInventoryAccess(kind === "order" || kind === "costing" || kind === "usage");
 
   if (kind === "order") {
-    // delete_order_atomic restores inventory (unless the order was already
-    // voided, which already restored it) and removes usage_logs/order_items
-    // (DB cascade) and the order row, all in one transaction.
+    // Admin deletion is soft: the row and its audit children remain stored.
+    // Inventory is restored atomically unless the order was already voided.
     await deleteOrderAtomic(id);
   } else if (kind === "restock") {
     await deleteRestockRecord(id);

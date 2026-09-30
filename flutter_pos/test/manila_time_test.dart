@@ -23,6 +23,13 @@ void main() {
     );
   });
 
+  test('serializes Manila wall time as the corresponding UTC instant', () {
+    expect(
+      ManilaTime.utcIsoFromManilaWallTime(DateTime.utc(2026, 9, 30, 14, 37)),
+      '2026-09-30T06:37:00.000Z',
+    );
+  });
+
   test('matches ranges using the selected Manila date as the anchor', () {
     final anchor = DateTime.utc(2026, 10, 1);
 

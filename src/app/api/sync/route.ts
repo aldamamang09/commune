@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
+import { phIsoTimestamp } from "@/lib/datetime";
 import { ingredientsForOrderLine, roundQty } from "@/lib/inventory";
 import { normalizeMenuAddons, normalizeMenuStyles } from "@/lib/menu";
 import { parsePayment } from "@/lib/payments";
@@ -7,7 +8,6 @@ import {
   createOrderAtomic,
   createRestockAtomic,
   deleteInventoryItemRecord,
-  deleteOrderAtomic,
   deleteRestockAtomic,
   editRestockAtomic,
   getFreshStore,
@@ -177,7 +177,7 @@ export async function POST(req: NextRequest) {
 
       const order: Order = {
         id: String(rawOrder.id || `ord-${Date.now()}`),
-        createdAt: String(rawOrder.createdAt || new Date().toISOString()),
+        createdAt: phIsoTimestamp(String(rawOrder.createdAt ?? "")) || new Date().toISOString(),
         baristaName: String(rawOrder.baristaName || "Barista"),
         items: orderItems,
         subtotal: Number(rawOrder.subtotal) || 0,
@@ -274,12 +274,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "delete_order") {
-      const orderId = String(body.orderId ?? "").trim();
-      if (!orderId) {
-        return NextResponse.json({ ok: false, error: "Missing orderId" }, { status: 400, headers: corsHeaders });
-      }
-      await deleteOrderAtomic(orderId);
-      return NextResponse.json({ ok: true }, { headers: corsHeaders });
+      return NextResponse.json(
+        { ok: false, error: "Order deletion is only available to Admin." },
+        { status: 403, headers: corsHeaders },
+      );
     }
 
     if (action === "create_restock") {
@@ -288,7 +286,7 @@ export async function POST(req: NextRequest) {
       const inventoryItemId = record.inventoryItemId ? String(record.inventoryItemId) : null;
       const itemNameSnapshot = String(record.itemName ?? record.itemNameSnapshot ?? "");
       const quantityAdded = Number(record.quantityAdded) || 0;
-      const createdAt = String(record.date ?? record.createdAt ?? new Date().toISOString());
+      const createdAt = phIsoTimestamp(String(record.date ?? record.createdAt ?? "")) || new Date().toISOString();
       const purchaseQty = record.purchaseQty != null ? Number(record.purchaseQty) : null;
       const purchaseUnit = typeof record.purchaseUnit === "string" ? record.purchaseUnit : null;
 
@@ -315,7 +313,7 @@ export async function POST(req: NextRequest) {
         newInventoryItemId: body.newInventoryItemId ?? null,
         newItemNameSnapshot: String(body.newItemNameSnapshot ?? ""),
         newQuantity: Number(body.newQuantity) || 0,
-        newCreatedAt: String(body.newCreatedAt ?? new Date().toISOString()),
+        newCreatedAt: phIsoTimestamp(String(body.newCreatedAt ?? "")) || new Date().toISOString(),
         newPurchaseQty: body.newPurchaseQty != null ? Number(body.newPurchaseQty) : null,
         newPurchaseUnit: body.newPurchaseUnit ?? null,
       });
@@ -375,7 +373,7 @@ export async function POST(req: NextRequest) {
       const raw = body.request ?? body;
       const reqRecord: VoidRequest = {
         id: String(raw.id || `vr-${Date.now()}`),
-        requestedAt: String(raw.requestedAt || new Date().toISOString()),
+        requestedAt: phIsoTimestamp(String(raw.requestedAt ?? "")) || new Date().toISOString(),
         requestedById: String(raw.requestedById || "cashier"),
         requestedByName: String(raw.requestedByName || "Cashier"),
         reason: String(raw.reason || "Void requested"),
@@ -401,7 +399,7 @@ export async function POST(req: NextRequest) {
         name: String(raw.name || "Staff"),
         role: parseRole(String(raw.role || "barista")),
         type: (raw.type === "logout" ? "logout" : "login") as "login" | "logout",
-        at: String(raw.at || new Date().toISOString()),
+        at: phIsoTimestamp(String(raw.at ?? "")) || new Date().toISOString(),
       };
       await insertLoginActivityRecord(entry);
       if (entry.type === "login") {

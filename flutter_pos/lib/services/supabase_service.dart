@@ -17,8 +17,8 @@ class SupabaseService {
   String? get activeAdminApiUrl => _activeAdminApiUrl;
 
   Map<String, String> get _restHeaders => const {
-        'apikey': SupabaseConfig.serviceRoleKey,
-        'Authorization': 'Bearer ${SupabaseConfig.serviceRoleKey}',
+        'apikey': SupabaseConfig.publishableKey,
+        'Authorization': 'Bearer ${SupabaseConfig.anonKey}',
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       };
@@ -45,7 +45,8 @@ class SupabaseService {
             .toList();
       }
     }
-    throw Exception('Supabase SELECT failed (${response.statusCode}): ${response.body}');
+    throw Exception(
+        'Supabase SELECT failed (${response.statusCode}): ${response.body}');
   }
 
   Future<dynamic> _restRpc(String fnName, Map<String, dynamic> params) async {
@@ -61,7 +62,8 @@ class SupabaseService {
       if (response.body.trim().isEmpty) return null;
       return jsonDecode(response.body);
     }
-    throw Exception('Supabase RPC $fnName failed (${response.statusCode}): ${response.body}');
+    throw Exception(
+        'Supabase RPC $fnName failed (${response.statusCode}): ${response.body}');
   }
 
   Future<void> _restUpsert(String table, Object payload) async {
@@ -77,7 +79,8 @@ class SupabaseService {
         )
         .timeout(const Duration(seconds: 8));
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Supabase UPSERT $table failed (${response.statusCode}): ${response.body}');
+      throw Exception(
+          'Supabase UPSERT $table failed (${response.statusCode}): ${response.body}');
     }
   }
 
@@ -89,7 +92,8 @@ class SupabaseService {
         .delete(uri, headers: _restHeaders)
         .timeout(const Duration(seconds: 8));
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Supabase DELETE $table failed (${response.statusCode}): ${response.body}');
+      throw Exception(
+          'Supabase DELETE $table failed (${response.statusCode}): ${response.body}');
     }
   }
 
@@ -98,7 +102,8 @@ class SupabaseService {
   }
 
   /// Authenticates a staff member (Cashier, Barista, Manager, Admin) directly against Supabase `staff_users`
-  Future<Map<String, dynamic>> authenticateStaff(String username, String password) async {
+  Future<Map<String, dynamic>> authenticateStaff(
+      String username, String password) async {
     final cleanUsername = username.trim().toLowerCase();
     final compactUsername = _compactKey(username);
     final cleanPassword = password;
@@ -108,7 +113,8 @@ class SupabaseService {
     }
 
     try {
-      final rows = await _restSelect('${SupabaseConfig.tableStaffUsers}?select=*&order=created_at.asc');
+      final rows = await _restSelect(
+          '${SupabaseConfig.tableStaffUsers}?select=*&order=created_at.asc');
       final staffList = rows.map((e) => StaffUser.fromJson(e)).toList();
 
       final matched = staffList.where((u) {
@@ -140,23 +146,40 @@ class SupabaseService {
   Future<Map<String, dynamic>?> fetchFullStore() async {
     try {
       final results = await Future.wait<List<Map<String, dynamic>>>([
-        _restSelect('${SupabaseConfig.tablePosState}?select=*&id=eq.${SupabaseConfig.posStateId}'),
-        _restSelect('${SupabaseConfig.tableStaffUsers}?select=*&order=created_at.asc'),
-        _restSelect('${SupabaseConfig.tableMenuCategories}?select=*&order=name.asc'),
-        _restSelect('${SupabaseConfig.tableMenuItems}?select=*&order=created_at.asc'),
-        _restSelect('${SupabaseConfig.tableInventoryItems}?select=*&order=created_at.asc'),
-        _restSelect('${SupabaseConfig.tableOrders}?select=*&order=created_at.desc&limit=200'),
-        _restSelect('${SupabaseConfig.tableOrderItems}?select=*&order=created_at.asc'),
-        _restSelect('${SupabaseConfig.tableUsageLogs}?select=*&order=created_at.asc'),
-        _restSelect('${SupabaseConfig.tableRestocks}?select=*&order=created_at.desc'),
-        _restSelect('${SupabaseConfig.tableCostings}?select=*&order=created_at.asc'),
-        _restSelect('${SupabaseConfig.tableCostingIngredients}?select=*&order=created_at.asc'),
-        _restSelect('${SupabaseConfig.tableRecipes}?select=*&order=created_at.asc'),
-        _restSelect('${SupabaseConfig.tableRecipeCostings}?select=*&order=created_at.asc'),
-        _restSelect('${SupabaseConfig.tableRecipeCostingMenuItems}?select=*&order=created_at.asc'),
-        _restSelect('${SupabaseConfig.tableRecipeCostingIngredients}?select=*&order=created_at.asc'),
-        _restSelect('${SupabaseConfig.tableLoginActivity}?select=*&order=at.desc&limit=200'),
-        _restSelect('${SupabaseConfig.tableVoidRequests}?select=*&order=requested_at.desc&limit=100'),
+        _restSelect(
+            '${SupabaseConfig.tablePosState}?select=*&id=eq.${SupabaseConfig.posStateId}'),
+        _restSelect(
+            '${SupabaseConfig.tableStaffUsers}?select=*&order=created_at.asc'),
+        _restSelect(
+            '${SupabaseConfig.tableMenuCategories}?select=*&order=name.asc'),
+        _restSelect(
+            '${SupabaseConfig.tableMenuItems}?select=*&order=created_at.asc'),
+        _restSelect(
+            '${SupabaseConfig.tableInventoryItems}?select=*&order=created_at.asc'),
+        _restSelect(
+            '${SupabaseConfig.tableOrders}?select=*&deleted_at=is.null&order=created_at.desc&limit=200'),
+        _restSelect(
+            '${SupabaseConfig.tableOrderItems}?select=*&order=created_at.asc'),
+        _restSelect(
+            '${SupabaseConfig.tableUsageLogs}?select=*&order=created_at.asc'),
+        _restSelect(
+            '${SupabaseConfig.tableRestocks}?select=*&order=created_at.desc'),
+        _restSelect(
+            '${SupabaseConfig.tableCostings}?select=*&order=created_at.asc'),
+        _restSelect(
+            '${SupabaseConfig.tableCostingIngredients}?select=*&order=created_at.asc'),
+        _restSelect(
+            '${SupabaseConfig.tableRecipes}?select=*&order=created_at.asc'),
+        _restSelect(
+            '${SupabaseConfig.tableRecipeCostings}?select=*&order=created_at.asc'),
+        _restSelect(
+            '${SupabaseConfig.tableRecipeCostingMenuItems}?select=*&order=created_at.asc'),
+        _restSelect(
+            '${SupabaseConfig.tableRecipeCostingIngredients}?select=*&order=created_at.asc'),
+        _restSelect(
+            '${SupabaseConfig.tableLoginActivity}?select=*&order=at.desc&limit=200'),
+        _restSelect(
+            '${SupabaseConfig.tableVoidRequests}?select=*&order=requested_at.desc&limit=100'),
       ]);
 
       final posRows = results[0];
@@ -166,6 +189,10 @@ class SupabaseService {
       final menuRows = results[3];
       final invRows = results[4];
       final orderRows = results[5];
+      final activeOrderIds = orderRows
+          .map((row) => row['id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet();
       final orderItemRows = results[6];
       final usageLogRows = results[7];
       final restockRows = results[8];
@@ -193,8 +220,10 @@ class SupabaseService {
 
       final mappedMenu = menuRows.map((row) {
         final catId = row['category_id']?.toString() ?? '';
-        final category = catById[catId] ?? row['category']?.toString() ?? 'Other';
-        if (category.isNotEmpty && !categories.any((c) => c.toLowerCase() == category.toLowerCase())) {
+        final category =
+            catById[catId] ?? row['category']?.toString() ?? 'Other';
+        if (category.isNotEmpty &&
+            !categories.any((c) => c.toLowerCase() == category.toLowerCase())) {
           categories.add(category);
         }
         return {
@@ -273,6 +302,10 @@ class SupabaseService {
       }).toList();
 
       final mappedUsageLogs = usageLogRows
+          .where((row) {
+            final orderId = row['order_id']?.toString() ?? '';
+            return orderId.isEmpty || activeOrderIds.contains(orderId);
+          })
           .map((row) => {
                 'id': row['id']?.toString() ?? '',
                 'orderId': row['order_id']?.toString() ?? '',
@@ -317,13 +350,15 @@ class SupabaseService {
 
   Future<List<MenuItem>?> fetchMenu() async {
     try {
-      final catRes = await _restSelect('${SupabaseConfig.tableMenuCategories}?select=id,name');
+      final catRes = await _restSelect(
+          '${SupabaseConfig.tableMenuCategories}?select=id,name');
       final catMap = <String, String>{};
       for (final row in catRes) {
         catMap[row['id'].toString()] = row['name'].toString();
       }
 
-      final res = await _restSelect('${SupabaseConfig.tableMenuItems}?select=*&order=created_at.asc');
+      final res = await _restSelect(
+          '${SupabaseConfig.tableMenuItems}?select=*&order=created_at.asc');
       return res.map((map) {
         final catId = map['category_id']?.toString();
         if (catId != null && catMap.containsKey(catId)) {
@@ -339,7 +374,8 @@ class SupabaseService {
 
   Future<List<String>?> fetchCategories() async {
     try {
-      final res = await _restSelect('${SupabaseConfig.tableMenuCategories}?select=name&order=name.asc');
+      final res = await _restSelect(
+          '${SupabaseConfig.tableMenuCategories}?select=name&order=name.asc');
       final list = res.map((e) => e['name'].toString()).toList();
       return ['All', ...list.where((c) => c.toLowerCase() != 'all')];
     } catch (e) {
@@ -350,7 +386,8 @@ class SupabaseService {
 
   Future<List<InventoryItem>?> fetchInventory() async {
     try {
-      final res = await _restSelect('${SupabaseConfig.tableInventoryItems}?select=*&order=created_at.asc');
+      final res = await _restSelect(
+          '${SupabaseConfig.tableInventoryItems}?select=*&order=created_at.asc');
       return res.map((e) => InventoryItem.fromJson(e)).toList();
     } catch (e) {
       debugPrint('Error fetching inventory: $e');
@@ -360,7 +397,8 @@ class SupabaseService {
 
   Future<List<RestockRecord>?> fetchRestocks() async {
     try {
-      final res = await _restSelect('${SupabaseConfig.tableRestocks}?select=*&order=created_at.desc&limit=200');
+      final res = await _restSelect(
+          '${SupabaseConfig.tableRestocks}?select=*&order=created_at.desc&limit=200');
       return res.map((map) {
         map['isSynced'] = true;
         return RestockRecord.fromJson(map);
@@ -373,7 +411,8 @@ class SupabaseService {
 
   Future<List<StaffUser>?> fetchStaff() async {
     try {
-      final res = await _restSelect('${SupabaseConfig.tableStaffUsers}?select=*&order=created_at.asc');
+      final res = await _restSelect(
+          '${SupabaseConfig.tableStaffUsers}?select=*&order=created_at.asc');
       return res.map((e) => StaffUser.fromJson(e)).toList();
     } catch (e) {
       debugPrint('Error fetching staff: $e');
@@ -383,8 +422,10 @@ class SupabaseService {
 
   Future<List<Order>?> fetchRecentOrders() async {
     try {
-      final ordersRes = await _restSelect('${SupabaseConfig.tableOrders}?select=*&order=created_at.desc&limit=100');
-      final itemsRes = await _restSelect('${SupabaseConfig.tableOrderItems}?select=*');
+      final ordersRes = await _restSelect(
+          '${SupabaseConfig.tableOrders}?select=*&deleted_at=is.null&order=created_at.desc&limit=100');
+      final itemsRes =
+          await _restSelect('${SupabaseConfig.tableOrderItems}?select=*');
 
       final itemsByOrder = <String, List<Map<String, dynamic>>>{};
       for (final item in itemsRes) {

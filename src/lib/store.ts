@@ -52,9 +52,7 @@ function env(...names: string[]) {
   return undefined;
 }
 
-const DEFAULT_SUPABASE_URL = "https://vidzkzpvgqdwfdfcduti.supabase.co";
-const DEFAULT_SUPABASE_SERVICE_ROLE_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpZHprenB2Z3Fkd2ZkZmNkdXRpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDY0ODQ4NSwiZXhwIjoyMTA2MjI0NDg1fQ.kzD5tVzpQs0Ayg_MJrCbNLML3Zn5P62dbf2y9kzUx_M";
+const DEFAULT_SUPABASE_URL = "https://mzulfloebacecqzponrk.supabase.co";
 
 function resolveSupabaseUrl(): string {
   return (
@@ -75,7 +73,7 @@ function resolveSupabaseKey(): string {
       "SUPABASE_SERVICE_ROLE_KEY_2",
       "SUPABASE_SECRET_KEY",
       "commume_coffee_SUPABASE_SECRET_KEY",
-    ) || DEFAULT_SUPABASE_SERVICE_ROLE_KEY
+    ) || ""
   );
 }
 
@@ -88,6 +86,9 @@ export function isRealSupabaseConfigured(): boolean {
 export function supabaseAdmin() {
   const url = resolveSupabaseUrl();
   const key = resolveSupabaseKey();
+  if (!key) {
+    throw new Error("Server Supabase credentials are not configured.");
+  }
 
   return createClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -164,7 +165,7 @@ function normalizeStore(store: StoreData): StoreData {
     store.orders = store.orders
       .filter(
         (order): order is Order =>
-          Boolean(order && typeof order === "object" && typeof order.id === "string"),
+          Boolean(order && typeof order === "object" && typeof order.id === "string" && !order.deletedAt),
       )
       .map((order: Order) => ({
         ...order,
@@ -277,10 +278,12 @@ function normalizeStore(store: StoreData): StoreData {
   if (!Array.isArray(store.usageLogs)) {
     store.usageLogs = [];
   } else {
+    const activeOrderIds = new Set(store.orders.map((order) => order.id));
     const configuredRecipeKeys = new Set(Object.keys(store.recipes));
     const menuNameById = new Map(store.menu.map((item) => [item.id, item.name]));
     store.usageLogs = store.usageLogs
       .filter((usage) => {
+        if (usage.orderId && !activeOrderIds.has(usage.orderId)) return false;
         if (!usage.orderId || !usage.orderItemId) return true;
         const recipeName = menuNameById.get(usage.orderItemId);
         return configuredRecipeKeys.has(usage.orderItemId) || (recipeName ? configuredRecipeKeys.has(recipeName) : false);
@@ -447,7 +450,7 @@ async function readStore(options?: { fresh?: boolean }): Promise<StoreData> {
       supabase.from("menu_items").select("*").order("created_at"),
       supabase.from("promotions").select("*").order("created_at"),
       supabase.from("inventory_items").select("*").order("created_at"),
-      supabase.from("orders").select("*").order("created_at", { ascending: false }),
+      supabase.from("orders").select("*").is("deleted_at", null).order("created_at", { ascending: false }),
       supabase.from("order_items").select("*").order("created_at"),
       supabase.from("usage_logs").select("*").order("created_at"),
       supabase.from("restocks").select("*").order("created_at"),
@@ -483,7 +486,8 @@ async function readStore(options?: { fresh?: boolean }): Promise<StoreData> {
     }
 
     const base = emptyStore();
-    const rows = orders.data ?? [];
+    const rows = (orders.data ?? []).filter((row) => !row.deleted_at);
+    const activeOrderIds = new Set(rows.map((row) => row.id));
     const items = orderItems.data ?? [];
     const store = normalizeStore({
       ...base,
@@ -515,7 +519,8 @@ async function readStore(options?: { fresh?: boolean }): Promise<StoreData> {
       menu: (menu.data ?? []).map((row) => {
         const category = (categories.data ?? []).find((entry) => entry.id === row.category_id)?.name ?? "Other";
         const legacy = parseMenuImageOptions(row.image);
-        const storedStyles = Array.isArray(row.styles)
+        const hasStoredStyles = Array.isArray(row.styles);
+        const storedStyles = hasStoredStyles
           ? row.styles.flatMap((style: unknown) => (style === "hot" || style === "iced" ? [style] : []))
           : [];
         const storedAddons = Array.isArray(row.addons) ? row.addons : [];
@@ -526,7 +531,7 @@ async function readStore(options?: { fresh?: boolean }): Promise<StoreData> {
           category,
           image: stripMenuImage(row.image),
           available: row.available,
-          styles: normalizeMenuStyles({ category, styles: storedStyles.length > 0 ? storedStyles : legacy.styles }),
+          styles: normalizeMenuStyles({ category, styles: hasStoredStyles ? storedStyles : legacy.styles }),
           addons: normalizeMenuAddons({ addons: storedAddons.length > 0 ? storedAddons : legacy.addons }),
         };
       }),
@@ -566,7 +571,7 @@ async function readStore(options?: { fresh?: boolean }): Promise<StoreData> {
         voided: row.voided,
         voidReason: row.void_reason ?? undefined,
       })),
-      usageLogs: (usageLogs.data ?? []).map((row) => ({ id: row.id, orderId: row.order_id ?? "", orderItemId: row.order_item_id ?? "", inventoryItemId: row.inventory_item_id ?? undefined, date: row.created_at, itemName: row.item_name_snapshot, usedAmount: Number(row.used_amount), unit: row.unit })),
+      usageLogs: (usageLogs.data ?? []).filter((row) => !row.order_id || activeOrderIds.has(row.order_id)).map((row) => ({ id: row.id, orderId: row.order_id ?? "", orderItemId: row.order_item_id ?? "", inventoryItemId: row.inventory_item_id ?? undefined, date: row.created_at, itemName: row.item_name_snapshot, usedAmount: Number(row.used_amount), unit: row.unit })),
       restocks: (restocks.data ?? []).map((row) => ({ id: row.id, inventoryItemId: row.inventory_item_id ?? undefined, itemName: row.item_name_snapshot, quantityAdded: Number(row.quantity_added), purchaseQty: row.purchase_qty == null ? undefined : Number(row.purchase_qty), purchaseUnit: row.purchase_unit ?? undefined, date: row.created_at })),
       costings: (costings.data ?? []).map((row) => ({ id: row.id, productName: row.product_name, ingredients: (costingIngredients.data ?? []).filter((ingredient) => ingredient.costing_id === row.id).map((ingredient) => ({ name: ingredient.name, amount: Number(ingredient.amount), unit: ingredient.unit, outputCups: ingredient.output_cups })) })),
       recipes: Object.fromEntries((recipes.data ?? []).reduce((entries, row) => { const list = entries.get(row.menu_item_id) ?? []; list.push({ inventoryItemId: row.inventory_item_id, name: "", amount: Number(row.amount), unit: row.unit }); entries.set(row.menu_item_id, list); return entries; }, new Map<string, RecipeIngredient[]>())),
@@ -920,28 +925,7 @@ function enqueue<T>(fn: () => Promise<T>): Promise<T> {
 // file exists in this repo to read it from.
 
 export async function deleteOrderRecord(id: string): Promise<void> {
-  await enqueue(async () => {
-    if (!isRealSupabaseConfigured()) {
-      if (!memoryStore) memoryStore = normalizeStore(emptyStore());
-      memoryStore.orders = memoryStore.orders.filter((order) => order.id !== id);
-      memoryStore.usageLogs = memoryStore.usageLogs.filter((entry) => entry.orderId !== id);
-      memoryStore.printJobs = memoryStore.printJobs.filter((job) => job.orderId !== id);
-      return;
-    }
-    const supabase = supabaseAdmin();
-    // order_items.order_id and usage_logs.order_id are both
-    // ON DELETE CASCADE, so deleting the order row alone removes its
-    // children too, atomically, in one statement.
-    const { error } = await supabase.from("orders").delete().eq("id", id);
-    if (error) throw new Error(`Unable to delete order: ${error.message}`);
-    if (memoryStore) {
-      memoryStore.orders = memoryStore.orders.filter((order) => order.id !== id);
-      memoryStore.usageLogs = memoryStore.usageLogs.filter((entry) => entry.orderId !== id);
-      // printJobs has no backing table at all (never read from or written
-      // to Supabase); keep the existing in-memory-only cleanup for it.
-      memoryStore.printJobs = memoryStore.printJobs.filter((job) => job.orderId !== id);
-    }
-  });
+  await deleteOrderAtomic(id);
 }
 
 export async function deleteRestockRecord(id: string): Promise<void> {
@@ -1380,7 +1364,7 @@ export async function deleteInventoryItemRecord(
     const { error } = await supabase.from("inventory_items").delete().eq("id", id);
     if (error) {
       if (/foreign key/i.test(error.message)) {
-        return { error: "This item is still referenced elsewhere and cannot be deleted." };
+        return { error: "This item is used in a recipe costing and cannot be deleted." };
       }
       throw new Error(`Unable to delete inventory item: ${error.message}`);
     }

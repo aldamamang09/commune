@@ -67,6 +67,7 @@ export type Order = {
   change?: number;
   voided?: boolean;
   voidReason?: string;
+  deletedAt?: string;
   recordType?: "Sale" | "Purchase";
 };
 
