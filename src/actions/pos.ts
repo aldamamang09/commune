@@ -606,39 +606,39 @@ export async function deleteVoidRequest(requestId: string) {
 
 export async function approveVoidRequest(requestId: string) {
   const session = await requireAdmin();
+  try {
+    // Read durable state rather than a potentially stale cached snapshot.
+    const request = await getVoidRequestRecord(requestId);
+    if (!request) {
+      return { error: "Void request not found." };
+    }
+    if (request.status !== "pending") {
+      return { error: "Void request is already approved." };
+    }
 
-  // Read the request directly so the check runs against durable state, not
-  // a cached snapshot that could be stale on this instance.
-  const request = await getVoidRequestRecord(requestId);
-  if (!request) {
-    return { error: "Void request not found." };
+    const newOrderId = request.orderId
+      ? null
+      : `ord-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+
+    const result = await approveVoidRequestAtomic({
+      requestId,
+      approvedById: session.userId,
+      approvedByName: session.name,
+      newOrderId,
+    });
+    if (!result.ok) return { error: result.error };
+
+    revalidatePath("/pos");
+    revalidatePath("/admin");
+    return { ok: true };
+  } catch (error) {
+    console.error("Unable to approve void request:", error);
+    return {
+      error: error instanceof Error
+        ? `Unable to approve void request: ${error.message}`
+        : "Unable to approve void request. Check the server logs for details.",
+    };
   }
-  if (request.status !== "pending") {
-    return { error: "Void request is already approved." };
-  }
-
-  // For a pre-checkout request the RPC needs the id of the already-voided
-  // order it will create; the ticket number is allocated inside the RPC on
-  // the per-PH-day counter at approval time (not reserved at request time).
-  const newOrderId = request.orderId
-    ? null
-    : `ord-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-
-  // approve_void_request_atomic performs the request status update AND the
-  // order effect in one DB transaction (void_order_atomic for an existing
-  // order, create_order_atomic for a pre-checkout request), so approval
-  // cannot partially apply and two concurrent approvals cannot double-void.
-  const result = await approveVoidRequestAtomic({
-    requestId,
-    approvedById: session.userId,
-    approvedByName: session.name,
-    newOrderId,
-  });
-  if (!result.ok) return { error: result.error };
-
-  revalidatePath("/pos");
-  revalidatePath("/admin");
-  return { ok: true };
 }
 
 export async function voidCheckout(
