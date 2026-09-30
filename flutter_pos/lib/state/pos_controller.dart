@@ -31,6 +31,9 @@ class PosController extends ChangeNotifier {
   List<StaffUser> staffUsers = [];
   List<LoginActivity> shiftLogs = [];
   Map<String, dynamic> recipesData = {};
+  String? pendingCartVoidRequestId;
+
+  bool get isVoidRequestPending => pendingCartVoidRequestId != null;
 
   // Filtering
   String selectedCategory = 'All';
@@ -65,6 +68,16 @@ class PosController extends ChangeNotifier {
     orders = localStorage.getOrders();
     staffUsers = localStorage.getStaff();
     voidRequests = localStorage.getVoidRequests();
+    final pendingRequest = voidRequests
+        .where((request) => request.id == pendingCartVoidRequestId)
+        .firstOrNull;
+    if (pendingRequest?.status == 'approved') {
+      if (pendingRequest!.orderId == null) {
+        clearCart();
+        paymentMethod = 'cash';
+      }
+      pendingCartVoidRequestId = null;
+    }
     restocks = localStorage.getRestocks();
     shiftLogs = localStorage.getLoginActivity();
     recipesData = localStorage.getRecipesData();
@@ -351,6 +364,9 @@ class PosController extends ChangeNotifier {
 
   // --- Order Checkout ---
   Future<Map<String, dynamic>> proceedOrder() async {
+    if (isVoidRequestPending) {
+      return {'ok': false, 'error': 'Checkout is waiting for Admin approval.'};
+    }
     if (cart.isEmpty) {
       return {'ok': false, 'error': 'Cart is empty'};
     }
@@ -480,6 +496,143 @@ class PosController extends ChangeNotifier {
     await localStorage.addOrder(order);
     notifyListeners();
     return {'ok': true};
+  }
+
+  Future<Map<String, dynamic>> voidCheckout(
+    String reason,
+    String managerUsername,
+    String managerPassword,
+  ) async {
+    if (cart.isEmpty) {
+      return {'ok': false, 'error': 'No items to void.'};
+    }
+    if (reason.trim().isEmpty) {
+      return {'ok': false, 'error': 'Enter a reason for voiding.'};
+    }
+
+    StaffUser? manager;
+    if (currentUser?.isManager == true &&
+        managerUsername.trim().isEmpty &&
+        managerPassword.isEmpty) {
+      manager = currentUser;
+    } else {
+      final auth = await supabaseService.authenticateStaff(
+        managerUsername.trim(),
+        managerPassword,
+      );
+      if (auth['ok'] != true) {
+        return {'ok': false, 'error': auth['error'] ?? 'Manager approval required.'};
+      }
+      final authenticated = auth['user'] as StaffUser;
+      if (!authenticated.isManager) {
+        return {'ok': false, 'error': 'Manager or Admin credentials required.'};
+      }
+      manager = authenticated;
+    }
+
+    final now = DateTime.now();
+    final order = Order(
+      id: 'ord-${now.millisecondsSinceEpoch}',
+      createdAt: now.toIso8601String(),
+      baristaName: currentBaristaName,
+      baristaUserId: currentBaristaUserId,
+      items: List<OrderItem>.from(cart),
+      subtotal: subtotal,
+      discount: discountAmount,
+      promoLabel: promoLabel,
+      total: total,
+      paymentMethod: paymentMethod,
+      ticketNo: '',
+      paid: 0,
+      change: 0,
+      voided: true,
+      voidReason: reason.trim(),
+      voidedBy: manager!.id,
+      isSynced: false,
+    );
+
+    final result = await supabaseService.pushOrderAtomic(order, const []);
+    if (result['ok'] != true) {
+      return {'ok': false, 'error': result['error'] ?? 'Unable to void checkout.'};
+    }
+
+    order.isSynced = true;
+    if (result['ticketNo'] != null && result['ticketNo'].toString().isNotEmpty) {
+      order.ticketNo = result['ticketNo'].toString();
+    }
+    await localStorage.addOrder(order);
+    orders.insert(0, order);
+    clearCart();
+    paymentMethod = 'cash';
+    await syncService.syncAll();
+    notifyListeners();
+    return {'ok': true};
+  }
+
+  Future<Map<String, dynamic>> requestVoidApproval(
+    String? orderId,
+    String reason,
+  ) async {
+    final requester = currentUser;
+    if (requester == null || requester.id.isEmpty) {
+      return {'ok': false, 'error': 'Unable to identify the requesting staff member.'};
+    }
+    if (reason.trim().isEmpty) {
+      return {'ok': false, 'error': 'Enter a reason for voiding.'};
+    }
+    if (voidRequests.any((request) =>
+        request.requestedById == requester.id && request.status == 'pending')) {
+      return {'ok': false, 'error': 'You already have a void request waiting for Admin approval.'};
+    }
+
+    final targetOrder = orderId == null
+        ? null
+        : orders.where((order) => order.id == orderId).firstOrNull;
+    if (orderId != null && targetOrder == null) {
+      return {'ok': false, 'error': 'Ticket not found.'};
+    }
+    if (targetOrder?.voided == true) {
+      return {'ok': false, 'error': 'Ticket is already voided.'};
+    }
+
+    final requestItems = targetOrder == null
+        ? List<OrderItem>.from(cart)
+        : List<OrderItem>.from(targetOrder.items);
+    if (requestItems.isEmpty) {
+      return {'ok': false, 'error': 'No items to void.'};
+    }
+
+    final request = VoidRequest(
+      id: 'void-request-${DateTime.now().millisecondsSinceEpoch}',
+      requestedAt: DateTime.now().toIso8601String(),
+      requestedById: requester.id,
+      requestedByName: requester.name,
+      reason: reason.trim(),
+      orderId: targetOrder?.id,
+      items: requestItems,
+      subtotal: targetOrder?.subtotal ?? subtotal,
+      discount: targetOrder?.discount ?? discountAmount,
+      promoLabel: targetOrder?.promoLabel ?? promoLabel,
+      total: targetOrder?.total ?? total,
+      paymentMethod: targetOrder?.paymentMethod ?? paymentMethod,
+      isSynced: false,
+    );
+
+    await localStorage.addVoidRequest(request);
+    voidRequests.insert(0, request);
+    if (targetOrder == null) pendingCartVoidRequestId = request.id;
+
+    final synced = await supabaseService.pushVoidRequest(request);
+    if (synced) {
+      request.isSynced = true;
+      await localStorage.saveVoidRequests(voidRequests);
+      await localStorage.removePendingVoidRequest(request.id);
+    }
+    syncService.updatePendingCount();
+    notifyListeners();
+    if (synced) await syncService.syncAll();
+
+    return {'ok': true, 'synced': synced, 'requestId': request.id};
   }
 
   // --- Inventory & Restock Operations (Synced with Admin) ---

@@ -26,6 +26,11 @@ public final class GeneratedPluginRegistrant {
       Log.e(TAG, "Error registering plugin connectivity_plus, dev.fluttercommunity.plus.connectivity.ConnectivityPlugin", e);
     }
     try {
+      flutterEngine.getPlugins().add(new com.flutter_classic_bluetooth.flutter_classic_bluetooth.FlutterClassicBluetoothPlugin());
+    } catch (Exception e) {
+      Log.e(TAG, "Error registering plugin flutter_classic_bluetooth, com.flutter_classic_bluetooth.flutter_classic_bluetooth.FlutterClassicBluetoothPlugin", e);
+    }
+    try {
       flutterEngine.getPlugins().add(new com.github.dart_lang.jni.JniPlugin());
     } catch (Exception e) {
       Log.e(TAG, "Error registering plugin jni, com.github.dart_lang.jni.JniPlugin", e);

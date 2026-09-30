@@ -1,6 +1,6 @@
 {
-    "name": "commune_pos",
-    "short_name": "commune_pos",
+    "name": "commune",
+    "short_name": "commune",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

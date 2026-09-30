@@ -1,15 +1,24 @@
 import 'package:flutter/material.dart';
-import '../../models/order.dart';
-import '../theme.dart';
+import '../../models/order_item.dart';
 
 class VoidDialog extends StatefulWidget {
-  final List<Order> orders;
-  final Function(String orderId, String reason, String managerUsername, String managerPassword) onConfirmVoid;
+  final List<OrderItem> cart;
+  final bool isManager;
+  final bool isRequestPending;
+  final Future<Map<String, dynamic>> Function(
+    String reason,
+    String managerUsername,
+    String managerPassword,
+  ) onConfirmVoid;
+  final Future<Map<String, dynamic>> Function(String reason) onRequestVoid;
 
   const VoidDialog({
     super.key,
-    required this.orders,
+    required this.cart,
+    required this.isManager,
+    required this.isRequestPending,
     required this.onConfirmVoid,
+    required this.onRequestVoid,
   });
 
   @override
@@ -17,13 +26,13 @@ class VoidDialog extends StatefulWidget {
 }
 
 class _VoidDialogState extends State<VoidDialog> {
-  String _searchQuery = '';
-  Order? _selectedOrder;
   final TextEditingController _reasonController = TextEditingController();
-  final TextEditingController _usernameController = TextEditingController(text: 'manager');
+  final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _isProcessing = false;
   String? _errorMessage;
+
+  bool get _hasTarget => widget.cart.isNotEmpty;
 
   @override
   void dispose() {
@@ -33,222 +42,307 @@ class _VoidDialogState extends State<VoidDialog> {
     super.dispose();
   }
 
+  Future<void> _confirmVoid() async {
+    final reason = _reasonController.text.trim();
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text;
+    if (!_hasTarget) {
+      setState(() => _errorMessage = 'Select a ticket to void.');
+      return;
+    }
+    if (reason.isEmpty) {
+      setState(() => _errorMessage = 'Enter a reason for voiding.');
+      return;
+    }
+    if (!widget.isManager && (username.isEmpty || password.isEmpty)) {
+      setState(() => _errorMessage = 'Manager credentials required to void.');
+      return;
+    }
+
+    final navigator = Navigator.of(context);
+    setState(() {
+      _isProcessing = true;
+      _errorMessage = null;
+    });
+    try {
+      final result = await widget.onConfirmVoid(
+        reason,
+        username,
+        password,
+      );
+      if (!mounted) return;
+      if (result['ok'] == true) {
+        navigator.pop();
+      } else {
+        setState(() {
+          _errorMessage = result['error']?.toString() ?? 'Unable to void.';
+          _isProcessing = false;
+        });
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = error.toString();
+        _isProcessing = false;
+      });
+    }
+  }
+
+  Future<void> _requestVoid() async {
+    final reason = _reasonController.text.trim();
+    if (!_hasTarget) {
+      setState(() => _errorMessage = 'Select a ticket to void.');
+      return;
+    }
+    if (reason.isEmpty) {
+      setState(() => _errorMessage = 'Enter a reason for voiding.');
+      return;
+    }
+
+    final navigator = Navigator.of(context);
+    setState(() {
+      _isProcessing = true;
+      _errorMessage = null;
+    });
+    try {
+      final result = await widget.onRequestVoid(reason);
+      if (!mounted) return;
+      if (result['ok'] == true) {
+        navigator.pop();
+      } else {
+        setState(() {
+          _errorMessage = result['error']?.toString() ?? 'Unable to send request.';
+          _isProcessing = false;
+        });
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = error.toString();
+        _isProcessing = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final availableOrders = widget.orders.where((o) => !o.voided).where((o) {
-      if (_searchQuery.isEmpty) return true;
-      final q = _searchQuery.toLowerCase();
-      return o.ticketNo.toLowerCase().contains(q) ||
-          o.baristaName.toLowerCase().contains(q) ||
-          o.items.any((i) => i.name.toLowerCase().contains(q));
-    }).toList();
-
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
       backgroundColor: Colors.white,
-      child: Container(
-        width: 500,
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 560,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.95,
+        ),
+        child: Stack(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.remove_circle_outline, color: CommuneTheme.voidRed, size: 24),
-                    SizedBox(width: 8),
-                    Text(
-                      'Void Order / Ticket',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: CommuneTheme.textMain),
-                    ),
-                  ],
-                ),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close, size: 20),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Select an existing order to void. Voiding restores inventory and requires manager credentials.',
-              style: TextStyle(fontSize: 12, color: CommuneTheme.textMuted),
-            ),
-            const SizedBox(height: 16),
-
-            if (_selectedOrder == null) ...[
-              TextField(
-                decoration: InputDecoration(
-                  hintText: 'Search by Ticket #, Item, Barista...',
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: CommuneTheme.border)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                ),
-                onChanged: (val) => setState(() => _searchQuery = val),
-              ),
-              const SizedBox(height: 12),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 250),
-                child: availableOrders.isEmpty
-                    ? const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(24.0),
-                          child: Text('No active orders found to void.', style: TextStyle(color: CommuneTheme.textMuted)),
-                        ),
-                      )
-                    : ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: availableOrders.length,
-                        separatorBuilder: (_, __) => const Divider(height: 8),
-                        itemBuilder: (context, index) {
-                          final order = availableOrders[index];
-                          return ListTile(
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            tileColor: const Color(0xFFFAFAFA),
-                            title: Text('Ticket #${order.ticketNo.isNotEmpty ? order.ticketNo : order.id}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                            subtitle: Text('${order.items.length} items • ₱${order.total.toStringAsFixed(2)} • ${order.paymentMethod.toUpperCase()}'),
-                            trailing: Text(order.baristaName, style: const TextStyle(fontSize: 11, color: CommuneTheme.textMuted)),
-                            onTap: () => setState(() => _selectedOrder = order),
-                          );
-                        },
-                      ),
-              ),
-            ] else ...[
-              // Order selected: form for reason and manager auth
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF1F2),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFFECDD3)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Selected Ticket #${_selectedOrder!.ticketNo}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                        Text('${_selectedOrder!.items.map((i) => "${i.qty}x ${i.name}").join(", ")}', style: const TextStyle(fontSize: 11)),
-                        Text('Total: ₱${_selectedOrder!.total.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                      ],
-                    ),
-                    TextButton(
-                      onPressed: () => setState(() => _selectedOrder = null),
-                      child: const Text('Change'),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-
-              TextField(
-                controller: _reasonController,
-                decoration: InputDecoration(
-                  labelText: 'Reason for Void *',
-                  hintText: 'e.g. Customer changed mind, wrong order, spillage',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              Row(
+            SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(30, 30, 30, 28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _usernameController,
-                      decoration: InputDecoration(
-                        labelText: 'Manager Username',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  const SizedBox(height: 2),
+                  Center(
+                    child: Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF5F5F5),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Icon(
+                        Icons.error_outline,
+                        size: 27,
+                        color: Color(0xFF292929),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Void checkout',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 23,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF171717),
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    widget.isManager
+                        ? 'This action cannot be undone.'
+                        : 'Manager approval required to void.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 14, color: Color(0xFF737373)),
+                  ),
+                  const SizedBox(height: 30),
+                  if (!widget.isManager) ...[
+                    _fieldLabel('Manager username'),
+                    TextField(
+                      controller: _usernameController,
+                      textInputAction: TextInputAction.next,
+                      decoration: _inputDecoration(hint: 'Enter username'),
+                    ),
+                    const SizedBox(height: 16),
+                    _fieldLabel('Manager password'),
+                    TextField(
                       controller: _passwordController,
                       obscureText: true,
-                      decoration: InputDecoration(
-                        labelText: 'Manager Password',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                      ),
+                      textInputAction: TextInputAction.next,
+                      decoration: _inputDecoration(hint: '••••••••'),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+                  _fieldLabel('Reason for Voiding', required: true),
+                  TextField(
+                    controller: _reasonController,
+                    minLines: 2,
+                    maxLines: 2,
+                    textInputAction: TextInputAction.newline,
+                    decoration: _inputDecoration(
+                      hint: 'e.g., Customer changed mind, wrong order input...',
                     ),
                   ),
-                ],
-              ),
-              if (_errorMessage != null) ...[
-                const SizedBox(height: 8),
-                Text(_errorMessage!, style: const TextStyle(color: CommuneTheme.voidRed, fontSize: 12)),
-              ],
-              const SizedBox(height: 20),
-
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => setState(() => _selectedOrder = null),
-                      style: OutlinedButton.styleFrom(
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                      ),
-                      child: const Text('Back'),
+                  if (_errorMessage != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      _errorMessage!,
+                      style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13),
                     ),
+                  ],
+                  const SizedBox(height: 38),
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 1,
+                        child: OutlinedButton(
+                          onPressed: _isProcessing ? null : () => Navigator.pop(context),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF525252),
+                            side: const BorderSide(color: Color(0xFFE5E5E5)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        flex: 2,
+                        child: ElevatedButton(
+                          onPressed: _isProcessing || widget.isRequestPending
+                              ? null
+                              : _confirmVoid,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.black,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: const Color(0xFF737373),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          child: _isProcessing
+                              ? const SizedBox(
+                                  height: 18,
+                                  width: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                                : const Text('Confirm Void'),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _isProcessing
+                  if (!widget.isManager) ...[
+                    const SizedBox(height: 10),
+                    OutlinedButton(
+                      onPressed: _isProcessing || widget.isRequestPending
                           ? null
-                          : () async {
-                              final reason = _reasonController.text.trim();
-                              final u = _usernameController.text.trim();
-                              final p = _passwordController.text;
-                              if (reason.isEmpty) {
-                                setState(() => _errorMessage = 'Please provide a reason');
-                                return;
-                              }
-                              if (u.isEmpty || p.isEmpty) {
-                                setState(() => _errorMessage = 'Manager login required');
-                                return;
-                              }
-
-                              setState(() {
-                                _isProcessing = true;
-                                _errorMessage = null;
-                              });
-
-                              try {
-                                await widget.onConfirmVoid(_selectedOrder!.id, reason, u, p);
-                                if (mounted) Navigator.pop(context);
-                              } catch (e) {
-                                setState(() {
-                                  _errorMessage = e.toString();
-                                  _isProcessing = false;
-                                });
-                              }
-                            },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: CommuneTheme.voidRed,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          : _requestVoid,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.black,
+                        side: const BorderSide(color: Colors.black),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
-                      child: _isProcessing
-                          ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : const Text('Confirm Void', style: TextStyle(fontWeight: FontWeight.bold)),
+                      child: Text(
+                        widget.isRequestPending ? 'Waiting for admin approval' : 'Request to admin',
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
-            ],
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: IconButton(
+                tooltip: 'Close',
+                onPressed: _isProcessing ? null : () => Navigator.pop(context),
+                icon: const Icon(Icons.close, color: Color(0xFF9A9A9A)),
+              ),
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _fieldLabel(String label, {bool required = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: RichText(
+        text: TextSpan(
+          style: const TextStyle(
+            color: Color(0xFF404040),
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+          children: [
+            TextSpan(text: label),
+            if (required)
+              const TextSpan(
+                text: ' *',
+                style: TextStyle(color: Color(0xFFDC2626)),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration({
+    String? hint,
+    Widget? prefix,
+    String? label,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      prefixIcon: prefix,
+      filled: true,
+      fillColor: const Color(0xFFFAFAFA),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 17, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Colors.black, width: 1.2),
       ),
     );
   }

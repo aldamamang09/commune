@@ -3,9 +3,64 @@ import '../../models/order.dart';
 import '../../services/printer_service.dart';
 import '../theme.dart';
 
+class _ThermalSlip extends StatelessWidget {
+  final String title;
+  final String content;
+  final double width;
+
+  const _ThermalSlip({
+    required this.title,
+    required this.content,
+    this.width = 220,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          title.toUpperCase(),
+          style: const TextStyle(
+            fontSize: 10,
+            letterSpacing: 1.8,
+            color: CommuneTheme.textMuted,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: width,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x1F000000),
+                blurRadius: 12,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Text(
+            content,
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 11,
+              height: 1.35,
+              color: Color(0xFF111111),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class ReceiptDialog extends StatelessWidget {
   final Order order;
-  final VoidCallback onPrint;
+  final Future<void> Function() onPrint;
 
   const ReceiptDialog({
     super.key,
@@ -16,92 +71,196 @@ class ReceiptDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final receiptText = PrinterService.formatReceipt(order);
+    final labelText = PrinterService.formatCupLabel(order, 0);
 
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      backgroundColor: Colors.white,
+      insetPadding: const EdgeInsets.all(16),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(24))),
+      backgroundColor: const Color(0xFFE5E5E5),
       child: Container(
-        width: 380,
-        padding: const EdgeInsets.all(24),
+        width: 820,
+        constraints: const BoxConstraints(maxHeight: 720),
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'TICKET #${order.ticketNo.isNotEmpty ? order.ticketNo : order.id.substring(order.id.length - 4)}',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: CommuneTheme.primary,
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Print order',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: CommuneTheme.textMain,
+                        ),
                       ),
-                    ),
-                    const Text('Receipt Preview', style: TextStyle(fontSize: 12, color: CommuneTheme.textMuted)),
-                  ],
+                      SizedBox(height: 2),
+                      Text(
+                        'Receipt and cup-label jobs are independent',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: CommuneTheme.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close, size: 20),
+                  icon: const Icon(Icons.close, size: 18),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    shape: const CircleBorder(),
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Container(
-              height: 360,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFAFAFA),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: CommuneTheme.border),
-              ),
+            const SizedBox(height: 14),
+            Flexible(
               child: SingleChildScrollView(
-                child: Text(
-                  receiptText,
-                  style: const TextStyle(
-                    fontFamily: 'Courier',
-                    fontSize: 12,
-                    height: 1.4,
-                    color: Color(0xFF222222),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF3F4F6),
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'Customer receipt',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: CommuneTheme.textMain,
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFDCFCE7),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: const Text(
+                                      'Ready',
+                                      style: TextStyle(
+                                        color: Color(0xFF166534),
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                                const SizedBox(height: 10),
+                                Center(
+                                  child: _ThermalSlip(
+                                    title: 'Customer copy',
+                                    content: receiptText,
+                                    width: 236,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF3F4F6),
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'Cup labels',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: CommuneTheme.textMain,
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFDBEAFE),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: const Text(
+                                      'Ready',
+                                      style: TextStyle(
+                                        color: Color(0xFF1D4ED8),
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Center(
+                                child: _ThermalSlip(
+                                  title: 'Label 1',
+                                  content: labelText,
+                                  width: 236,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      onPrint();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Print job sent to thermal printer'), duration: Duration(seconds: 2)),
-                      );
-                    },
-                    icon: const Icon(Icons.print_outlined, size: 18),
-                    label: const Text('Print Receipt'),
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: CommuneTheme.primary,
-                      side: const BorderSide(color: CommuneTheme.primary),
+                      side: const BorderSide(color: CommuneTheme.border),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
+                    child: const Text('Close'),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
+                  child: ElevatedButton.icon(
+                    onPressed: () async => onPrint(),
+                    icon: const Icon(Icons.print_outlined, size: 18),
+                    label: const Text('Print order'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: CommuneTheme.primary,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    child: const Text('Done'),
                   ),
                 ),
               ],

@@ -185,9 +185,16 @@ class _RestockScreenState extends State<RestockScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         titleSpacing: 0,
-        title: const Row(
+        title: Row(
           children: [
-            Text(
+            Image.asset(
+              'lib/src/images/favicon.png',
+              width: 18,
+              height: 18,
+              fit: BoxFit.contain,
+            ),
+            const SizedBox(width: 8),
+            const Text(
               'commune.',
               style: TextStyle(
                 fontSize: 18,
@@ -196,8 +203,8 @@ class _RestockScreenState extends State<RestockScreen> {
                 letterSpacing: -0.5,
               ),
             ),
-            SizedBox(width: 8),
-            Flexible(
+            const SizedBox(width: 8),
+            const Flexible(
               child: Text(
                 'Restock',
                 overflow: TextOverflow.ellipsis,

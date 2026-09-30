@@ -10,6 +10,9 @@ import '../widgets/drink_options_dialog.dart';
 import '../widgets/receipt_dialog.dart';
 import '../widgets/void_dialog.dart';
 import '../widgets/barista_shift_dialog.dart';
+import '../widgets/bluetooth_printer_picker_dialog.dart';
+import '../../services/bluetooth_printer_service.dart';
+import '../theme.dart';
 import 'stock_screen.dart';
 import 'restock_screen.dart';
 import 'login_screen.dart';
@@ -25,6 +28,7 @@ class PosScreen extends StatefulWidget {
 
 class _PosScreenState extends State<PosScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final BluetoothPrinterService _printerService = BluetoothPrinterService.instance;
   String? _selectedItemId;
 
   @override
@@ -32,18 +36,52 @@ class _PosScreenState extends State<PosScreen> {
     super.initState();
     widget.controller.addListener(_onControllerChange);
     widget.controller.syncService.addListener(_onControllerChange);
+    _printerService.addListener(_onControllerChange);
+    _printerService.initialize();
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_onControllerChange);
     widget.controller.syncService.removeListener(_onControllerChange);
+    _printerService.removeListener(_onControllerChange);
     _searchController.dispose();
     super.dispose();
   }
 
   void _onControllerChange() {
     if (mounted) setState(() {});
+  }
+
+  Future<void> _openPrinterPicker(PrinterRole role) async {
+    Navigator.pop(context);
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => BluetoothPrinterPickerDialog(role: role),
+    );
+  }
+
+  Future<void> _printOrder(Order order) async {
+    final results = <String>[];
+    try {
+      await _printerService.printReceipt(order);
+      results.add('Receipt sent');
+    } catch (error) {
+      results.add('Receipt: $error');
+    }
+    try {
+      await _printerService.printLabels(order);
+      results.add('Labels sent');
+    } catch (error) {
+      results.add('Labels: $error');
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(results.join(' | '))),
+      );
+    }
   }
 
   void _openDrinkOptions(MenuItem item) {
@@ -64,21 +102,47 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   void _openVoidDialog() {
+    if (widget.controller.cart.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No items in checkout to void.')),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (_) => VoidDialog(
-        orders: widget.controller.orders,
-        onConfirmVoid: (orderId, reason, managerUser, managerPass) async {
-          final res = await widget.controller.voidOrder(orderId, reason, managerUser, managerPass);
+        cart: widget.controller.cart,
+        isManager: widget.controller.currentUser?.isManager ?? false,
+        isRequestPending: widget.controller.isVoidRequestPending,
+        onConfirmVoid: (reason, managerUser, managerPass) async {
+          final username = managerUser.isNotEmpty
+              ? managerUser
+              : widget.controller.currentUser?.username ?? '';
+          final password = managerPass.isNotEmpty
+              ? managerPass
+              : widget.controller.currentUser?.password ?? '';
+          final res = await widget.controller.voidCheckout(reason, username, password);
           if (res['ok'] == true && mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Order successfully voided and inventory restored.')),
-            );
-          } else if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Error: ${res['error']}')),
+              const SnackBar(content: Text('Checkout voided.')),
             );
           }
+          return res;
+        },
+        onRequestVoid: (reason) async {
+          final result = await widget.controller.requestVoidApproval(null, reason);
+          if (result['ok'] == true && mounted) {
+            final synced = result['synced'] == true;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(synced
+                    ? 'Void request sent to Admin. Waiting for approval.'
+                    : 'Void request saved and will sync when online.'),
+              ),
+            );
+          }
+          return result;
         },
       ),
     );
@@ -99,7 +163,7 @@ class _PosScreenState extends State<PosScreen> {
       context: context,
       builder: (_) => ReceiptDialog(
         order: order,
-        onPrint: () {},
+        onPrint: () => _printOrder(order),
       ),
     );
   }
@@ -212,14 +276,26 @@ class _PosScreenState extends State<PosScreen> {
           ),
         ),
         titleSpacing: 0,
-        title: const Text(
-          'commune.',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-            letterSpacing: -0.6,
-          ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'lib/src/images/favicon.png',
+              width: 22,
+              height: 22,
+              fit: BoxFit.contain,
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'commune.',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                letterSpacing: -0.6,
+              ),
+            ),
+          ],
         ),
         actions: [
           InkWell(
@@ -327,6 +403,30 @@ class _PosScreenState extends State<PosScreen> {
                         _openBaristaShiftDialog();
                       },
                     ),
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
+                      child: Text(
+                        'PRINTERS',
+                        style: TextStyle(
+                          color: CommuneTheme.textMuted,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.local_cafe_outlined, color: Colors.black87),
+                      title: const Text('Connect labels'),
+                      subtitle: Text(_printerService.connectionSummary(PrinterRole.labels)),
+                      onTap: () => _openPrinterPicker(PrinterRole.labels),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.receipt_long_outlined, color: Colors.black87),
+                      title: const Text('Connect receipt'),
+                      subtitle: Text(_printerService.connectionSummary(PrinterRole.receipt)),
+                      onTap: () => _openPrinterPicker(PrinterRole.receipt),
+                    ),
                     ListTile(
                       leading: const Icon(Icons.sync, color: Colors.black87),
                       title: const Text('Sync with Admin Database'),
@@ -358,7 +458,9 @@ class _PosScreenState extends State<PosScreen> {
 
       body: LayoutBuilder(
         builder: (context, screenConstraints) {
-          final isWide = screenConstraints.maxWidth >= 768;
+          final checkoutPanelWidth = screenConstraints.maxWidth >= 1280 ? 400.0 : 370.0;
+            final isWide =
+              screenConstraints.maxWidth >= 960 && screenConstraints.maxHeight >= 480;
           final cartItemCount = controller.cart.fold<int>(0, (sum, i) => sum + i.qty);
 
           final menuSection = Container(
@@ -562,13 +664,18 @@ class _PosScreenState extends State<PosScreen> {
           }
 
           return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(child: menuSection),
-              CartPanel(
-                controller: controller,
-                onProceedOrder: _handleProceedOrder,
-                onVoid: _openVoidDialog,
-                onPrint: () => _openReceiptDialog(),
+              Expanded(child: ClipRect(child: menuSection)),
+              SizedBox(
+                width: checkoutPanelWidth,
+                child: CartPanel(
+                  panelWidth: checkoutPanelWidth,
+                  controller: controller,
+                  onProceedOrder: _handleProceedOrder,
+                  onVoid: _openVoidDialog,
+                  onPrint: () => _openReceiptDialog(),
+                ),
               ),
             ],
           );
