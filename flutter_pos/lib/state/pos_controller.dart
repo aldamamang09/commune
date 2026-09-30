@@ -378,6 +378,8 @@ class PosController extends ChangeNotifier {
       {String? style,
       List<OrderAddonSelection> addons = const [],
       int qty = 1}) {
+    if (isVoidRequestPending) return;
+
     final existingIndex = cart.indexWhere((line) {
       if (line.productId != product.id) return false;
       if (line.style != style) return false;
@@ -544,7 +546,13 @@ class PosController extends ChangeNotifier {
 
       isProcessing = false;
       notifyListeners();
-      return {'ok': true, 'order': order};
+      return {
+        'ok': true,
+        'order': order,
+        'synced': pushRes['ok'] == true,
+        if (pushRes['ok'] != true)
+          'syncError': pushRes['error']?.toString() ?? 'Unknown server error',
+      };
     } catch (e) {
       isProcessing = false;
       notifyListeners();

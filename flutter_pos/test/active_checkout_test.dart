@@ -1,7 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:commune_pos/models/menu_item.dart';
 import 'package:commune_pos/models/order_item.dart';
 import 'package:commune_pos/services/local_storage_service.dart';
+import 'package:commune_pos/services/supabase_service.dart';
+import 'package:commune_pos/services/sync_service.dart';
+import 'package:commune_pos/state/pos_controller.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -40,5 +44,30 @@ void main() {
 
     await storage.clearActiveCheckout();
     expect(storage.getActiveCheckout(), isNull);
+  });
+
+  test('blocks adding menu items while a void request is pending', () async {
+    SharedPreferences.setMockInitialValues({});
+    final storage = LocalStorageService();
+    await storage.init();
+    final api = SupabaseService();
+    final sync = SyncService(localStorage: storage, supabaseService: api);
+    final controller = PosController(
+      localStorage: storage,
+      supabaseService: api,
+      syncService: sync,
+    )..pendingCartVoidRequestId = 'void-request-1';
+
+    controller.addToCart(const MenuItem(
+      id: 'latte',
+      name: 'Latte',
+      price: 125,
+      category: 'Coffee',
+      image: '',
+    ));
+
+    expect(controller.cart, isEmpty);
+    controller.dispose();
+    sync.dispose();
   });
 }

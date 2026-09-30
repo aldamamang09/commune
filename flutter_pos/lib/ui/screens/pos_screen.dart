@@ -203,6 +203,16 @@ class _PosScreenState extends State<PosScreen> {
     final res = await widget.controller.proceedOrder();
     if (res['ok'] == true && mounted) {
       final order = res['order'] as Order;
+      if (res['synced'] != true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Saved on this device only. Server sync failed: ${res['syncError']}',
+            ),
+            duration: const Duration(seconds: 8),
+          ),
+        );
+      }
       _openReceiptDialog(order);
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -686,6 +696,7 @@ class _PosScreenState extends State<PosScreen> {
                                 return ProductCard(
                                   item: item,
                                   isSelected: _selectedItemId == item.id,
+                                  isDisabled: controller.isVoidRequestPending,
                                   onTap: () => _openDrinkOptions(item),
                                 );
                               },

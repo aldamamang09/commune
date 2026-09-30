@@ -19,12 +19,28 @@ class SupabaseConfig {
   static String get supabaseAnonKey => anonKey;
   static String get supabasePublishableKey => publishableKey;
 
-  static const String adminApiBaseUrl = String.fromEnvironment(
+  static const String _defaultPosApiUrl =
+      'https://communecoffee.vercel.app/api/sync';
+  static const String _configuredPosApiUrl = String.fromEnvironment(
     'POS_API_URL',
-    defaultValue: 'https://communecoffee.vercel.app/api/sync',
+    defaultValue: _defaultPosApiUrl,
   );
 
-  static const List<String> fallbackApiBaseUrls = [adminApiBaseUrl];
+  static String get adminApiBaseUrl => normalizePosApiUrl(_configuredPosApiUrl);
+
+  static String normalizePosApiUrl(String? value) {
+    final candidate = value?.trim();
+    final uri = candidate == null ? null : Uri.tryParse(candidate);
+    if (uri == null ||
+        (uri.scheme != 'https' && uri.scheme != 'http') ||
+        uri.host.isEmpty ||
+        !uri.path.toLowerCase().replaceFirst(RegExp(r'/$'), '').endsWith('/api/sync')) {
+      return _defaultPosApiUrl;
+    }
+    return uri.replace(query: null, fragment: null).toString();
+  }
+
+  static final List<String> fallbackApiBaseUrls = [adminApiBaseUrl];
 
   // Exact Supabase table names matching the web app & migrations
   static const String tablePosState = 'pos_state';

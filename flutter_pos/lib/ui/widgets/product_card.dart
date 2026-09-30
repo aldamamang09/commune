@@ -4,12 +4,14 @@ import '../../models/menu_item.dart';
 class ProductCard extends StatelessWidget {
   final MenuItem item;
   final bool isSelected;
+  final bool isDisabled;
   final VoidCallback onTap;
 
   const ProductCard({
     super.key,
     required this.item,
     this.isSelected = false,
+    this.isDisabled = false,
     required this.onTap,
   });
 
@@ -34,7 +36,7 @@ class ProductCard extends StatelessWidget {
     final subtitle = _buildSubtitle();
 
     return Material(
-      color: Colors.white,
+      color: isDisabled ? const Color(0xFFF3F4F6) : Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
@@ -44,57 +46,60 @@ class ProductCard extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: onTap,
+        onTap: isDisabled ? null : onTap,
         splashColor: const Color(0xFFF3F4F6),
         highlightColor: const Color(0xFFE5E7EB),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Flexible(
-                  child: Text(
-                    item.name,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFF111827),
-                      height: 1.1,
+        child: Opacity(
+          opacity: isDisabled ? 0.45 : 1,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: Text(
+                      item.name,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF111827),
+                        height: 1.1,
+                      ),
                     ),
                   ),
-                ),
-                if (subtitle.isNotEmpty) ...[
+                  if (subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 9.5,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 2),
                   Text(
-                    subtitle,
+                    '₱${item.price.toInt()}',
                     textAlign: TextAlign.center,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 9.5,
-                      color: Color(0xFF6B7280),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.normal,
+                      color: Color(0xFF111827),
                     ),
                   ),
                 ],
-                const SizedBox(height: 2),
-                Text(
-                  '₱${item.price.toInt()}',
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.normal,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),

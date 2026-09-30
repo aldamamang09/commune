@@ -95,8 +95,9 @@ class LocalStorageService {
 
   String? getSupabaseAnonKey() => SupabaseConfig.anonKey;
 
-  String? getAdminApiUrl() =>
-      _prefs.getString(_keyAdminApiUrl) ?? SupabaseConfig.adminApiBaseUrl;
+  String? getAdminApiUrl() => SupabaseConfig.normalizePosApiUrl(
+        _prefs.getString(_keyAdminApiUrl) ?? SupabaseConfig.adminApiBaseUrl,
+      );
 
   Future<void> setSupabaseConfig(String url, String anonKey,
       {String? adminApiUrl}) async {
@@ -106,7 +107,10 @@ class LocalStorageService {
   }
 
   Future<void> setAdminApiUrl(String adminApiUrl) async {
-    await _prefs.setString(_keyAdminApiUrl, adminApiUrl.trim());
+    await _prefs.setString(
+      _keyAdminApiUrl,
+      SupabaseConfig.normalizePosApiUrl(adminApiUrl),
+    );
   }
 
   // --- POS State ---
