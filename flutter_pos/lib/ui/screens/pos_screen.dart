@@ -250,6 +250,7 @@ class _PosScreenState extends State<PosScreen> {
     final sync = controller.syncService;
     final filteredItems = controller.filteredMenu;
     final currency = NumberFormat('#,##0', 'en_PH');
+    final canLogout = controller.cart.isEmpty && !controller.isVoidRequestPending;
 
     String syncStatusLabel = 'Synced';
     Color syncDotColor = const Color(0xFF22C55E);
@@ -441,14 +442,32 @@ class _PosScreenState extends State<PosScreen> {
               ),
               const Divider(height: 1),
               ListTile(
-                leading: const Icon(Icons.logout, color: Color(0xFFDC2626)),
-                title: const Text('Logout', style: TextStyle(color: Color(0xFFDC2626))),
-                onTap: () {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (_) => LoginScreen(controller: controller)),
-                  );
-                },
+                enabled: canLogout,
+                leading: Icon(
+                  Icons.logout,
+                  color: canLogout ? const Color(0xFFDC2626) : CommuneTheme.textMuted,
+                ),
+                title: Text(
+                  'Logout',
+                  style: TextStyle(
+                    color: canLogout ? const Color(0xFFDC2626) : CommuneTheme.textMuted,
+                  ),
+                ),
+                subtitle: canLogout
+                  ? null
+                  : Text(
+                    controller.isVoidRequestPending
+                      ? 'Wait for void approval first'
+                      : 'Clear checkout first',
+                    ),
+                onTap: canLogout
+                    ? () {
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(builder: (_) => LoginScreen(controller: controller)),
+                        );
+                      }
+                    : null,
               ),
               const SizedBox(height: 8),
             ],

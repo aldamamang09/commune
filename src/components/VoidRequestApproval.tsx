@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { approveVoidRequest, deleteVoidRequest } from "@/actions/pos";
 import { formatMoney } from "@/lib/menu";
 import { phDateTimeLabel } from "@/lib/datetime";
@@ -23,56 +23,48 @@ function toInputDateStr(date: Date) {
   }).format(date);
 }
 
+function addCalendarDays(dateStr: string, days: number) {
+  const date = new Date(`${dateStr}T12:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function phDayBounds(startDate: string, endDate: string) {
+  return {
+    start: new Date(`${startDate}T00:00:00+08:00`),
+    end: new Date(`${endDate}T23:59:59.999+08:00`),
+  };
+}
+
 function periodBounds(rangeType: string, filterDateStr: string, mode: "range" | "date") {
-  let now = new Date();
-  const startOfPeriod = new Date();
-
   if (mode === "date" && filterDateStr) {
-    now = new Date(`${filterDateStr}T23:59:59+08:00`);
-    startOfPeriod.setTime(now.getTime());
-    startOfPeriod.setHours(0, 0, 0, 0);
-    return { start: startOfPeriod, end: now };
+    return phDayBounds(filterDateStr, filterDateStr);
   }
 
-  now = new Date();
-  startOfPeriod.setTime(now.getTime());
-
-  if (rangeType === "today") {
-    startOfPeriod.setHours(0, 0, 0, 0);
-  } else if (rangeType === "week") {
-    startOfPeriod.setDate(now.getDate() - 6);
-    startOfPeriod.setHours(0, 0, 0, 0);
+  const today = toInputDateStr(new Date());
+  let startDate = today;
+  let endDate = today;
+  if (rangeType === "week") {
+    startDate = addCalendarDays(today, -6);
   } else if (rangeType === "lastWeek") {
-    const dayOfWeek = now.getDay();
+    const dayOfWeek = new Date(`${today}T12:00:00.000Z`).getUTCDay();
     const diffToLastMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-    const lastMonday = new Date(now);
-    lastMonday.setDate(now.getDate() - diffToLastMonday - 7);
-    lastMonday.setHours(0, 0, 0, 0);
-    const lastSunday = new Date(lastMonday);
-    lastSunday.setDate(lastMonday.getDate() + 6);
-    lastSunday.setHours(23, 59, 59, 999);
-    return { start: lastMonday, end: lastSunday };
+    startDate = addCalendarDays(today, -diffToLastMonday - 7);
+    endDate = addCalendarDays(startDate, 6);
   } else if (rangeType === "month") {
-    startOfPeriod.setDate(1);
-    startOfPeriod.setHours(0, 0, 0, 0);
+    startDate = `${today.slice(0, 7)}-01`;
   } else if (rangeType === "lastMonth") {
-    startOfPeriod.setMonth(now.getMonth() - 1);
-    startOfPeriod.setDate(1);
-    startOfPeriod.setHours(0, 0, 0, 0);
-    now.setDate(0);
-    now.setHours(23, 59, 59, 999);
+    endDate = addCalendarDays(`${today.slice(0, 7)}-01`, -1);
+    startDate = `${endDate.slice(0, 7)}-01`;
   } else if (rangeType === "thisYear") {
-    startOfPeriod.setMonth(0, 1);
-    startOfPeriod.setHours(0, 0, 0, 0);
+    startDate = `${today.slice(0, 4)}-01-01`;
   } else if (rangeType === "lastYear") {
-    const prevYear = now.getFullYear() - 1;
-    startOfPeriod.setFullYear(prevYear, 0, 1);
-    startOfPeriod.setHours(0, 0, 0, 0);
-    now.setFullYear(prevYear, 11, 31);
-    now.setHours(23, 59, 59, 999);
+    const previousYear = Number(today.slice(0, 4)) - 1;
+    startDate = `${previousYear}-01-01`;
+    endDate = `${previousYear}-12-31`;
   }
 
-  return { start: startOfPeriod, end: now };
+  return phDayBounds(startDate, endDate);
 }
 
 function RequestActions({
@@ -135,13 +127,11 @@ function RequestActions({
 export function VoidRequestApproval({ requests }: { requests: VoidRequest[] }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const [filterDateStr, setFilterDateStr] = useState("");
+  const [filterDateStr, setFilterDateStr] = useState(() =>
+    toInputDateStr(new Date()),
+  );
   const [rangeType, setRangeType] = useState("today");
   const [activeFilterMode, setActiveFilterMode] = useState<"range" | "date">("range");
-
-  useEffect(() => {
-    setFilterDateStr(toInputDateStr(new Date()));
-  }, []);
 
   const rows = useMemo(() => {
     const { start, end } = periodBounds(rangeType, filterDateStr, activeFilterMode);

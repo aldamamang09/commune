@@ -179,47 +179,13 @@ class _CartPanelState extends State<CartPanel> {
                                 ),
                                 Expanded(
                                   flex: 3,
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      InkWell(
-                                        onTap: () => controller.updateCartQty(index, controller.cart[index].qty - 1),
-                                        borderRadius: BorderRadius.circular(4),
-                                        child: Container(
-                                          width: 17,
-                                          height: 17,
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFFF3F4F6),
-                                            borderRadius: BorderRadius.circular(4),
-                                          ),
-                                          child: const Center(
-                                            child: Icon(Icons.remove, size: 11, color: Color(0xFF374151)),
-                                          ),
-                                        ),
-                                      ),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 3),
-                                        child: Text(
-                                          '${controller.cart[index].qty}',
-                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10),
-                                        ),
-                                      ),
-                                      InkWell(
-                                        onTap: () => controller.updateCartQty(index, controller.cart[index].qty + 1),
-                                        borderRadius: BorderRadius.circular(4),
-                                        child: Container(
-                                          width: 17,
-                                          height: 17,
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFFF3F4F6),
-                                            borderRadius: BorderRadius.circular(4),
-                                          ),
-                                          child: const Center(
-                                            child: Icon(Icons.add, size: 11, color: Color(0xFF374151)),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                                  child: Text(
+                                    '${controller.cart[index].qty}',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 10,
+                                    ),
                                   ),
                                 ),
                                 Expanded(
@@ -414,7 +380,9 @@ class _CartPanelState extends State<CartPanel> {
                   children: [
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: widget.onPrint,
+                        onPressed: controller.isVoidRequestPending
+                            ? null
+                            : widget.onPrint,
                         style: OutlinedButton.styleFrom(
                           foregroundColor: const Color(0xFF374151),
                           side: const BorderSide(color: Color(0xFFD1D5DB)),
@@ -443,7 +411,9 @@ class _CartPanelState extends State<CartPanel> {
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton(
-                    onPressed: controller.cart.isEmpty || controller.isProcessing
+                    onPressed: controller.cart.isEmpty ||
+                            controller.isProcessing ||
+                            controller.isVoidRequestPending
                         ? null
                         : widget.onProceedOrder,
                     style: OutlinedButton.styleFrom(

@@ -602,9 +602,10 @@ class PosController extends ChangeNotifier {
       return {'ok': false, 'error': 'No items to void.'};
     }
 
+    final requestedAt = DateTime.now().toUtc();
     final request = VoidRequest(
-      id: 'void-request-${DateTime.now().millisecondsSinceEpoch}',
-      requestedAt: DateTime.now().toIso8601String(),
+      id: 'void-request-${requestedAt.millisecondsSinceEpoch}',
+      requestedAt: requestedAt.toIso8601String(),
       requestedById: requester.id,
       requestedByName: requester.name,
       reason: reason.trim(),
