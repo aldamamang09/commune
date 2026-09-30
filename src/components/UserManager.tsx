@@ -66,6 +66,9 @@ export function UserManager({ users, session, loginActivity, offRequests, loginG
   const editing = uniqueUsers.find((user) => user.id === editingId) ?? null;
   const floorStaff = uniqueUsers.filter((user) => user.role !== "admin");
   const allSessions = useMemo(() => pairLoginSessions(loginActivity), [loginActivity]);
+  const selectedStaffIsOnShift = allSessions.some(
+    (shift) => shift.userId === punchUserId && !shift.logoutAt,
+  );
 
   // Filter sessions based on selectedDate
   const sessions = useMemo(() => {
@@ -373,7 +376,7 @@ export function UserManager({ users, session, loginActivity, offRequests, loginG
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    disabled={pending || !punchUserId}
+                    disabled={pending || !punchUserId || selectedStaffIsOnShift}
                     onClick={() =>
                       startTransition(async () => {
                         const result = await punchStaff(punchUserId, "login");
@@ -390,7 +393,7 @@ export function UserManager({ users, session, loginActivity, offRequests, loginG
                   </button>
                   <button
                     type="button"
-                    disabled={pending || !punchUserId}
+                    disabled={pending || !punchUserId || !selectedStaffIsOnShift}
                     onClick={() =>
                       startTransition(async () => {
                         const result = await punchStaff(punchUserId, "logout");

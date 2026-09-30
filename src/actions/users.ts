@@ -22,7 +22,7 @@ import {
   upsertStaffUserRecord,
 } from "@/lib/store";
 import { phDateString, phIsoFromDateTimeInput } from "@/lib/datetime";
-import { openBaristaShifts } from "@/lib/staff-sessions";
+import { openBaristaShifts, pairLoginSessions } from "@/lib/staff-sessions";
 import {
   canUsePos,
   parseRole,
@@ -262,6 +262,17 @@ export async function punchStaff(userId: string, type: "login" | "logout") {
     const user = store.users.find((entry) => entry.id === userId);
     if (!user || user.role === "admin") {
       error = "Pick a staff member.";
+      return;
+    }
+    const isOnShift = pairLoginSessions(store.loginActivity ?? []).some(
+      (shift) => shift.userId === userId && !shift.logoutAt,
+    );
+    if (type === "login" && isOnShift) {
+      error = `${user.name} is already clocked in.`;
+      return;
+    }
+    if (type === "logout" && !isOnShift) {
+      error = `${user.name} does not have an open shift.`;
       return;
     }
     activity = appendPunch(store, user, type);

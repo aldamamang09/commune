@@ -47,18 +47,6 @@ export function pairLoginSessions(records: LoginActivity[]): StaffSession[] {
       if (unpaired) {
         unpaired.logoutId = record.id;
         unpaired.logoutAt = record.at;
-      } else {
-        sessions.push({
-          id: record.id,
-          userId: record.userId,
-          username: record.username,
-          name: record.name,
-          role: record.role,
-          loginId: null,
-          logoutId: record.id,
-          loginAt: null,
-          logoutAt: record.at,
-        });
       }
     }
   }
