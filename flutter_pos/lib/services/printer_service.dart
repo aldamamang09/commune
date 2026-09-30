@@ -45,8 +45,18 @@ class PrinterService {
     for (final item in order.items) {
       final itemPrice = currency.format(item.lineTotal);
       buffer.writeln(_row('${item.qty}x ${item.name}', 'P$itemPrice', width: width));
-      if (item.optionsSummary.isNotEmpty) {
-        buffer.writeln('  ${item.optionsSummary}');
+      if (item.style != null && item.style!.isNotEmpty) {
+        buffer.writeln('  ${item.style!.toUpperCase()}');
+      }
+      for (final addon in item.addons) {
+        final addonTotal = addon.price * addon.qty * item.qty;
+        buffer.writeln(
+          _row(
+            '  Add: ${addon.name} x${addon.qty}',
+            'incl P${currency.format(addonTotal)}',
+            width: width,
+          ),
+        );
       }
     }
 

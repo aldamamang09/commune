@@ -21,13 +21,13 @@ void main() {
           ],
         ),
       ],
-      subtotal: 180,
+      subtotal: 210,
       discount: 0,
-      total: 180,
+      total: 210,
       paymentMethod: 'cash',
       ticketNo: 'A-010',
-      paid: 200,
-      change: 20,
+      paid: 220,
+      change: 10,
     );
 
     final receipt = PrinterService.formatReceipt(order);
@@ -36,6 +36,8 @@ void main() {
     expect(receipt, contains('Customer Copy'));
     expect(receipt, contains('have a seat, take a sip'));
     expect(receipt, contains('Vanilla Latte'));
+    expect(receipt, contains('Add: Oat Milk x1'));
+    expect(receipt, contains('incl P30.00'));
     expect(receipt, contains('TOTAL'));
   });
 
