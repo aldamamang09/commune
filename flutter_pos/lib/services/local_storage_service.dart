@@ -28,6 +28,7 @@ class LocalStorageService {
   static const String _keyPosOpenedAt = 'v2_cache_pos_opened_at';
   static const String _keyActiveStaffId = 'v1_active_staff_id';
   static const String _keyActiveStaffProfile = 'v1_active_staff_profile';
+  static const String _keyPosApiToken = 'v1_pos_api_token';
   static const String _keyActiveCheckout = 'v1_active_checkout';
 
   // Offline Queues (v2)
@@ -61,7 +62,12 @@ class LocalStorageService {
     }
   }
 
-  Future<void> saveActiveStaffSession(StaffUser staff) async {
+  String? getPosApiToken() => _prefs.getString(_keyPosApiToken);
+
+  Future<void> saveActiveStaffSession(
+    StaffUser staff, {
+    String? posApiToken,
+  }) async {
     await _prefs.setString(_keyActiveStaffId, staff.id);
     await _prefs.setString(
       _keyActiveStaffProfile,
@@ -73,11 +79,15 @@ class LocalStorageService {
         'title': staff.title,
       }),
     );
+    if (posApiToken != null && posApiToken.isNotEmpty) {
+      await _prefs.setString(_keyPosApiToken, posApiToken);
+    }
   }
 
   Future<void> clearActiveStaffId() async {
     await _prefs.remove(_keyActiveStaffId);
     await _prefs.remove(_keyActiveStaffProfile);
+    await _prefs.remove(_keyPosApiToken);
   }
 
   // --- Connection Config ---
@@ -85,7 +95,8 @@ class LocalStorageService {
 
   String? getSupabaseAnonKey() => SupabaseConfig.anonKey;
 
-  String? getAdminApiUrl() => null;
+  String? getAdminApiUrl() =>
+      _prefs.getString(_keyAdminApiUrl) ?? SupabaseConfig.adminApiBaseUrl;
 
   Future<void> setSupabaseConfig(String url, String anonKey,
       {String? adminApiUrl}) async {
@@ -95,7 +106,7 @@ class LocalStorageService {
   }
 
   Future<void> setAdminApiUrl(String adminApiUrl) async {
-    await _prefs.remove(_keyAdminApiUrl);
+    await _prefs.setString(_keyAdminApiUrl, adminApiUrl.trim());
   }
 
   // --- POS State ---

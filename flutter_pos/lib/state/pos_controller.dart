@@ -105,6 +105,7 @@ class PosController extends ChangeNotifier {
   }
 
   void _restoreActiveStaff() {
+    supabaseService.setPosApiToken(localStorage.getPosApiToken());
     final staffId = localStorage.getActiveStaffId();
     if (staffId == null) return;
     final staff = staffUsers.where((user) => user.id == staffId).firstOrNull ??
@@ -115,6 +116,7 @@ class PosController extends ChangeNotifier {
 
   Future<void> clearActiveSession() async {
     await localStorage.clearActiveStaffId();
+    supabaseService.setPosApiToken(null);
     currentUser = null;
     notifyListeners();
   }
@@ -631,6 +633,7 @@ class PosController extends ChangeNotifier {
       final auth = await supabaseService.authenticateStaff(
         managerUsername.trim(),
         managerPassword,
+        persistSessionToken: false,
       );
       if (auth['ok'] != true) {
         return {
@@ -666,7 +669,12 @@ class PosController extends ChangeNotifier {
       isSynced: false,
     );
 
-    final result = await supabaseService.pushOrderAtomic(order, const []);
+    final result = await supabaseService.pushOrderAtomic(
+      order,
+      const [],
+      managerUsername: managerUsername.trim(),
+      managerPassword: managerPassword,
+    );
     if (result['ok'] != true) {
       return {
         'ok': false,

@@ -109,7 +109,8 @@ class SyncService extends ChangeNotifier {
         final result = await supabaseService.pushOrderAtomic(order, deductions);
         if (result['ok'] == true) {
           order.isSynced = true;
-          if (result['ticketNo'] != null && result['ticketNo'].toString().isNotEmpty) {
+          if (result['ticketNo'] != null &&
+              result['ticketNo'].toString().isNotEmpty) {
             order.ticketNo = result['ticketNo'].toString();
           }
           await localStorage.addOrder(order);
@@ -176,50 +177,42 @@ class SyncService extends ChangeNotifier {
         }
 
         if (fullStore['restocks'] is List) {
-          final freshRestocks = (fullStore['restocks'] as List)
-              .whereType<Map>()
-              .map((e) {
-                final map = Map<String, dynamic>.from(e);
-                map['isSynced'] = true;
-                return RestockRecord.fromJson(map);
-              })
-              .toList();
+          final freshRestocks =
+              (fullStore['restocks'] as List).whereType<Map>().map((e) {
+            final map = Map<String, dynamic>.from(e);
+            map['isSynced'] = true;
+            return RestockRecord.fromJson(map);
+          }).toList();
           await localStorage.saveRestocks(freshRestocks);
         }
 
         if (fullStore['orders'] is List) {
-          final freshOrders = (fullStore['orders'] as List)
-              .whereType<Map>()
-              .map((e) {
-                final map = Map<String, dynamic>.from(e);
-                map['isSynced'] = true;
-                return Order.fromJson(map);
-              })
-              .toList();
+          final freshOrders =
+              (fullStore['orders'] as List).whereType<Map>().map((e) {
+            final map = Map<String, dynamic>.from(e);
+            map['isSynced'] = true;
+            return Order.fromJson(map);
+          }).toList();
           await localStorage.saveOrders(freshOrders);
         }
 
         if (fullStore['voidRequests'] is List) {
-          final freshVoids = (fullStore['voidRequests'] as List)
-              .whereType<Map>()
-              .map((e) {
-                final map = Map<String, dynamic>.from(e);
-                map['isSynced'] = true;
-                return VoidRequest.fromJson(map);
-              })
-              .toList();
+          final freshVoids =
+              (fullStore['voidRequests'] as List).whereType<Map>().map((e) {
+            final map = Map<String, dynamic>.from(e);
+            map['isSynced'] = true;
+            return VoidRequest.fromJson(map);
+          }).toList();
           await localStorage.saveVoidRequests(freshVoids);
         }
 
         if (fullStore['loginActivity'] is List) {
-          final freshLogs = (fullStore['loginActivity'] as List)
-              .whereType<Map>()
-              .map((e) {
-                final map = Map<String, dynamic>.from(e);
-                map['isSynced'] = true;
-                return LoginActivity.fromJson(map);
-              })
-              .toList();
+          final freshLogs =
+              (fullStore['loginActivity'] as List).whereType<Map>().map((e) {
+            final map = Map<String, dynamic>.from(e);
+            map['isSynced'] = true;
+            return LoginActivity.fromJson(map);
+          }).toList();
           await localStorage.saveLoginActivity(freshLogs);
         }
 
@@ -235,32 +228,8 @@ class SyncService extends ChangeNotifier {
         lastSyncTime = DateTime.now();
         onSyncCompleted?.call();
       } else {
-        // Fallback to direct Supabase table queries if configured
-        final freshMenu = await supabaseService.fetchMenu();
-        if (freshMenu != null) await localStorage.saveMenu(freshMenu);
-
-        final freshCategories = await supabaseService.fetchCategories();
-        if (freshCategories != null) await localStorage.saveCategories(freshCategories);
-
-        final freshInventory = await supabaseService.fetchInventory();
-        if (freshInventory != null) await localStorage.saveInventory(freshInventory);
-
-        final freshStaff = await supabaseService.fetchStaff();
-        if (freshStaff != null) await localStorage.saveStaff(freshStaff);
-
-        final freshRestocks = await supabaseService.fetchRestocks();
-        if (freshRestocks != null) await localStorage.saveRestocks(freshRestocks);
-
-        final freshOrders = await supabaseService.fetchRecentOrders();
-        if (freshOrders != null) await localStorage.saveOrders(freshOrders);
-
-        if (freshMenu != null || freshInventory != null) {
-          status = SyncStatus.success;
-          lastSyncTime = DateTime.now();
-          onSyncCompleted?.call();
-        } else {
-          status = SyncStatus.idle;
-        }
+        status = SyncStatus.error;
+        lastError = 'Unable to sync with the authenticated POS server.';
       }
     } catch (e) {
       debugPrint('Sync warning: $e');
@@ -279,24 +248,39 @@ class SyncService extends ChangeNotifier {
     final menu = localStorage.getMenu();
 
     final recipeCostings = (recipesData['recipeCostings'] is List)
-        ? (recipesData['recipeCostings'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+        ? (recipesData['recipeCostings'] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList()
         : <Map<String, dynamic>>[];
     final recipesMap = (recipesData['recipes'] is Map)
         ? Map<String, dynamic>.from(recipesData['recipes'] as Map)
         : <String, dynamic>{};
     final costings = (recipesData['costings'] is List)
-        ? (recipesData['costings'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+        ? (recipesData['costings'] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList()
         : <Map<String, dynamic>>[];
 
     for (final line in order.items) {
-      final menuItem = menu.where((m) => m.id == line.productId || m.name.toLowerCase() == line.name.toLowerCase()).firstOrNull;
+      final menuItem = menu
+          .where((m) =>
+              m.id == line.productId ||
+              m.name.toLowerCase() == line.name.toLowerCase())
+          .firstOrNull;
       final itemName = (menuItem?.name ?? line.name).trim();
 
       // 1. Check recipeCostings
       Map<String, dynamic>? matchedCosting;
       for (final rc in recipeCostings) {
-        final menuItems = (rc['menuItems'] is List) ? (rc['menuItems'] as List).map((e) => e.toString().trim().toLowerCase()).toList() : <String>[];
-        if (menuItems.contains(itemName.toLowerCase()) || menuItems.contains(line.name.trim().toLowerCase())) {
+        final menuItems = (rc['menuItems'] is List)
+            ? (rc['menuItems'] as List)
+                .map((e) => e.toString().trim().toLowerCase())
+                .toList()
+            : <String>[];
+        if (menuItems.contains(itemName.toLowerCase()) ||
+            menuItems.contains(line.name.trim().toLowerCase())) {
           matchedCosting = rc;
           break;
         }
@@ -311,7 +295,11 @@ class SyncService extends ChangeNotifier {
               final amount = (rawIng['amount'] as num?)?.toDouble() ?? 0.0;
               final unit = rawIng['unit']?.toString() ?? 'pcs';
               if (amount > 0) {
-                final stockItem = inventory.where((i) => i.id == ingId || i.name.toLowerCase() == ingName.toLowerCase()).firstOrNull;
+                final stockItem = inventory
+                    .where((i) =>
+                        i.id == ingId ||
+                        i.name.toLowerCase() == ingName.toLowerCase())
+                    .firstOrNull;
                 if (stockItem != null) {
                   deductions.add({
                     'inventoryItemId': stockItem.id,
@@ -354,7 +342,11 @@ class SyncService extends ChangeNotifier {
               final amount = (rawIng['amount'] as num?)?.toDouble() ?? 0.0;
               final unit = rawIng['unit']?.toString() ?? 'pcs';
               if (amount > 0) {
-                final stockItem = inventory.where((i) => i.id == ingId || i.name.toLowerCase() == ingName.toLowerCase()).firstOrNull;
+                final stockItem = inventory
+                    .where((i) =>
+                        i.id == ingId ||
+                        i.name.toLowerCase() == ingName.toLowerCase())
+                    .firstOrNull;
                 if (stockItem != null) {
                   deductions.add({
                     'inventoryItemId': stockItem.id,
@@ -370,15 +362,23 @@ class SyncService extends ChangeNotifier {
         } else {
           // 3. Check costings
           for (final c in costings) {
-            if ((c['productName']?.toString() ?? '').trim().toLowerCase() == itemName.toLowerCase() && c['ingredients'] is List) {
+            if ((c['productName']?.toString() ?? '').trim().toLowerCase() ==
+                    itemName.toLowerCase() &&
+                c['ingredients'] is List) {
               for (final rawIng in (c['ingredients'] as List)) {
                 if (rawIng is Map) {
                   final ingName = rawIng['name']?.toString() ?? '';
-                  final packAmount = (rawIng['amount'] as num?)?.toDouble() ?? 0.0;
-                  final outputCups = (rawIng['outputCups'] as num?)?.toDouble() ?? 0.0;
-                  final perCup = outputCups > 0 ? (packAmount / outputCups) : packAmount;
+                  final packAmount =
+                      (rawIng['amount'] as num?)?.toDouble() ?? 0.0;
+                  final outputCups =
+                      (rawIng['outputCups'] as num?)?.toDouble() ?? 0.0;
+                  final perCup =
+                      outputCups > 0 ? (packAmount / outputCups) : packAmount;
                   if (perCup > 0) {
-                    final stockItem = inventory.where((i) => i.name.toLowerCase() == ingName.toLowerCase()).firstOrNull;
+                    final stockItem = inventory
+                        .where((i) =>
+                            i.name.toLowerCase() == ingName.toLowerCase())
+                        .firstOrNull;
                     if (stockItem != null) {
                       deductions.add({
                         'inventoryItemId': stockItem.id,
@@ -398,12 +398,18 @@ class SyncService extends ChangeNotifier {
 
       // 4. Addon inventory deductions configured in Admin
       for (final addon in line.addons) {
-        if (addon.inventoryItemId != null && addon.inventoryItemId!.isNotEmpty) {
-          final stockItem = inventory.where((i) => i.id == addon.inventoryItemId).firstOrNull;
+        if (addon.inventoryItemId != null &&
+            addon.inventoryItemId!.isNotEmpty) {
+          final stockItem =
+              inventory.where((i) => i.id == addon.inventoryItemId).firstOrNull;
           if (stockItem != null) {
-            final usagePerAddon = (addon.usageAmount != null && addon.usageAmount! > 0)
-                ? addon.usageAmount!
-                : (stockItem.cupUsageAmount != null && stockItem.cupUsageAmount! > 0 ? stockItem.cupUsageAmount! : 1.0);
+            final usagePerAddon =
+                (addon.usageAmount != null && addon.usageAmount! > 0)
+                    ? addon.usageAmount!
+                    : (stockItem.cupUsageAmount != null &&
+                            stockItem.cupUsageAmount! > 0
+                        ? stockItem.cupUsageAmount!
+                        : 1.0);
             deductions.add({
               'inventoryItemId': stockItem.id,
               'itemName': stockItem.name,

@@ -12,9 +12,14 @@ import '../models/login_activity.dart';
 
 class SupabaseService {
   String? _activeAdminApiUrl;
+  String? _posApiToken;
 
   bool get isInitialized => true;
   String? get activeAdminApiUrl => _activeAdminApiUrl;
+
+  void setPosApiToken(String? token) {
+    _posApiToken = token;
+  }
 
   Map<String, String> get _restHeaders => const {
         'apikey': SupabaseConfig.publishableKey,
@@ -28,7 +33,54 @@ class SupabaseService {
     String? anonKey,
     String? adminApiUrl,
   }) async {
+    _activeAdminApiUrl = adminApiUrl ?? SupabaseConfig.adminApiBaseUrl;
     return true;
+  }
+
+  Map<String, String> _posApiHeaders({bool authenticated = true}) => {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        if (authenticated && _posApiToken != null)
+          'Authorization': 'Bearer $_posApiToken',
+      };
+
+  Uri get _posApiUri => Uri.parse(
+        _activeAdminApiUrl ?? SupabaseConfig.adminApiBaseUrl,
+      );
+
+  Future<Map<String, dynamic>> _postPosApi(
+    Map<String, dynamic> payload, {
+    bool authenticated = true,
+  }) async {
+    final response = await http
+        .post(
+          _posApiUri,
+          headers: _posApiHeaders(authenticated: authenticated),
+          body: jsonEncode(payload),
+        )
+        .timeout(const Duration(seconds: 12));
+    final decoded = response.body.isEmpty
+        ? <String, dynamic>{}
+        : Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+          decoded['error']?.toString() ?? 'POS API request failed.');
+    }
+    return decoded;
+  }
+
+  Future<Map<String, dynamic>> _getPosApi() async {
+    final response = await http
+        .get(_posApiUri, headers: _posApiHeaders())
+        .timeout(const Duration(seconds: 20));
+    final decoded = response.body.isEmpty
+        ? <String, dynamic>{}
+        : Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+          decoded['error']?.toString() ?? 'POS API request failed.');
+    }
+    return decoded;
   }
 
   Future<List<Map<String, dynamic>>> _restSelect(String queryPath) async {
@@ -49,101 +101,65 @@ class SupabaseService {
         'Supabase SELECT failed (${response.statusCode}): ${response.body}');
   }
 
-  Future<dynamic> _restRpc(String fnName, Map<String, dynamic> params) async {
-    final uri = Uri.parse('${SupabaseConfig.restBaseUrl}/rpc/$fnName');
-    final response = await http
-        .post(
-          uri,
-          headers: _restHeaders,
-          body: jsonEncode(params),
-        )
-        .timeout(const Duration(seconds: 10));
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      if (response.body.trim().isEmpty) return null;
-      return jsonDecode(response.body);
-    }
-    throw Exception(
-        'Supabase RPC $fnName failed (${response.statusCode}): ${response.body}');
-  }
-
-  Future<void> _restUpsert(String table, Object payload) async {
-    final uri = Uri.parse('${SupabaseConfig.restBaseUrl}/$table');
-    final response = await http
-        .post(
-          uri,
-          headers: {
-            ..._restHeaders,
-            'Prefer': 'resolution=merge-duplicates,return=minimal',
-          },
-          body: jsonEncode(payload),
-        )
-        .timeout(const Duration(seconds: 8));
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception(
-          'Supabase UPSERT $table failed (${response.statusCode}): ${response.body}');
-    }
-  }
-
-  Future<void> _restDelete(String table, String id) async {
-    final uri = Uri.parse(
-      '${SupabaseConfig.restBaseUrl}/$table?id=eq.${Uri.encodeQueryComponent(id)}',
-    );
-    final response = await http
-        .delete(uri, headers: _restHeaders)
-        .timeout(const Duration(seconds: 8));
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception(
-          'Supabase DELETE $table failed (${response.statusCode}): ${response.body}');
-    }
-  }
-
-  String _compactKey(String input) {
-    return input.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
-  }
-
-  /// Authenticates a staff member (Cashier, Barista, Manager, Admin) directly against Supabase `staff_users`
+  /// Authenticates staff through the Vercel POS API and keeps its signed token.
   Future<Map<String, dynamic>> authenticateStaff(
-      String username, String password) async {
+    String username,
+    String password, {
+    bool persistSessionToken = true,
+  }) async {
     final cleanUsername = username.trim().toLowerCase();
-    final compactUsername = _compactKey(username);
-    final cleanPassword = password;
 
-    if (cleanUsername.isEmpty || cleanPassword.isEmpty) {
+    if (cleanUsername.isEmpty || password.isEmpty) {
       return {'ok': false, 'error': 'Please enter username and password'};
     }
 
     try {
-      final rows = await _restSelect(
-          '${SupabaseConfig.tableStaffUsers}?select=*&order=created_at.asc');
-      final staffList = rows.map((e) => StaffUser.fromJson(e)).toList();
-
-      final matched = staffList.where((u) {
-        final uUser = u.username.trim().toLowerCase();
-        final uName = u.name.trim().toLowerCase();
-        return uUser == cleanUsername ||
-            uName == cleanUsername ||
-            (compactUsername.isNotEmpty &&
-                (_compactKey(u.username) == compactUsername ||
-                    _compactKey(u.name) == compactUsername));
-      }).firstOrNull;
-
-      if (matched != null) {
-        if (matched.password == cleanPassword ||
-            matched.password.trim() == cleanPassword.trim()) {
-          return {'ok': true, 'user': matched, 'allStaff': staffList};
-        }
-        return {'ok': false, 'error': 'Invalid username or password'};
-      } else {
-        return {'ok': false, 'error': 'Staff account not found'};
+      final result = await _postPosApi(
+        {
+          'action': 'auth',
+          'username': cleanUsername,
+          'password': password,
+        },
+        authenticated: false,
+      );
+      if (result['ok'] != true || result['user'] is! Map) {
+        return {
+          'ok': false,
+          'error': result['error'] ?? 'Invalid username or password'
+        };
       }
+      final token = result['token']?.toString() ?? '';
+      if (token.isEmpty) {
+        return {
+          'ok': false,
+          'error': 'The POS API did not return a session token.'
+        };
+      }
+      if (persistSessionToken) _posApiToken = token;
+      return {
+        'ok': true,
+        'user': StaffUser.fromJson(
+            Map<String, dynamic>.from(result['user'] as Map)),
+        'token': token,
+      };
     } catch (e) {
-      debugPrint('Direct Supabase auth error: $e');
+      debugPrint('POS API auth error: $e');
       return {'ok': false, 'error': 'Unable to verify credentials'};
     }
   }
 
-  /// Fetches the entire centralized StoreData directly from Supabase PostgREST
+  /// Fetches the centralized store through the signed Vercel POS API.
   Future<Map<String, dynamic>?> fetchFullStore() async {
+    try {
+      return await _getPosApi();
+    } catch (e) {
+      debugPrint('POS API fetchFullStore error: $e');
+      return null;
+    }
+  }
+
+  @Deprecated('Use fetchFullStore() through the authenticated POS API.')
+  Future<Map<String, dynamic>?> fetchFullStoreDirect() async {
     try {
       final results = await Future.wait<List<Map<String, dynamic>>>([
         _restSelect(
@@ -449,7 +465,11 @@ class SupabaseService {
   // --- Transactions & Atomic RPC Operations (Direct Supabase PostgREST) ---
 
   Future<Map<String, dynamic>> pushOrderAtomic(
-      Order order, List<Map<String, dynamic>> deductions) async {
+    Order order,
+    List<Map<String, dynamic>> deductions, {
+    String? managerUsername,
+    String? managerPassword,
+  }) async {
     try {
       final itemsPayload = order.items
           .map((i) => {
@@ -462,31 +482,34 @@ class SupabaseService {
               })
           .toList();
 
-      final res = await _restRpc(SupabaseConfig.rpcCreateOrderAtomic, {
-        'p_order_id': order.id,
-        'p_created_at': order.createdAt,
-        'p_barista_name': order.baristaName,
-        'p_barista_user_id': order.baristaUserId,
-        'p_items': itemsPayload,
-        'p_subtotal': order.subtotal.round(),
-        'p_discount': order.discount.round(),
-        'p_promo_id': null,
-        'p_promo_label': order.promoLabel,
-        'p_total': order.total.round(),
-        'p_payment_method': order.paymentMethod,
-        'p_ticket_no': null,
-        'p_paid': order.paid.round(),
-        'p_change': order.change.round(),
-        'p_deductions': deductions,
-        'p_voided': order.voided,
-        'p_void_reason': order.voidReason,
-        'p_voided_by': order.voidedBy,
+      final result = await _postPosApi({
+        'action': order.voided ? 'void_checkout' : 'create_order',
+        'order': {
+          'id': order.id,
+          'createdAt': order.createdAt,
+          'baristaName': order.baristaName,
+          'baristaUserId': order.baristaUserId,
+          'items': itemsPayload,
+          'subtotal': order.subtotal.round(),
+          'discount': order.discount.round(),
+          'promoLabel': order.promoLabel,
+          'total': order.total.round(),
+          'paymentMethod': order.paymentMethod,
+          'ticketNo': order.ticketNo,
+          'paid': order.paid.round(),
+          'change': order.change.round(),
+          'voided': order.voided,
+          'voidReason': order.voidReason,
+        },
+        'deductions': deductions,
+        'managerUsername': managerUsername,
+        'managerPassword': managerPassword,
       });
-
-      if (res is Map && res['ticketNo'] != null) {
-        return {'ok': true, 'ticketNo': res['ticketNo'].toString()};
-      }
-      return {'ok': true, 'ticketNo': order.ticketNo};
+      return {
+        'ok': result['ok'] == true,
+        'ticketNo': result['ticketNo']?.toString() ?? order.ticketNo,
+        if (result['error'] != null) 'error': result['error'],
+      };
     } catch (e) {
       final msg = e.toString();
       if (msg.contains('duplicate key') || msg.contains('already exists')) {
@@ -504,29 +527,18 @@ class SupabaseService {
     String? managerPassword,
   }) async {
     try {
-      if (managerUsername != null &&
-          managerUsername.isNotEmpty &&
-          managerPassword != null) {
-        final auth = await authenticateStaff(managerUsername, managerPassword);
-        if (auth['ok'] != true) {
-          return {'ok': false, 'error': 'Invalid manager credentials.'};
-        }
-        final staff = auth['user'] as StaffUser;
-        if (!staff.isManager) {
-          return {
-            'ok': false,
-            'error': 'Manager or Admin credentials required to void an order.'
-          };
-        }
-        voidedBy = staff.id;
-      }
-
-      final res = await _restRpc(SupabaseConfig.rpcVoidOrderAtomic, {
-        'p_order_id': orderId,
-        'p_reason': reason,
-        'p_voided_by': voidedBy,
+      final res = await _postPosApi({
+        'action': 'void_order',
+        'orderId': orderId,
+        'reason': reason,
+        'voidedBy': voidedBy,
+        'managerUsername': managerUsername,
+        'managerPassword': managerPassword,
       });
-      return {'ok': res is Map && res['ok'] == true};
+      return {
+        'ok': res['ok'] == true,
+        if (res['error'] != null) 'error': res['error']
+      };
     } catch (e) {
       return {'ok': false, 'error': e.toString()};
     }
@@ -534,34 +546,21 @@ class SupabaseService {
 
   Future<bool> pushRestockAtomic(RestockRecord record) async {
     try {
-      await _restRpc(SupabaseConfig.rpcCreateRestockAtomic, {
-        'p_id': record.id,
-        'p_inventory_item_id': record.inventoryItemId,
-        'p_item_name_snapshot': record.itemName,
-        'p_quantity_added': record.quantityAdded,
-        'p_created_at': record.date,
-        'p_purchase_qty': record.purchaseQty,
-        'p_purchase_unit': record.purchaseUnit,
+      final result = await _postPosApi({
+        'action': 'create_restock',
+        'restock': {
+          'id': record.id,
+          'inventoryItemId': record.inventoryItemId,
+          'itemName': record.itemName,
+          'quantityAdded': record.quantityAdded,
+          'date': record.date,
+          'purchaseQty': record.purchaseQty,
+          'purchaseUnit': record.purchaseUnit,
+        },
       });
-      return true;
+      return result['ok'] == true;
     } catch (e) {
       final message = e.toString();
-      if (message.contains('PGRST202')) {
-        try {
-          await _restRpc(SupabaseConfig.rpcCreateRestockAtomic, {
-            'p_id': record.id,
-            'p_inventory_item_id': record.inventoryItemId,
-            'p_item_name_snapshot': record.itemName,
-            'p_quantity_added': record.quantityAdded,
-            'p_created_at': record.date,
-          });
-          return true;
-        } catch (legacyError) {
-          if (legacyError.toString().contains('duplicate key')) return true;
-          debugPrint('Legacy restock RPC error: $legacyError');
-          return false;
-        }
-      }
       if (message.contains('duplicate key')) return true;
       debugPrint('Restock RPC error: $e');
       return false;
@@ -570,12 +569,8 @@ class SupabaseService {
 
   Future<bool> deleteRestockAtomic(String id) async {
     try {
-      await _restRpc(SupabaseConfig.rpcDeleteRestockAtomic, {
-        'p_id': id,
-        'p_inventory_item_id': null,
-        'p_quantity_added': null,
-      });
-      return true;
+      final result = await _postPosApi({'action': 'delete_restock', 'id': id});
+      return result['ok'] == true;
     } catch (e) {
       if (e.toString().contains('delete_restock_atomic: restock') &&
           e.toString().contains('not found')) {
@@ -588,19 +583,22 @@ class SupabaseService {
 
   Future<bool> upsertInventoryItem(InventoryItem item) async {
     try {
-      await _restUpsert(SupabaseConfig.tableInventoryItems, {
-        'id': item.id,
-        'name': item.name,
-        'unit': item.unit,
-        'cost': item.cost,
-        'stock': item.stock,
-        'max_stock': item.maxStock,
-        'opening_stock': item.openingStock,
-        'purchase_unit_size': item.purchaseUnitSize,
-        'cup_usage_amount': item.cupUsageAmount,
-        'cups_make': item.cupsMake,
+      final result = await _postPosApi({
+        'action': 'upsert_inventory_item',
+        'item': {
+          'id': item.id,
+          'name': item.name,
+          'unit': item.unit,
+          'cost': item.cost,
+          'stock': item.stock,
+          'maxStock': item.maxStock,
+          'openingStock': item.openingStock,
+          'purchaseUnitSize': item.purchaseUnitSize,
+          'cupUsageAmount': item.cupUsageAmount,
+          'cupsMake': item.cupsMake,
+        },
       });
-      return true;
+      return result['ok'] == true;
     } catch (e) {
       debugPrint('Upsert inventory error: $e');
       return false;
@@ -609,8 +607,7 @@ class SupabaseService {
 
   Future<Map<String, dynamic>> deleteInventoryItem(String id) async {
     try {
-      await _restDelete(SupabaseConfig.tableInventoryItems, id);
-      return {'ok': true};
+      return await _postPosApi({'action': 'delete_inventory_item', 'id': id});
     } catch (e) {
       return {'ok': false, 'error': e.toString()};
     }
@@ -618,26 +615,11 @@ class SupabaseService {
 
   Future<bool> pushVoidRequest(VoidRequest request) async {
     try {
-      await _restUpsert(SupabaseConfig.tableVoidRequests, {
-        'id': request.id,
-        'requested_at': request.requestedAt,
-        'requested_by_id': request.requestedById,
-        'requested_by_name': request.requestedByName,
-        'reason': request.reason,
-        'status': request.status,
-        'order_id': request.orderId,
-        'items': request.items.map((item) {
-          final json = item.toJson();
-          json['price'] = item.price.round();
-          return json;
-        }).toList(),
-        'subtotal': request.subtotal.round(),
-        'discount': request.discount.round(),
-        'promo_label': request.promoLabel,
-        'total': request.total.round(),
-        'payment_method': request.paymentMethod,
+      final result = await _postPosApi({
+        'action': 'create_void_request',
+        'request': request.toJson(),
       });
-      return true;
+      return result['ok'] == true;
     } catch (e) {
       debugPrint('Push void request error: $e');
       return false;
@@ -646,25 +628,11 @@ class SupabaseService {
 
   Future<bool> pushLoginActivity(LoginActivity activity) async {
     try {
-      await _restUpsert(SupabaseConfig.tableLoginActivity, {
-        'id': activity.id,
-        'user_id': activity.userId,
-        'username': activity.username,
-        'name': activity.name,
-        'role': activity.role,
-        'type': activity.type,
-        'at': activity.at,
+      final result = await _postPosApi({
+        'action': 'login_activity',
+        'activity': activity.toJson(),
       });
-      if (activity.type == 'login') {
-        await _restUpsert(SupabaseConfig.tablePosState, {
-          'id': SupabaseConfig.posStateId,
-          'is_open': true,
-          'opened_by_name': activity.name,
-          'opened_at': activity.at,
-          'updated_at': DateTime.now().toUtc().toIso8601String(),
-        });
-      }
-      return true;
+      return result['ok'] == true;
     } catch (e) {
       debugPrint('Push login activity error: $e');
       return false;

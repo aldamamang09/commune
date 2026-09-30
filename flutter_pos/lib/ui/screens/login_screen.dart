@@ -62,10 +62,10 @@ class _LoginScreenState extends State<LoginScreen> {
         .authenticateStaff(username, password);
     if (authRes['ok'] == true && authRes['user'] is StaffUser) {
       authenticatedStaff = authRes['user'] as StaffUser;
-      if (authRes['allStaff'] is List<StaffUser>) {
-        await widget.controller.localStorage
-            .saveStaff(authRes['allStaff'] as List<StaffUser>);
-      }
+      await widget.controller.localStorage.saveActiveStaffSession(
+        authenticatedStaff,
+        posApiToken: authRes['token'] as String?,
+      );
       await widget.controller.syncService.syncAll();
       await widget.controller.init();
     } else {
@@ -103,8 +103,10 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    await widget.controller.localStorage
-        .saveActiveStaffSession(authenticatedStaff);
+    await widget.controller.localStorage.saveActiveStaffSession(
+      authenticatedStaff,
+      posApiToken: authRes['token'] as String?,
+    );
     widget.controller.currentUser = authenticatedStaff;
     widget.controller.isPosOpen = true;
     await widget.controller

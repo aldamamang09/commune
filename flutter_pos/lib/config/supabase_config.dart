@@ -19,12 +19,12 @@ class SupabaseConfig {
   static String get supabaseAnonKey => anonKey;
   static String get supabasePublishableKey => publishableKey;
 
-  // Optional Admin API endpoint fallback
-  static const String adminApiBaseUrl = 'http://localhost:3000';
+  static const String adminApiBaseUrl = String.fromEnvironment(
+    'POS_API_URL',
+    defaultValue: 'https://communecoffee.vercel.app/api/sync',
+  );
 
-  static const List<String> fallbackApiBaseUrls = [
-    'http://localhost:3000',
-  ];
+  static const List<String> fallbackApiBaseUrls = [adminApiBaseUrl];
 
   // Exact Supabase table names matching the web app & migrations
   static const String tablePosState = 'pos_state';
