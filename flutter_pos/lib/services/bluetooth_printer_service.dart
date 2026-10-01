@@ -31,7 +31,8 @@ class BluetoothPrinterService extends ChangeNotifier {
   LabelPrinterLanguage _labelLanguage = LabelPrinterLanguage.tspl;
   bool _initialized = false;
 
-  bool isConnected(PrinterRole role) => _connections[role]?.isConnected ?? false;
+  bool isConnected(PrinterRole role) =>
+      _connections[role]?.isConnected ?? false;
 
   String? deviceName(PrinterRole role) =>
       role == PrinterRole.receipt ? _receiptName : _labelsName;
@@ -41,7 +42,9 @@ class BluetoothPrinterService extends ChangeNotifier {
   String connectionSummary(PrinterRole role) {
     final name = deviceName(role);
     if (isConnected(role)) return 'Connected: ${name ?? 'Bluetooth printer'}';
-    return name == null ? 'No printer connected' : 'Saved: $name (disconnected)';
+    return name == null
+        ? 'No printer connected'
+        : 'Saved: $name (disconnected)';
   }
 
   Future<void> initialize() async {
@@ -62,11 +65,11 @@ class BluetoothPrinterService extends ChangeNotifier {
     try {
       final paired = await _bluetooth.getPairedDevices();
       for (final role in PrinterRole.values) {
-        final address = role == PrinterRole.receipt
-            ? _receiptAddress
-            : _labelsAddress;
+        final address =
+            role == PrinterRole.receipt ? _receiptAddress : _labelsAddress;
         if (address == null) continue;
-        final device = paired.where((item) => item.address == address).firstOrNull;
+        final device =
+            paired.where((item) => item.address == address).firstOrNull;
         if (device != null) {
           _connections[role] = await _bluetooth.connect(address: address);
         }
@@ -77,7 +80,9 @@ class BluetoothPrinterService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> connect(PrinterRole role, BtcDevice device, {
+  Future<void> connect(
+    PrinterRole role,
+    BtcDevice device, {
     LabelPrinterLanguage? language,
   }) async {
     final permission = await _bluetooth.requestPermissions(
@@ -85,12 +90,14 @@ class BluetoothPrinterService extends ChangeNotifier {
     );
     if (permission != BtcPermissionStatus.granted &&
         permission != BtcPermissionStatus.notRequired) {
-      throw StateError('Bluetooth permission is required to connect a printer.');
+      throw StateError(
+          'Bluetooth permission is required to connect a printer.');
     }
 
     if (device.bondState != BtcBondState.bonded) {
       final paired = await _bluetooth.bondDevice(device.address);
-      if (!paired) throw StateError('Pairing with ${device.displayName} failed.');
+      if (!paired)
+        throw StateError('Pairing with ${device.displayName} failed.');
     }
 
     await disconnect(role, clearSaved: false, notify: false);
@@ -117,7 +124,8 @@ class BluetoothPrinterService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> disconnect(PrinterRole role, {
+  Future<void> disconnect(
+    PrinterRole role, {
     bool clearSaved = false,
     bool notify = true,
   }) async {
@@ -151,7 +159,18 @@ class BluetoothPrinterService extends ChangeNotifier {
     if (connection == null || !connection.isConnected) {
       throw StateError('Connect a receipt printer from the POS menu first.');
     }
-    final bytes = <int>[0x1B, 0x40, ...utf8.encode(PrinterService.formatReceipt(order)), 0x0A, 0x1D, 0x56, 0x41, 0x03];
+    final bytes = <int>[
+      0x1B,
+      0x40,
+      ...utf8.encode(
+        PrinterService.formatReceipt(order, includePrinterCommands: true),
+      ),
+      0x0A,
+      0x1D,
+      0x56,
+      0x41,
+      0x03,
+    ];
     await connection.output.writeBytes(bytes);
   }
 
@@ -185,7 +204,11 @@ class BluetoothPrinterService extends ChangeNotifier {
       final font = isOptionsLine ? '1' : '3';
       final x = isOptionsLine ? 4 : 16;
       commands.writeln('TEXT $x,$y,"$font",0,1,1,"${_quote(lines[index])}"');
-      y += index == 0 ? 30 : isOptionsLine ? 18 : 25;
+      y += index == 0
+          ? 30
+          : isOptionsLine
+              ? 18
+              : 25;
     }
     commands
       ..writeln('PRINT 1,1')
@@ -204,7 +227,11 @@ class BluetoothPrinterService extends ChangeNotifier {
       final font = isOptionsLine ? 0 : 4;
       final x = isOptionsLine ? 8 : 16;
       commands.writeln('TEXT $font 0 $x $y "${_quote(lines[index])}"');
-      y += index == 0 ? 34 : isOptionsLine ? 18 : 28;
+      y += index == 0
+          ? 34
+          : isOptionsLine
+              ? 18
+              : 28;
     }
     commands
       ..writeln('FORM')

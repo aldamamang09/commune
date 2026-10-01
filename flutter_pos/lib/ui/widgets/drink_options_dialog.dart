@@ -262,38 +262,39 @@ class _DrinkOptionsDialogState extends State<DrinkOptionsDialog> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          onPressed:
-                              _qty > 1 ? () => setState(() => _qty--) : null,
-                          icon: const Icon(Icons.remove, size: 18),
-                          style: IconButton.styleFrom(
-                            backgroundColor: const Color(0xFFEEEEEE),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8)),
+                    if (addonsList.isNotEmpty)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            onPressed:
+                                _qty > 1 ? () => setState(() => _qty--) : null,
+                            icon: const Icon(Icons.remove, size: 18),
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0xFFEEEEEE),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8)),
+                            ),
                           ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            '$_qty',
-                            style: const TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Text(
+                              '$_qty',
+                              style: const TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
                           ),
-                        ),
-                        IconButton(
-                          onPressed: () => setState(() => _qty++),
-                          icon: const Icon(Icons.add, size: 18),
-                          style: IconButton.styleFrom(
-                            backgroundColor: const Color(0xFFEEEEEE),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8)),
+                          IconButton(
+                            onPressed: () => setState(() => _qty++),
+                            icon: const Icon(Icons.add, size: 18),
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0xFFEEEEEE),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8)),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
                     const SizedBox(width: 12),
                     Flexible(
                       child: ElevatedButton(

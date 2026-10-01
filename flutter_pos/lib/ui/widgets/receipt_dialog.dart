@@ -346,7 +346,7 @@ class _ReceiptDialogState extends State<ReceiptDialog> {
                                         selectedOrder,
                                         labelItemIndexes[labelIndex],
                                       ),
-                                      width: 236,
+                                      width: 260,
                                     ),
                                   ),
                                 ],

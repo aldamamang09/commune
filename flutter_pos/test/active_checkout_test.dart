@@ -37,6 +37,7 @@ class _RetryableFailureSupabaseService extends SupabaseService {
 
 class _TimestampCaptureSupabaseService extends SupabaseService {
   final pushedCreatedAt = <String>[];
+  final pushedOrders = <Order>[];
 
   @override
   bool get isPosApiTokenExpired => false;
@@ -49,6 +50,7 @@ class _TimestampCaptureSupabaseService extends SupabaseService {
     String? managerPassword,
   }) async {
     pushedCreatedAt.add(order.createdAt);
+    pushedOrders.add(order);
     return {'ok': true, 'ticketNo': order.ticketNo};
   }
 
@@ -246,7 +248,6 @@ void main() {
       supabaseService: api,
       syncService: sync,
     );
-
     controller.addToCart(const MenuItem(
       id: 'latte',
       name: 'Latte',
@@ -280,6 +281,21 @@ void main() {
       supabaseService: api,
       syncService: sync,
     );
+    const rayhan = StaffUser(
+      id: 'cashier-rayhan',
+      username: 'rayhan',
+      password: '',
+      name: 'Rayhan',
+      role: 'cashier',
+    );
+    const rey = StaffUser(
+      id: 'cashier-rey',
+      username: 'rey',
+      password: '',
+      name: 'Rey',
+      role: 'cashier',
+    );
+    controller.currentUser = rayhan;
 
     controller.addToCart(const MenuItem(
       id: 'latte',
@@ -294,15 +310,20 @@ void main() {
 
     expect(result['ok'], true);
     final queuedOrder = storage.getPendingOrders().single;
+    expect(queuedOrder.baristaName, rayhan.name);
+    expect(queuedOrder.baristaUserId, rayhan.id);
     final createdAt = ManilaTime.parse(queuedOrder.createdAt);
     expect(createdAt, isNotNull);
     expect(createdAt!.isBefore(beforeCheckout), isFalse);
     expect(createdAt.isAfter(afterCheckout), isFalse);
 
     sync.isOnline = true;
+    controller.currentUser = rey;
     await sync.syncAll();
 
     expect(api.pushedCreatedAt, [queuedOrder.createdAt]);
+    expect(api.pushedOrders.single.baristaName, rayhan.name);
+    expect(api.pushedOrders.single.baristaUserId, rayhan.id);
     expect(storage.getPendingOrders(), isEmpty);
 
     controller.dispose();

@@ -520,8 +520,8 @@ class PosController extends ChangeNotifier {
       final order = Order(
         id: orderId,
         createdAt: createdAt,
-        baristaName: currentBaristaName,
-        baristaUserId: currentBaristaUserId,
+        baristaName: currentUser?.name ?? 'Cashier',
+        baristaUserId: currentUser?.id,
         items: List.from(cart),
         subtotal: subtotal,
         discount: discountAmount,
@@ -701,8 +701,8 @@ class PosController extends ChangeNotifier {
     final order = Order(
       id: 'ord-${now.millisecondsSinceEpoch}',
       createdAt: createdAt,
-      baristaName: currentBaristaName,
-      baristaUserId: currentBaristaUserId,
+      baristaName: currentUser?.name ?? 'Cashier',
+      baristaUserId: currentUser?.id,
       items: List<OrderItem>.from(cart),
       subtotal: subtotal,
       discount: discountAmount,

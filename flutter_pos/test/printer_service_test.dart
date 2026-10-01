@@ -94,7 +94,7 @@ void main() {
     expect(receipt, contains('TOTAL'));
   });
 
-  test('cup label format matches the drink label style', () {
+  test('cup label prints one cup per label with style and add-ons', () {
     final order = Order(
       id: 'ord-2',
       createdAt: '2026-09-30T15:00:00Z',
@@ -120,17 +120,13 @@ void main() {
 
     final label = PrinterService.formatCupLabel(order, 0);
 
-    expect(label, contains('MAKE THIS DRINKS'));
-    expect(label, contains('ORDER NO. A-011'));
-    expect(label, contains('1X HAZELNUT BLANC'));
-    expect(
-      label,
-      'MAKE THIS DRINKS\n'
-      '----------------------\n'
-      'ORDER NO. A-011\n'
-      '----------------------\n'
-      '1X HAZELNUT BLANC\n'
-      '(ICED) *addson +1 Oat, +1 Coffee Beans\n',
-    );
+    final lines = label.split('\n').map((line) => line.trim()).toList();
+    expect(lines, contains('COMMUNE'));
+    expect(lines, contains('ORDER #A-011'));
+    expect(lines, contains('(ICED) 1X HAZELNUT BLANC'));
+    expect(lines, contains('+1 Oat, +1 Coffee Beans'));
+    expect(lines, isNot(contains('2X HAZELNUT BLANC')));
+    expect(label, isNot(contains('ADD-ONS')));
   });
 }
+

@@ -9,116 +9,589 @@ class PrinterService {
   static const String cafeCity = 'Zamboanga City';
   static const String cafeTagline = 'have a seat, take a sip';
 
-  static String _center(String text, {int width = 32}) {
-    if (text.length >= width) return text;
-    final left = (width - text.length) ~/ 2;
-    return '${' ' * left}$text';
-  }
+  // Most 58mm thermal printers use around 32 characters per line.
+  static const int receiptWidth = 32;
+  static const int cupLabelWidth = receiptWidth;
+  static const String _boldOn = '\x1B\x45\x01';
+  static const String _boldOff = '\x1B\x45\x00';
 
-  static String _row(String left, String right, {int width = 32, bool strong = false}) {
-    final raw = '$left $right';
-    if (raw.length >= width) {
-      return '$left $right';
+  // ---------------------------------------------------------------------------
+  // BASIC HELPERS
+  // ---------------------------------------------------------------------------
+
+  static String _center(String text, {int width = receiptWidth}) {
+    if (text.length >= width) {
+      return text.substring(0, width);
     }
 
-    final padded = left.padRight(width - right.length);
-    final output = strong ? '$padded$right' : '$padded$right';
-    return output;
+    final leftPadding = ((width - text.length) / 2).floor();
+    return '${' ' * leftPadding}$text';
   }
 
-  /// Generates a plain-text thermal receipt representation
-  static String formatReceipt(Order order) {
-    final buffer = StringBuffer();
-    const width = 32;
-    final currency = NumberFormat('#,##0.00', 'en_PH');
+  static String _line({int width = receiptWidth, String char = '-'}) {
+    return char * width;
+  }
 
-    buffer.writeln(_center('COMMUNE'));
+  static void _writeLine(
+    StringBuffer buffer,
+    String text, {
+    bool bold = false,
+    bool includePrinterCommands = false,
+  }) {
+    if (bold && includePrinterCommands) buffer.write(_boldOn);
+    buffer.write(text);
+    if (bold && includePrinterCommands) buffer.write(_boldOff);
+    buffer.writeln();
+  }
+
+  static String _doubleLine({int width = receiptWidth}) {
+    return '=' * width;
+  }
+
+  /// Creates a two-column row.
+  ///
+  /// Example:
+  /// Subtotal                 P120.00
+  static String _row(
+    String left,
+    String right, {
+    int width = receiptWidth,
+  }) {
+    left = left.trim();
+    right = right.trim();
+
+    if (left.isEmpty) {
+      return right.padLeft(width);
+    }
+
+    if (right.isEmpty) {
+      return left;
+    }
+
+    // If the combined content is too long, don't overlap.
+    if (left.length + right.length + 1 > width) {
+      final availableLeft = width - right.length - 1;
+
+      if (availableLeft <= 0) {
+        return right.substring(0, width).padLeft(width);
+      }
+
+      left = left.substring(
+        0,
+        left.length > availableLeft ? availableLeft : left.length,
+      );
+    }
+
+    final spaces = width - left.length - right.length;
+
+    return '$left${' ' * spaces}$right';
+  }
+
+  /// Wraps text without breaking words whenever possible.
+  static List<String> _wrap(
+    String text, {
+    int width = receiptWidth,
+  }) {
+    final trimmed = text.trim();
+
+    if (trimmed.isEmpty) {
+      return [''];
+    }
+
+    if (trimmed.length <= width) {
+      return [trimmed];
+    }
+
+    final words = trimmed.split(RegExp(r'\s+'));
+    final lines = <String>[];
+    var current = '';
+
+    for (final word in words) {
+      // Handle a single word that is longer than the available width.
+      if (word.length > width) {
+        if (current.isNotEmpty) {
+          lines.add(current);
+          current = '';
+        }
+
+        for (var i = 0; i < word.length; i += width) {
+          final end = (i + width < word.length) ? i + width : word.length;
+          lines.add(word.substring(i, end));
+        }
+
+        continue;
+      }
+
+      if (current.isEmpty) {
+        current = word;
+      } else if (current.length + 1 + word.length <= width) {
+        current = '$current $word';
+      } else {
+        lines.add(current);
+        current = word;
+      }
+    }
+
+    if (current.isNotEmpty) {
+      lines.add(current);
+    }
+
+    return lines;
+  }
+
+  /// Formats currency consistently.
+  static String _money(num amount) {
+    final currency = NumberFormat('#,##0.00', 'en_PH');
+    return 'P${currency.format(amount)}';
+  }
+
+  static String _moneyNoSymbol(num amount) {
+    final currency = NumberFormat('#,##0.00', 'en_PH');
+    return currency.format(amount);
+  }
+
+  // ---------------------------------------------------------------------------
+  // RECEIPT HEADER
+  // ---------------------------------------------------------------------------
+
+  static void _writeHeader(
+    StringBuffer buffer,
+    Order order,
+    bool includePrinterCommands,
+  ) {
+    _writeLine(
+      buffer,
+      _center(cafeName.toUpperCase()),
+      bold: true,
+      includePrinterCommands: includePrinterCommands,
+    );
     buffer.writeln(_center(cafeStreet));
     buffer.writeln(_center(cafeCity));
     buffer.writeln(_center(cafeTagline));
-    buffer.writeln('-' * width);
-    buffer.writeln(_center('Customer Copy'));
-    buffer.writeln(_center('Order No. ${order.ticketNo.isNotEmpty ? order.ticketNo : 'N/A'}'));
-    buffer.writeln(_center(DateFormat('MM/dd/yyyy hh:mm a').format(ManilaTime.parse(order.createdAt) ?? ManilaTime.now())));
-    buffer.writeln(_center('Cashier: ${order.baristaName}'));
-    buffer.writeln('-' * width);
 
-    buffer.writeln(_row('Item', 'Amount', width: width, strong: true));
-    for (final item in order.items) {
-      final itemPrice = currency.format(item.lineTotal);
-      buffer.writeln(_row('${item.qty}x ${item.name}', 'P$itemPrice', width: width));
-      if (item.style != null && item.style!.isNotEmpty) {
-        buffer.writeln('  ${item.style!.toUpperCase()}');
-      }
-      for (final addon in item.addons) {
-        final addonTotal = addon.price * addon.qty * item.qty;
-        buffer.writeln(
-          _row(
-            '  Add: ${addon.name} x${addon.qty}',
-            'incl P${currency.format(addonTotal)}',
-            width: width,
-          ),
-        );
-      }
-    }
+    buffer.writeln();
+    buffer.writeln(_doubleLine());
 
-    buffer.writeln('-' * width);
-    buffer.writeln(_row('Subtotal', 'P${currency.format(order.subtotal)}', width: width));
-    if (order.discount > 0) {
-      buffer.writeln(_row('Discount', '-P${currency.format(order.discount)}', width: width));
-    }
-    buffer.writeln(_row('TOTAL', 'P${currency.format(order.total)}', width: width));
-    buffer.writeln('-' * width);
-    buffer.writeln(_row('Payment', order.paymentMethod.toUpperCase(), width: width));
-    buffer.writeln(_row(order.paymentMethod == 'cash' ? 'Cash / Tendered' : 'Paid', 'P${currency.format(order.paid)}', width: width));
-    buffer.writeln(_row('Change', 'P${currency.format(order.change)}', width: width));
-    buffer.writeln('-' * width);
-    buffer.writeln(_center(cafeTagline));
-    buffer.writeln(_center('Thank you. Please come again.'));
+    _writeLine(
+      buffer,
+      _center('CUSTOMER COPY'),
+      bold: true,
+      includePrinterCommands: includePrinterCommands,
+    );
+    buffer.writeln();
 
-    return buffer.toString();
+    final ticket =
+        order.ticketNo.trim().isNotEmpty ? order.ticketNo.trim() : 'N/A';
+
+    _writeLine(
+      buffer,
+      _row('ORDER NO.', ticket),
+      bold: true,
+      includePrinterCommands: includePrinterCommands,
+    );
+
+    final createdAt = ManilaTime.parse(order.createdAt) ?? ManilaTime.now();
+
+    final dateText = DateFormat('MM/dd/yyyy hh:mm a').format(createdAt);
+
+    buffer.writeln(_row('DATE', dateText));
+
+    final cashier =
+        order.baristaName.trim().isNotEmpty ? order.baristaName.trim() : 'N/A';
+
+    buffer.writeln(_row('CASHIER', cashier));
+
+    buffer.writeln(_doubleLine());
   }
+
+  // ---------------------------------------------------------------------------
+  // ITEMS
+  // ---------------------------------------------------------------------------
+
+  static void _writeItem(
+    StringBuffer buffer,
+    dynamic item,
+    bool includePrinterCommands,
+  ) {
+    final itemName = item.name.toString().trim();
+    final quantity = item.qty;
+    final total = item.lineTotal;
+
+    // First line:
+    // 2x Iced Spanish Latte
+    //
+    //                         P180.00
+    final itemLines = _wrap(
+      '$quantity x $itemName',
+      width: receiptWidth - 9,
+    );
+
+    for (var i = 0; i < itemLines.length; i++) {
+      final text = itemLines[i];
+
+      if (i == 0) {
+        _writeLine(
+          buffer,
+          _row(text, _money(total)),
+          bold: true,
+          includePrinterCommands: includePrinterCommands,
+        );
+      } else {
+        buffer.writeln('  $text');
+      }
+    }
+
+    // Drink style / size
+    final style = item.style?.toString().trim();
+
+    if (style != null && style.isNotEmpty) {
+      final styleLines = _wrap(
+        '• ${style.toUpperCase()}',
+        width: receiptWidth - 2,
+      );
+
+      for (final line in styleLines) {
+        buffer.writeln('  $line');
+      }
+    }
+
+    // Add-ons
+    if (item.addons.isNotEmpty) {
+      for (final addon in item.addons) {
+        final addonName = addon.name.toString().trim();
+        final addonQty = addon.qty;
+
+        final addonTotal = addon.price * addon.qty * item.qty;
+
+        final addonText = '+ $addonName x$addonQty';
+
+        final addonLines = _wrap(
+          addonText,
+          width: receiptWidth - 2,
+        );
+
+        for (var i = 0; i < addonLines.length; i++) {
+          final line = addonLines[i];
+
+          if (i == 0) {
+            buffer.writeln(
+              _row(
+                '  $line',
+                _money(addonTotal),
+              ),
+            );
+          } else {
+            buffer.writeln('    $line');
+          }
+        }
+      }
+    }
+
+    buffer.writeln();
+  }
+
+  // ---------------------------------------------------------------------------
+  // TOTALS
+  // ---------------------------------------------------------------------------
+
+  static void _writeTotals(
+    StringBuffer buffer,
+    Order order,
+    bool includePrinterCommands,
+  ) {
+    buffer.writeln(_line());
+
+    _writeLine(
+      buffer,
+      _row('Subtotal', _money(order.subtotal)),
+      bold: true,
+      includePrinterCommands: includePrinterCommands,
+    );
+
+    if (order.discount > 0) {
+      buffer.writeln(
+        _row(
+          'Discount',
+          '-${_moneyNoSymbol(order.discount)}',
+        ),
+      );
+    }
+
+    buffer.writeln(_line());
+
+    _writeLine(
+      buffer,
+      _row('TOTAL', _money(order.total)),
+      bold: true,
+      includePrinterCommands: includePrinterCommands,
+    );
+
+    buffer.writeln(_line());
+  }
+
+  // ---------------------------------------------------------------------------
+  // PAYMENT
+  // ---------------------------------------------------------------------------
+
+  static void _writePayment(
+    StringBuffer buffer,
+    Order order,
+    bool includePrinterCommands,
+  ) {
+    final paymentMethod = order.paymentMethod.trim().toUpperCase();
+
+    _writeLine(
+      buffer,
+      _row('PAYMENT', paymentMethod.isEmpty ? 'N/A' : paymentMethod),
+      bold: true,
+      includePrinterCommands: includePrinterCommands,
+    );
+
+    if (order.paymentMethod.toLowerCase() == 'cash') {
+      buffer.writeln(
+        _row(
+          'Cash / Tendered',
+          _money(order.paid),
+        ),
+      );
+
+      buffer.writeln(
+        _row(
+          'Change',
+          _money(order.change),
+        ),
+      );
+    } else {
+      buffer.writeln(
+        _row(
+          'Paid',
+          _money(order.paid),
+        ),
+      );
+    }
+
+    buffer.writeln(_line());
+  }
+
+  // ---------------------------------------------------------------------------
+  // RECEIPT FOOTER
+  // ---------------------------------------------------------------------------
+
+  static void _writeFooter(
+    StringBuffer buffer,
+  ) {
+    buffer.writeln();
+    buffer.writeln(_center(cafeTagline));
+    buffer.writeln();
+    buffer.writeln(_center('Thank you!'));
+    buffer.writeln(_center('Please come again.'));
+    buffer.writeln();
+
+    buffer.writeln(_center('***'));
+  }
+
+  // ---------------------------------------------------------------------------
+  // MAIN RECEIPT
+  // ---------------------------------------------------------------------------
+
+  /// Generates a clean plain-text thermal receipt.
+  static String formatReceipt(
+    Order order, {
+    bool includePrinterCommands = false,
+  }) {
+    final buffer = StringBuffer();
+
+    _writeHeader(buffer, order, includePrinterCommands);
+
+    // ITEMS HEADER
+    _writeLine(
+      buffer,
+      _row('ITEM', 'AMOUNT'),
+      bold: true,
+      includePrinterCommands: includePrinterCommands,
+    );
+
+    buffer.writeln(_line());
+
+    // ITEMS
+    for (final item in order.items) {
+      _writeItem(buffer, item, includePrinterCommands);
+    }
+
+    // TOTALS
+    _writeTotals(buffer, order, includePrinterCommands);
+
+    // PAYMENT
+    _writePayment(buffer, order, includePrinterCommands);
+
+    // FOOTER
+    _writeFooter(buffer);
+
+    return buffer.toString().trimRight();
+  }
+
+  // ---------------------------------------------------------------------------
+  // DRINK CATEGORY
+  // ---------------------------------------------------------------------------
 
   static bool isDrinkCategory(String? category) {
-    if (category == null || category.trim().isEmpty) return false;
-    return !RegExp(r'^\s*(food|pastr)', caseSensitive: false).hasMatch(category);
+    if (category == null || category.trim().isEmpty) {
+      return false;
+    }
+
+    final normalized = category.trim().toLowerCase();
+
+    // Food / pastry categories are not drinks.
+    if (RegExp(
+      r'^\s*(food|pastr)',
+      caseSensitive: false,
+    ).hasMatch(normalized)) {
+      return false;
+    }
+
+    return true;
   }
 
-  static List<int> cupLabelItemIndexes(Order order, List<MenuItem> menu) {
+  // ---------------------------------------------------------------------------
+  // CUP LABEL INDEXES
+  // ---------------------------------------------------------------------------
+
+  /// Returns the order-item indexes that need cup labels.
+  ///
+  /// If an order has:
+  ///
+  /// 2x Iced Latte
+  /// 1x Americano
+  ///
+  /// This returns:
+  ///
+  /// [0, 0, 1]
+  ///
+  /// This allows the printer to create one label per drink.
+  static List<int> cupLabelItemIndexes(
+    Order order,
+    List<MenuItem> menu,
+  ) {
     final indexes = <int>[];
+
     for (var itemIndex = 0; itemIndex < order.items.length; itemIndex++) {
       final item = order.items[itemIndex];
-      final category = item.category ??
-          menu.where((menuItem) => menuItem.id == item.productId).firstOrNull?.category;
-      if (!isDrinkCategory(category)) continue;
+
+      String? category = item.category;
+
+      if (category == null || category.trim().isEmpty) {
+        for (final menuItem in menu) {
+          if (menuItem.id == item.productId) {
+            category = menuItem.category;
+            break;
+          }
+        }
+      }
+
+      if (!isDrinkCategory(category)) {
+        continue;
+      }
+
       for (var copy = 0; copy < item.qty; copy++) {
         indexes.add(itemIndex);
       }
     }
+
     return indexes;
   }
 
-  /// Formats drink cup label text
-  static String formatCupLabel(Order order, int itemIndex) {
-    if (itemIndex >= order.items.length) return '';
+  // ---------------------------------------------------------------------------
+  // CUP LABEL HELPERS
+  // ---------------------------------------------------------------------------
+
+  static String _cupCenter(String text) {
+    return _center(
+      text,
+      width: cupLabelWidth,
+    );
+  }
+
+  static String _cupLine() {
+    return '-' * cupLabelWidth;
+  }
+
+  static List<String> _cupWrap(
+    String text, {
+    int width = cupLabelWidth,
+  }) {
+    return _wrap(
+      text,
+      width: width,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // CUP LABEL
+  // ---------------------------------------------------------------------------
+
+  /// Formats a single drink cup label.
+  static String formatCupLabel(
+    Order order,
+    int itemIndex,
+  ) {
+    if (itemIndex < 0 || itemIndex >= order.items.length) {
+      return '';
+    }
+
     final item = order.items[itemIndex];
+
     final buffer = StringBuffer();
 
-    buffer.writeln('MAKE THIS DRINKS');
-    buffer.writeln('-' * 22);
-    buffer.writeln('ORDER NO. ${order.ticketNo.isNotEmpty ? order.ticketNo : 'N/A'}');
-    buffer.writeln('-' * 22);
-    buffer.writeln('1X ${item.name.toUpperCase()}');
-    final options = <String>[];
-    if (item.style != null && item.style!.isNotEmpty) {
-      options.add('(${item.style!.toUpperCase()})');
-    }
-    if (item.addons.isNotEmpty) {
-      options.add(
-        '*addson ${item.addons.map((addon) => '+${addon.qty} ${addon.name}').join(', ')}',
+    final ticket =
+        order.ticketNo.trim().isNotEmpty ? order.ticketNo.trim() : 'N/A';
+
+    // HEADER
+    buffer.writeln(
+      _cupCenter(cafeName.toUpperCase()),
+    );
+
+    buffer.writeln(_cupLine());
+
+    buffer.writeln(
+      _cupCenter('ORDER #$ticket'),
+    );
+
+    buffer.writeln(_cupLine());
+
+    // QUANTITY + ITEM
+    final itemName = item.name.toString().trim().toUpperCase();
+    final style = item.style?.toString().trim();
+    final drinkName = style != null && style.isNotEmpty
+        ? '(${style.toUpperCase()}) 1X $itemName'
+        : '1X $itemName';
+
+    final itemLines = _cupWrap(
+      drinkName,
+      width: cupLabelWidth,
+    );
+
+    for (final line in itemLines) {
+      buffer.writeln(
+        _cupCenter(line),
       );
     }
-    if (options.isNotEmpty) buffer.writeln(options.join(' '));
-    return buffer.toString();
+
+    // ADD-ONS
+    if (item.addons.isNotEmpty) {
+      final addonDetails = item.addons.map((addon) {
+        final addonName = addon.name.toString().trim();
+        return '+${addon.qty} $addonName';
+      }).join(', ');
+      final detailLines = _cupWrap(
+        addonDetails,
+        width: cupLabelWidth,
+      );
+
+      for (final line in detailLines) {
+        buffer.writeln(line);
+      }
+    }
+
+    return buffer.toString().trimRight();
   }
 }
