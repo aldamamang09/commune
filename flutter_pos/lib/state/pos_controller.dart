@@ -25,8 +25,8 @@ class PosController extends ChangeNotifier {
   String? currentBaristaUserId;
   List<StaffUser> onShiftBaristas = [];
   bool isPosOpen = false;
-  bool _cashierLogoutInProgress = false;
-  String? _cashierLogoutRecordedFor;
+  bool _staffLogoutInProgress = false;
+  String? _staffLogoutRecordedFor;
 
   // Strictly dynamic lists synced from the Admin database (NEVER hardcoded)
   List<MenuItem> menu = [];
@@ -105,12 +105,18 @@ class PosController extends ChangeNotifier {
   }
 
   void _restoreActiveStaff() {
-    supabaseService.setPosApiToken(localStorage.getPosApiToken());
     final staffId = localStorage.getActiveStaffId();
-    if (staffId == null) return;
+    if (staffId == null) {
+      supabaseService.setPosApiToken(null);
+      return;
+    }
     final staff = staffUsers.where((user) => user.id == staffId).firstOrNull ??
         localStorage.getActiveStaffProfile();
-    if (staff == null || !staff.canUsePos) return;
+    if (staff == null || !staff.canLoginToPos) {
+      supabaseService.setPosApiToken(null);
+      return;
+    }
+    supabaseService.setPosApiToken(localStorage.getPosApiToken());
     currentUser = staff;
   }
 
@@ -121,28 +127,39 @@ class PosController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> recordCashierSessionEvent(StaffUser staff, String type) async {
-    if (!staff.canUsePos || (type != 'login' && type != 'logout')) {
-      return;
-    }
-    if (type == 'login') {
-      _cashierLogoutRecordedFor = null;
-      await _recordLoginActivity(staff, type, idPrefix: 'cashier');
+  Future<void> recordStaffSessionEvent(StaffUser staff, String type) async {
+    if (type != 'login' && type != 'logout') {
       return;
     }
 
-    if (_cashierLogoutInProgress || _cashierLogoutRecordedFor == staff.id) {
+    if (staff.canAccessBaristaShift) {
+      await punchShift(staff, type);
       return;
     }
-    _cashierLogoutInProgress = true;
-    _cashierLogoutRecordedFor = staff.id;
+    if (!staff.canLoginToPos) return;
+
+    if (type == 'login') {
+      _staffLogoutRecordedFor = null;
+      await _recordLoginActivity(
+        staff,
+        type,
+        idPrefix: staff.canUsePos ? 'cashier' : 'staff',
+      );
+      return;
+    }
+
+    if (_staffLogoutInProgress || _staffLogoutRecordedFor == staff.id) {
+      return;
+    }
+    _staffLogoutInProgress = true;
+    _staffLogoutRecordedFor = staff.id;
     try {
-      await _recordLoginActivity(staff, type, idPrefix: 'cashier');
+      await _recordLoginActivity(staff, type, idPrefix: 'staff');
     } catch (_) {
-      _cashierLogoutRecordedFor = null;
+      _staffLogoutRecordedFor = null;
       rethrow;
     } finally {
-      _cashierLogoutInProgress = false;
+      _staffLogoutInProgress = false;
     }
   }
 
@@ -178,6 +195,9 @@ class PosController extends ChangeNotifier {
       }
       tenderedAmount = (saved['tenderedAmount'] as num?)?.toDouble() ?? 0;
       discountAmount = (saved['discountAmount'] as num?)?.toDouble() ?? 0;
+      if (paymentMethod == 'cash' && tenderedAmount == 0 && cart.isNotEmpty) {
+        tenderedAmount = total;
+      }
       promoId = saved['promoId'] as String?;
       promoLabel = saved['promoLabel'] as String?;
       pendingCartVoidRequestId = saved['pendingVoidRequestId'] as String?;
@@ -379,6 +399,7 @@ class PosController extends ChangeNotifier {
       List<OrderAddonSelection> addons = const [],
       int qty = 1}) {
     if (isVoidRequestPending) return;
+    final previousTotal = total;
 
     final existingIndex = cart.indexWhere((line) {
       if (line.productId != product.id) return false;
@@ -406,7 +427,9 @@ class PosController extends ChangeNotifier {
         category: product.category,
       ));
     }
-    if (paymentMethod != 'cash') {
+    if (paymentMethod != 'cash' ||
+        tenderedAmount == 0 ||
+        tenderedAmount == previousTotal) {
       tenderedAmount = total;
     }
     _persistActiveCheckout();
@@ -514,7 +537,29 @@ class PosController extends ChangeNotifier {
       final deductions = syncService.buildDeductionsForOrder(order);
 
       // Push immediately to centralized database
-      final pushRes = await supabaseService.pushOrderAtomic(order, deductions);
+      final hasPosApiToken = supabaseService.hasPosApiToken;
+      final pushRes = !syncService.isOnline || !hasPosApiToken
+          ? {
+              'ok': false,
+              'error': !hasPosApiToken
+                  ? 'POS session required to sync this order.'
+                  : 'Device is offline.',
+              'retryable': !syncService.isOnline,
+            }
+          : await supabaseService.pushOrderAtomic(order, deductions);
+      final authRequired = !hasPosApiToken ||
+          pushRes['error']?.toString().contains('POS session expired.') == true;
+      final shouldQueueForRetry =
+          !syncService.isOnline || authRequired || pushRes['retryable'] == true;
+      if (pushRes['ok'] != true && !shouldQueueForRetry) {
+        isProcessing = false;
+        notifyListeners();
+        return {
+          'ok': false,
+          'error': pushRes['error']?.toString() ??
+              'The server did not save this order. Please retry.',
+        };
+      }
       if (pushRes['ok'] == true) {
         order.isSynced = true;
         if (pushRes['ticketNo'] != null &&
@@ -542,7 +587,7 @@ class PosController extends ChangeNotifier {
       clearCart();
       syncService.updatePendingCount();
       // Refresh full state from Admin backend
-      syncService.syncAll();
+      if (pushRes['ok'] == true) syncService.syncAll();
 
       isProcessing = false;
       notifyListeners();
@@ -550,6 +595,7 @@ class PosController extends ChangeNotifier {
         'ok': true,
         'order': order,
         'synced': pushRes['ok'] == true,
+        'networkFailure': !syncService.isOnline || pushRes['retryable'] == true,
         if (pushRes['ok'] != true)
           'syncError': pushRes['error']?.toString() ?? 'Unknown server error',
       };
@@ -638,22 +684,14 @@ class PosController extends ChangeNotifier {
         managerPassword.isEmpty) {
       manager = currentUser;
     } else {
-      final auth = await supabaseService.authenticateStaff(
+      manager = await authenticateStaffForPurpose(
         managerUsername.trim(),
         managerPassword,
-        persistSessionToken: false,
+        accepts: (staff) => staff.isManager,
       );
-      if (auth['ok'] != true) {
-        return {
-          'ok': false,
-          'error': auth['error'] ?? 'Manager approval required.'
-        };
-      }
-      final authenticated = auth['user'] as StaffUser;
-      if (!authenticated.isManager) {
+      if (manager == null) {
         return {'ok': false, 'error': 'Manager or Admin credentials required.'};
       }
-      manager = authenticated;
     }
 
     final now = ManilaTime.now();
@@ -677,17 +715,29 @@ class PosController extends ChangeNotifier {
       isSynced: false,
     );
 
-    final result = await supabaseService.pushOrderAtomic(
-      order,
-      const [],
-      managerUsername: managerUsername.trim(),
-      managerPassword: managerPassword,
-    );
-    if (result['ok'] != true) {
+    final result = syncService.isOnline
+        ? await supabaseService.pushOrderAtomic(
+            order,
+            const [],
+            managerUsername: manager.username,
+            managerPassword: managerPassword,
+          )
+        : {'ok': false, 'retryable': true};
+    if (result['ok'] != true && result['retryable'] != true) {
       return {
         'ok': false,
         'error': result['error'] ?? 'Unable to void checkout.'
       };
+    }
+
+    if (result['ok'] != true) {
+      await localStorage.addOrder(order);
+      orders.insert(0, order);
+      clearCart();
+      paymentMethod = 'cash';
+      syncService.updatePendingCount();
+      notifyListeners();
+      return {'ok': true, 'queued': true};
     }
 
     order.isSynced = true;
@@ -702,6 +752,43 @@ class PosController extends ChangeNotifier {
     await syncService.syncAll();
     notifyListeners();
     return {'ok': true};
+  }
+
+  Future<StaffUser?> authenticateStaffForPurpose(
+    String username,
+    String password, {
+    required bool Function(StaffUser staff) accepts,
+  }) async {
+    final auth = await supabaseService.authenticateStaff(
+      username,
+      password,
+      persistSessionToken: false,
+    );
+
+    if (auth['ok'] == true && auth['user'] is StaffUser) {
+      final staff = auth['user'] as StaffUser;
+      if (!accepts(staff)) return null;
+
+      await localStorage.saveOfflineStaffCredential(staff.id, password);
+      final cachedStaff = localStorage.getStaff()
+        ..removeWhere((cached) => cached.id == staff.id);
+      cachedStaff.insert(0, staff);
+      await localStorage.saveStaff(cachedStaff);
+      return staff;
+    }
+
+    if (auth['offline'] != true) return null;
+
+    final normalizedUsername = username.trim().toLowerCase();
+    final staff = localStorage.getStaff().where((cached) {
+      return cached.username.trim().toLowerCase() == normalizedUsername ||
+          cached.name.trim().toLowerCase() == normalizedUsername;
+    }).firstOrNull;
+    if (staff == null || !accepts(staff)) return null;
+
+    final savedPassword =
+        await localStorage.getOfflineStaffCredential(staff.id);
+    return savedPassword == password ? staff : null;
   }
 
   Future<Map<String, dynamic>> requestVoidApproval(

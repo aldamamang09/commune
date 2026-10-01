@@ -5,7 +5,8 @@ import '../theme.dart';
 
 class DrinkOptionsDialog extends StatefulWidget {
   final MenuItem item;
-  final Function(String? style, List<OrderAddonSelection> addons, int qty) onConfirm;
+  final Function(String? style, List<OrderAddonSelection> addons, int qty)
+      onConfirm;
 
   const DrinkOptionsDialog({
     super.key,
@@ -112,30 +113,32 @@ class _DrinkOptionsDialogState extends State<DrinkOptionsDialog> {
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 4),
                           child: OutlinedButton(
-                            onPressed: () => setState(() => _selectedStyle = style),
+                            onPressed: () =>
+                                setState(() => _selectedStyle = style),
                             style: OutlinedButton.styleFrom(
-                              backgroundColor: isSelected ? CommuneTheme.primary : Colors.transparent,
-                              foregroundColor: isSelected ? Colors.white : CommuneTheme.textMain,
-                              side: BorderSide(color: isSelected ? CommuneTheme.primary : CommuneTheme.border),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              backgroundColor: isSelected
+                                  ? CommuneTheme.primary
+                                  : Colors.transparent,
+                              foregroundColor: isSelected
+                                  ? Colors.white
+                                  : CommuneTheme.textMain,
+                              side: BorderSide(
+                                  color: isSelected
+                                      ? CommuneTheme.primary
+                                      : CommuneTheme.border),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(
-                                  style == 'hot' ? Icons.local_fire_department : Icons.ac_unit,
-                                  size: 16,
-                                  color: isSelected
-                                      ? Colors.white
-                                      : (style == 'hot' ? Colors.orange : Colors.blue),
-                                ),
-                                const SizedBox(width: 6),
                                 Flexible(
                                   child: Text(
                                     style.toUpperCase(),
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontWeight: FontWeight.w600),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w600),
                                   ),
                                 ),
                               ],
@@ -203,36 +206,46 @@ class _DrinkOptionsDialogState extends State<DrinkOptionsDialog> {
                                       onPressed: () {
                                         setState(() {
                                           if (currentQty > 1) {
-                                            _addonQuantities[addon.name] = currentQty - 1;
+                                            _addonQuantities[addon.name] =
+                                                currentQty - 1;
                                           } else {
                                             _addonQuantities.remove(addon.name);
                                           }
                                         });
                                       },
-                                      icon: const Icon(Icons.remove_circle_outline, size: 20),
+                                      icon: const Icon(
+                                          Icons.remove_circle_outline,
+                                          size: 20),
                                       padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                      constraints: const BoxConstraints(
+                                          minWidth: 28, minHeight: 28),
                                     ),
                                     Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 6),
                                       child: Text(
                                         '$currentQty',
-                                        style: const TextStyle(fontWeight: FontWeight.bold),
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.bold),
                                       ),
                                     ),
                                   ],
                                   IconButton(
                                     onPressed: () {
                                       setState(() {
-                                        final maxAllowed = addon.qtyEnabled ? addon.maxQty : 9;
+                                        final maxAllowed =
+                                            addon.qtyEnabled ? addon.maxQty : 9;
                                         if (currentQty < maxAllowed) {
-                                          _addonQuantities[addon.name] = currentQty + 1;
+                                          _addonQuantities[addon.name] =
+                                              currentQty + 1;
                                         }
                                       });
                                     },
-                                    icon: const Icon(Icons.add_circle_outline, size: 20),
+                                    icon: const Icon(Icons.add_circle_outline,
+                                        size: 20),
                                     padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                    constraints: const BoxConstraints(
+                                        minWidth: 28, minHeight: 28),
                                   ),
                                 ],
                               ),
@@ -253,18 +266,21 @@ class _DrinkOptionsDialogState extends State<DrinkOptionsDialog> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          onPressed: _qty > 1 ? () => setState(() => _qty--) : null,
+                          onPressed:
+                              _qty > 1 ? () => setState(() => _qty--) : null,
                           icon: const Icon(Icons.remove, size: 18),
                           style: IconButton.styleFrom(
                             backgroundColor: const Color(0xFFEEEEEE),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8)),
                           ),
                         ),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           child: Text(
                             '$_qty',
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold),
                           ),
                         ),
                         IconButton(
@@ -272,7 +288,8 @@ class _DrinkOptionsDialogState extends State<DrinkOptionsDialog> {
                           icon: const Icon(Icons.add, size: 18),
                           style: IconButton.styleFrom(
                             backgroundColor: const Color(0xFFEEEEEE),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8)),
                           ),
                         ),
                       ],
@@ -283,7 +300,9 @@ class _DrinkOptionsDialogState extends State<DrinkOptionsDialog> {
                         onPressed: () {
                           final addons = <OrderAddonSelection>[];
                           _addonQuantities.forEach((name, qty) {
-                            final addonDef = addonsList.where((a) => a.name == name).firstOrNull;
+                            final addonDef = addonsList
+                                .where((a) => a.name == name)
+                                .firstOrNull;
                             if (addonDef != null && qty > 0) {
                               addons.add(OrderAddonSelection(
                                 id: addonDef.id,
@@ -302,13 +321,16 @@ class _DrinkOptionsDialogState extends State<DrinkOptionsDialog> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: CommuneTheme.primary,
                           foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 14),
                         ),
                         child: Text(
                           'Add • ₱${totalPrice.toStringAsFixed(0)}',
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),

@@ -2,14 +2,15 @@ import 'package:flutter/material.dart';
 import '../../models/staff_user.dart';
 
 class BaristaShiftDialog extends StatefulWidget {
-  final List<StaffUser> staffUsers;
   final List<StaffUser> onShiftBaristas;
-  final Function(StaffUser staff, String type) onPunch;
+  final Future<StaffUser?> Function(String username, String password)
+      authenticateBarista;
+  final Future<void> Function(StaffUser staff, String type) onPunch;
 
   const BaristaShiftDialog({
     super.key,
-    required this.staffUsers,
     required this.onShiftBaristas,
+    required this.authenticateBarista,
     required this.onPunch,
   });
 
@@ -22,6 +23,7 @@ class _BaristaShiftDialogState extends State<BaristaShiftDialog> {
   final TextEditingController _passwordController = TextEditingController();
   StaffUser? _clockOutTarget;
   String? _error;
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -30,33 +32,43 @@ class _BaristaShiftDialogState extends State<BaristaShiftDialog> {
     super.dispose();
   }
 
-  StaffUser? _authenticatedBarista() {
-    final username = _usernameController.text.trim().toLowerCase();
-    final password = _passwordController.text;
-    return widget.staffUsers
-        .where((staff) =>
-            staff.username.trim().toLowerCase() == username &&
-            staff.canAccessBaristaShift &&
-            staff.password.isNotEmpty &&
-            staff.password == password)
-        .firstOrNull;
+  Future<StaffUser?> _authenticateBarista() async {
+    final staff = await widget.authenticateBarista(
+      _usernameController.text.trim(),
+      _passwordController.text,
+    );
+    return staff?.canAccessBaristaShift == true ? staff : null;
   }
 
-  void _handleClockIn() {
+  Future<void> _handleClockIn() async {
+    if (_isLoading) return;
     if (_usernameController.text.trim().isEmpty ||
         _passwordController.text.isEmpty) {
       setState(() => _error = 'Please enter both username and password');
       return;
     }
 
-    final staff = _authenticatedBarista();
-    if (staff == null) {
-      setState(() => _error = 'Use valid credentials for a Barista account.');
-      return;
-    }
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final staff = await _authenticateBarista();
+      if (staff == null) {
+        if (mounted) {
+          setState(
+              () => _error = 'Use valid credentials for a Barista account.');
+        }
+        return;
+      }
 
-    widget.onPunch(staff, 'login');
-    Navigator.pop(context);
+      await widget.onPunch(staff, 'login');
+      if (mounted) Navigator.pop(context);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   void _selectClockOutTarget(StaffUser barista) {
@@ -68,18 +80,32 @@ class _BaristaShiftDialogState extends State<BaristaShiftDialog> {
     });
   }
 
-  void _handleClockOut() {
+  Future<void> _handleClockOut() async {
+    if (_isLoading) return;
     final onShift = _clockOutTarget;
     if (onShift == null) return;
-    final staff = _authenticatedBarista();
-    if (staff == null || staff.id != onShift.id) {
-      setState(() => _error =
-          'Only the Barista on shift can clock out with their credentials.');
-      return;
-    }
 
-    widget.onPunch(staff, 'logout');
-    Navigator.pop(context);
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final staff = await _authenticateBarista();
+      if (staff == null || staff.id != onShift.id) {
+        if (mounted) {
+          setState(() => _error =
+              'Only the Barista on shift can clock out with their credentials.');
+        }
+        return;
+      }
+
+      await widget.onPunch(staff, 'logout');
+      if (mounted) Navigator.pop(context);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -187,9 +213,13 @@ class _BaristaShiftDialogState extends State<BaristaShiftDialog> {
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),
-                onSubmitted: (_) => _clockOutTarget == null
-                    ? _handleClockIn()
-                    : _handleClockOut(),
+                onSubmitted: (_) async {
+                  if (_clockOutTarget == null) {
+                    await _handleClockIn();
+                  } else {
+                    await _handleClockOut();
+                  }
+                },
               ),
               if (_error != null) ...[
                 const SizedBox(height: 10),
@@ -202,9 +232,15 @@ class _BaristaShiftDialogState extends State<BaristaShiftDialog> {
                 width: double.infinity,
                 height: 44,
                 child: ElevatedButton(
-                  onPressed: () => _clockOutTarget == null
-                      ? _handleClockIn()
-                      : _handleClockOut(),
+                  onPressed: _isLoading
+                      ? null
+                      : () {
+                          if (_clockOutTarget == null) {
+                            _handleClockIn();
+                          } else {
+                            _handleClockOut();
+                          }
+                        },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
                     foregroundColor: Colors.white,
@@ -212,8 +248,17 @@ class _BaristaShiftDialogState extends State<BaristaShiftDialog> {
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(22)),
                   ),
-                  child:
-                      Text(_clockOutTarget == null ? 'Clock in' : 'Clock out'),
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(
+                          _clockOutTarget == null ? 'Clock in' : 'Clock out'),
                 ),
               ),
             ],

@@ -5,6 +5,7 @@ import 'local_storage_service.dart';
 import 'supabase_service.dart';
 import '../models/menu_item.dart';
 import '../models/order.dart';
+import '../models/order_item.dart';
 import '../models/inventory_item.dart';
 import '../models/restock_record.dart';
 import '../models/staff_user.dart';
@@ -26,6 +27,7 @@ class SyncService extends ChangeNotifier {
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
   Timer? _periodicSyncTimer;
   Future<void>? _activeSyncFuture;
+  DateTime? _lastCredentialRefreshAttempt;
   VoidCallback? onSyncCompleted;
 
   SyncService({
@@ -87,9 +89,67 @@ class SyncService extends ChangeNotifier {
     }
   }
 
+  Future<bool> _ensurePosApiToken() async {
+    if (supabaseService.hasPosApiToken &&
+        !supabaseService.isPosApiTokenExpired) {
+      return true;
+    }
+
+    final activeStaff = localStorage.getActiveStaffProfile();
+    final candidates = <StaffUser>[];
+    if (activeStaff != null) candidates.add(activeStaff);
+    for (final activity in localStorage.getPendingLoginActivity()) {
+      if (activity.userId.isEmpty ||
+          candidates.any((staff) => staff.id == activity.userId)) {
+        continue;
+      }
+      candidates.add(StaffUser(
+        id: activity.userId,
+        username: activity.username,
+        password: '',
+        name: activity.name,
+        role: activity.role,
+      ));
+    }
+
+    for (final staff in candidates) {
+      final password = await localStorage.getOfflineStaffCredential(staff.id);
+      if (password == null || password.isEmpty) continue;
+
+      final now = DateTime.now();
+      if (_lastCredentialRefreshAttempt != null &&
+          now.difference(_lastCredentialRefreshAttempt!) <
+              const Duration(seconds: 30)) {
+        return false;
+      }
+      _lastCredentialRefreshAttempt = now;
+
+      final auth = await supabaseService.authenticateStaff(
+        staff.username,
+        password,
+        persistSessionToken: false,
+      );
+      if (auth['ok'] != true || auth['user'] is! StaffUser) continue;
+
+      final authenticatedStaff = auth['user'] as StaffUser;
+      final token = auth['token']?.toString() ?? '';
+      if (authenticatedStaff.id != staff.id || token.isEmpty) continue;
+
+      supabaseService.setPosApiToken(token);
+      if (activeStaff?.id == authenticatedStaff.id) {
+        await localStorage.saveActiveStaffSession(
+          authenticatedStaff,
+          posApiToken: token,
+        );
+      }
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _performSync() async {
-    if (!supabaseService.hasPosApiToken) {
-      status = SyncStatus.idle;
+    if (!isOnline || !await _ensurePosApiToken()) {
+      status = isOnline ? SyncStatus.idle : SyncStatus.offline;
       lastError = null;
       updatePendingCount();
       return;
@@ -112,8 +172,39 @@ class SyncService extends ChangeNotifier {
 
       final pendingOrders = localStorage.getPendingOrders();
       for (final order in pendingOrders) {
-        final deductions = buildDeductionsForOrder(order);
-        final result = await supabaseService.pushOrderAtomic(order, deductions);
+        String? managerUsername;
+        String? managerPassword;
+        if (order.voided) {
+          final manager = localStorage
+              .getStaff()
+              .where((staff) => staff.id == order.voidedBy)
+              .firstOrNull;
+          if (manager == null) {
+            debugPrint(
+              'Pending void sync skipped (${order.id}): manager account is not cached.',
+            );
+            continue;
+          }
+          managerPassword =
+              await localStorage.getOfflineStaffCredential(manager.id);
+          if (managerPassword == null || managerPassword.isEmpty) {
+            debugPrint(
+              'Pending void sync skipped (${order.id}): secure manager credential is unavailable.',
+            );
+            continue;
+          }
+          managerUsername = manager.username;
+        }
+
+        final deductions = order.voided
+            ? const <Map<String, dynamic>>[]
+            : buildDeductionsForOrder(order);
+        final result = await supabaseService.pushOrderAtomic(
+          order,
+          deductions,
+          managerUsername: managerUsername,
+          managerPassword: managerPassword,
+        );
         if (result['ok'] == true) {
           order.isSynced = true;
           if (result['ticketNo'] != null &&
@@ -122,6 +213,10 @@ class SyncService extends ChangeNotifier {
           }
           await localStorage.addOrder(order);
           await localStorage.removePendingOrder(order.id);
+        } else {
+          debugPrint(
+            'Pending order sync failed (${order.id}): ${result['error'] ?? 'Unknown server error'}',
+          );
         }
       }
 
@@ -249,6 +344,45 @@ class SyncService extends ChangeNotifier {
 
   /// Dynamically calculates ingredient deductions based strictly on Admin recipes, recipeCostings, costings, and addons
   List<Map<String, dynamic>> buildDeductionsForOrder(Order order) {
+    return buildDeductionsForItems(order.items);
+  }
+
+  List<Map<String, dynamic>> findStockShortfalls(List<OrderItem> items) {
+    final requiredByInventoryId = <String, double>{};
+    final itemDetails = <String, Map<String, String>>{};
+    for (final deduction in buildDeductionsForItems(items)) {
+      final id = deduction['inventoryItemId']?.toString() ?? '';
+      if (id.isEmpty) continue;
+      requiredByInventoryId.update(
+        id,
+        (amount) => amount + ((deduction['amount'] as num?)?.toDouble() ?? 0),
+        ifAbsent: () => (deduction['amount'] as num?)?.toDouble() ?? 0,
+      );
+      itemDetails[id] = {
+        'name': deduction['itemName']?.toString() ?? id,
+        'unit': deduction['unit']?.toString() ?? 'pcs',
+      };
+    }
+
+    final inventoryById = {
+      for (final item in localStorage.getInventory()) item.id: item,
+    };
+    return requiredByInventoryId.entries.where((entry) {
+      final stock = inventoryById[entry.key];
+      return stock != null && entry.value > stock.stock;
+    }).map((entry) {
+      final stock = inventoryById[entry.key]!;
+      final details = itemDetails[entry.key]!;
+      return {
+        'itemName': details['name'],
+        'required': entry.value,
+        'available': stock.stock,
+        'unit': details['unit'],
+      };
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> buildDeductionsForItems(List<OrderItem> items) {
     final deductions = <Map<String, dynamic>>[];
     final inventory = localStorage.getInventory();
     final recipesData = localStorage.getRecipesData();
@@ -270,7 +404,7 @@ class SyncService extends ChangeNotifier {
             .toList()
         : <Map<String, dynamic>>[];
 
-    for (final line in order.items) {
+    for (final line in items) {
       final menuItem = menu
           .where((m) =>
               m.id == line.productId ||

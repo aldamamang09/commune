@@ -27,10 +27,14 @@ void main() {
     );
 
     expect(cashier.canUsePos, isTrue);
+    expect(cashier.canLoginToPos, isTrue);
     expect(cashier.canAccessBaristaShift, isFalse);
     expect(manager.canUsePos, isFalse);
+    expect(manager.canLoginToPos, isFalse);
+    expect(manager.isManager, isTrue);
     expect(manager.canAccessBaristaShift, isFalse);
     expect(barista.canUsePos, isFalse);
+    expect(barista.canLoginToPos, isFalse);
     expect(barista.canAccessBaristaShift, isTrue);
   });
 

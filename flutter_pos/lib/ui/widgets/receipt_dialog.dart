@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import '../../manila_time.dart';
 import '../../models/menu_item.dart';
 import '../../models/order.dart';
 import '../../services/printer_service.dart';
@@ -59,26 +61,71 @@ class _ThermalSlip extends StatelessWidget {
   }
 }
 
-class ReceiptDialog extends StatelessWidget {
+class ReceiptDialog extends StatefulWidget {
   final Order order;
+  final List<Order> orders;
   final List<MenuItem> menu;
-  final Future<void> Function() onPrint;
+  final Future<void> Function(Order order) onPrint;
 
   const ReceiptDialog({
     super.key,
     required this.order,
+    required this.orders,
     required this.menu,
     required this.onPrint,
   });
 
   @override
+  State<ReceiptDialog> createState() => _ReceiptDialogState();
+}
+
+class _ReceiptDialogState extends State<ReceiptDialog> {
+  late String _selectedOrderId;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedOrderId = widget.order.id;
+  }
+
+  List<Order> get _completedOrders {
+    final byId = <String, Order>{
+      for (final order in widget.orders)
+        if (!order.voided) order.id: order,
+    };
+    if (!widget.order.voided) byId[widget.order.id] = widget.order;
+    return byId.values.toList()
+      ..sort((a, b) => (ManilaTime.parse(b.createdAt) ?? DateTime(0)).compareTo(
+            ManilaTime.parse(a.createdAt) ?? DateTime(0),
+          ));
+  }
+
+  String _orderOptionLabel(Order order) {
+    final ticket = order.ticketNo.trim();
+    final ticketLabel = ticket.isEmpty
+        ? order.id
+        : ticket.startsWith('#')
+            ? ticket
+            : '#$ticket';
+    final date = ManilaTime.parse(order.createdAt) ?? DateTime.now();
+    return '$ticketLabel · ${DateFormat('MMM d, yyyy, h:mm a').format(date)} · ₱${order.total.toStringAsFixed(0)}';
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final receiptText = PrinterService.formatReceipt(order);
-    final labelItemIndexes = PrinterService.cupLabelItemIndexes(order, menu);
+    final completedOrders = _completedOrders;
+    final selectedOrder = completedOrders
+            .where((order) => order.id == _selectedOrderId)
+            .firstOrNull ??
+        widget.order;
+    final receiptText = PrinterService.formatReceipt(selectedOrder);
+    final labelItemIndexes =
+        PrinterService.cupLabelItemIndexes(selectedOrder, widget.menu);
 
     return Dialog(
       insetPadding: const EdgeInsets.all(16),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(24))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(24))),
       backgroundColor: const Color(0xFFE5E5E5),
       child: Container(
         width: 820,
@@ -123,6 +170,54 @@ class ReceiptDialog extends StatelessWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Completed order',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: CommuneTheme.textMuted,
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String>(
+              initialValue: _selectedOrderId,
+              isExpanded: true,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: CommuneTheme.border),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: CommuneTheme.border),
+                ),
+              ),
+              items: completedOrders
+                  .map(
+                    (order) => DropdownMenuItem<String>(
+                      value: order.id,
+                      child: Text(
+                        _orderOptionLabel(order),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (orderId) {
+                if (orderId != null) {
+                  setState(() => _selectedOrderId = orderId);
+                }
+              },
+            ),
             const SizedBox(height: 14),
             Flexible(
               child: SingleChildScrollView(
@@ -142,7 +237,8 @@ class ReceiptDialog extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
                                   const Text(
                                     'Customer receipt',
@@ -153,7 +249,8 @@ class ReceiptDialog extends StatelessWidget {
                                     ),
                                   ),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
                                     decoration: BoxDecoration(
                                       color: const Color(0xFFDCFCE7),
                                       borderRadius: BorderRadius.circular(999),
@@ -169,14 +266,14 @@ class ReceiptDialog extends StatelessWidget {
                                   ),
                                 ],
                               ),
-                                const SizedBox(height: 10),
-                                Center(
-                                  child: _ThermalSlip(
-                                    title: 'Customer copy',
-                                    content: receiptText,
-                                    width: 236,
-                                  ),
+                              const SizedBox(height: 10),
+                              Center(
+                                child: _ThermalSlip(
+                                  title: 'Customer copy',
+                                  content: receiptText,
+                                  width: 236,
                                 ),
+                              ),
                             ],
                           ),
                         ),
@@ -193,7 +290,8 @@ class ReceiptDialog extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
                                   const Text(
                                     'Cup labels',
@@ -204,7 +302,8 @@ class ReceiptDialog extends StatelessWidget {
                                     ),
                                   ),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
                                     decoration: BoxDecoration(
                                       color: const Color(0xFFDBEAFE),
                                       borderRadius: BorderRadius.circular(999),
@@ -238,12 +337,13 @@ class ReceiptDialog extends StatelessWidget {
                                 for (var labelIndex = 0;
                                     labelIndex < labelItemIndexes.length;
                                     labelIndex++) ...[
-                                  if (labelIndex > 0) const SizedBox(height: 16),
+                                  if (labelIndex > 0)
+                                    const SizedBox(height: 16),
                                   Center(
                                     child: _ThermalSlip(
                                       title: 'Label ${labelIndex + 1}',
                                       content: PrinterService.formatCupLabel(
-                                        order,
+                                        selectedOrder,
                                         labelItemIndexes[labelIndex],
                                       ),
                                       width: 236,
@@ -268,7 +368,8 @@ class ReceiptDialog extends StatelessWidget {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: CommuneTheme.primary,
                       side: const BorderSide(color: CommuneTheme.border),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                     child: const Text('Close'),
@@ -277,13 +378,14 @@ class ReceiptDialog extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: () async => onPrint(),
+                    onPressed: () async => widget.onPrint(selectedOrder),
                     icon: const Icon(Icons.print_outlined, size: 18),
                     label: const Text('Print order'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: CommuneTheme.primary,
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                   ),

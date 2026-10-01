@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../models/staff_user.dart';
 import '../../state/pos_controller.dart';
-import '../theme.dart';
 import 'pos_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -55,33 +54,31 @@ class _LoginScreenState extends State<LoginScreen> {
       _errorMessage = null;
     });
 
+    final cachedStaffProfile =
+        widget.controller.localStorage.getActiveStaffProfile();
+    final cachedPosApiToken = widget.controller.localStorage.getPosApiToken();
+    widget.controller.supabaseService.setPosApiToken(null);
+
     StaffUser? authenticatedStaff;
 
-    // 1. Authenticate directly against centralized Supabase database
+    // 1. Authenticate through the POS API without persisting a token yet.
     final authRes = await widget.controller.supabaseService
-        .authenticateStaff(username, password);
+        .authenticateStaff(username, password, persistSessionToken: false);
     if (authRes['ok'] == true && authRes['user'] is StaffUser) {
       authenticatedStaff = authRes['user'] as StaffUser;
-      await widget.controller.localStorage.saveActiveStaffSession(
-        authenticatedStaff,
-        posApiToken: authRes['token'] as String?,
-      );
-      await widget.controller.syncService.syncAll();
-      await widget.controller.init();
-    } else {
-      // 2. Fallback to synced local staff cache if offline
-      await widget.controller.syncService.syncAll();
-      await widget.controller.init();
+    } else if (authRes['offline'] == true) {
+      // Use only credentials previously validated online, and only on network failure.
       final staffList = widget.controller.localStorage.getStaff();
       final matched = staffList
           .where((u) =>
               u.username.trim().toLowerCase() == username ||
               u.name.trim().toLowerCase() == username)
           .firstOrNull;
-      if (matched != null &&
-          (matched.password == password ||
-              matched.password.trim() == password.trim()) &&
-          matched.password.isNotEmpty) {
+      final savedPassword = matched == null
+          ? null
+          : await widget.controller.localStorage
+              .getOfflineStaffCredential(matched.id);
+      if (matched != null && savedPassword == password) {
         authenticatedStaff = matched;
       }
     }
@@ -95,22 +92,42 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    if (!authenticatedStaff.canUsePos) {
+    if (!authenticatedStaff.canLoginToPos) {
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Only Cashier accounts can open the POS terminal.';
+        _errorMessage = 'This account cannot log in to the POS app.';
       });
       return;
     }
 
+    if (authRes['ok'] == true) {
+      await widget.controller.localStorage
+          .saveOfflineStaffCredential(authenticatedStaff.id, password);
+    }
+
+    final authenticatedToken = authRes['token']?.toString();
+    final canReuseCachedToken = cachedStaffProfile?.id == authenticatedStaff.id;
+    final posApiToken =
+        authenticatedToken != null && authenticatedToken.isNotEmpty
+            ? authenticatedToken
+            : canReuseCachedToken
+                ? cachedPosApiToken
+                : null;
+
+    await widget.controller.localStorage.clearActiveStaffId();
     await widget.controller.localStorage.saveActiveStaffSession(
       authenticatedStaff,
-      posApiToken: authRes['token'] as String?,
+      posApiToken: posApiToken,
     );
+    widget.controller.supabaseService.setPosApiToken(posApiToken);
+    if (authenticatedToken != null && authenticatedToken.isNotEmpty) {
+      await widget.controller.syncService.syncAll();
+      await widget.controller.init();
+    }
     widget.controller.currentUser = authenticatedStaff;
     widget.controller.isPosOpen = true;
     await widget.controller
-        .recordCashierSessionEvent(authenticatedStaff, 'login');
+        .recordStaffSessionEvent(authenticatedStaff, 'login');
 
     setState(() => _isLoading = false);
 
@@ -126,130 +143,161 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(32),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: const [
-                  BoxShadow(
-                      color: Colors.black26,
-                      blurRadius: 30,
-                      offset: Offset(0, 10)),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: const BoxDecoration(
-                      color: CommuneTheme.primary,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'c',
-                        style: TextStyle(
+      backgroundColor: Colors.black,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.asset(
+            'lib/src/images/hero-wide.jpg',
+            fit: BoxFit.cover,
+          ),
+          const ColoredBox(color: Color.fromRGBO(0, 0, 0, 0.68)),
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 110,
+                          height: 110,
+                          decoration: const BoxDecoration(
                             color: Colors.white,
-                            fontSize: 32,
-                            fontWeight: FontWeight.bold),
+                            shape: BoxShape.circle,
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: Image.asset(
+                            'lib/src/images/favicon.png',
+                            fit: BoxFit.cover,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    'commune',
-                    style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: -0.5),
-                  ),
-                  const Text(
-                    'POS Terminal • Live Admin Sync',
-                    style:
-                        TextStyle(fontSize: 12, color: CommuneTheme.textMuted),
-                  ),
-                  const SizedBox(height: 28),
-                  TextField(
-                    controller: _usernameController,
-                    decoration: InputDecoration(
-                      labelText: 'Username',
-                      hintText: 'Cashier username',
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 14),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _passwordController,
-                    obscureText: true,
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 14),
-                    ),
-                    onSubmitted: (_) => _handleLogin(),
-                  ),
-                  if (_errorMessage != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      _errorMessage!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                          color: CommuneTheme.voidRed, fontSize: 12),
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _isLoading ? null : _handleLogin,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: CommuneTheme.primary,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      const SizedBox(height: 14),
+                      const Text(
+                        'WE COMMUNE, OVER COFFEE',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: 3,
+                        ),
                       ),
-                      child: _isLoading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: Colors.white),
-                            )
-                          : const Text(
-                              'Open POS Terminal',
-                              style: TextStyle(
-                                  fontSize: 15, fontWeight: FontWeight.bold),
-                            ),
-                    ),
+                      const SizedBox(height: 26),
+                      const Text(
+                        'CASHIER LOGIN',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 3,
+                        ),
+                      ),
+                      const SizedBox(height: 42),
+                      const Text(
+                        'USERNAME',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _usernameController,
+                        style: const TextStyle(color: Colors.white),
+                        cursorColor: Colors.white,
+                        decoration: _inputDecoration(),
+                      ),
+                      const SizedBox(height: 28),
+                      const Text(
+                        'PASSWORD',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _passwordController,
+                        obscureText: true,
+                        style: const TextStyle(color: Colors.white),
+                        cursorColor: Colors.white,
+                        decoration: _inputDecoration(),
+                        onSubmitted: (_) => _handleLogin(),
+                      ),
+                      if (_errorMessage != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          _errorMessage!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Color(0xFFFFAAA5),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 28),
+                      SizedBox(
+                        height: 50,
+                        child: ElevatedButton(
+                          onPressed: _isLoading ? null : _handleLogin,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: Colors.black,
+                            disabledBackgroundColor: Colors.white70,
+                            shape: const StadiumBorder(),
+                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.black,
+                                  ),
+                                )
+                              : const Text(
+                                  'Enter commune',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Real-time auto-sync with Admin Panel database',
-                    textAlign: TextAlign.center,
-                    style:
-                        TextStyle(fontSize: 11, color: CommuneTheme.textMuted),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
+        ],
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration() {
+    return const InputDecoration(
+      filled: true,
+      fillColor: Color.fromRGBO(255, 255, 255, 0.04),
+      contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      enabledBorder: OutlineInputBorder(
+        borderSide: BorderSide(color: Colors.white54),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderSide: BorderSide(color: Colors.white, width: 1.4),
+      ),
+      border: OutlineInputBorder(
+        borderSide: BorderSide(color: Colors.white54),
       ),
     );
   }

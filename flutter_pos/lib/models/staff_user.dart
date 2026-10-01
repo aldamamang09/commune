@@ -16,6 +16,7 @@ class StaffUser {
   });
 
   bool get canUsePos => role == 'cashier';
+  bool get canLoginToPos => canUsePos;
   bool get canAccessBaristaShift => role == 'barista';
   bool get isManager => role == 'manager' || role == 'admin';
 
@@ -65,7 +66,6 @@ class StaffUser {
   Map<String, dynamic> toJson() => {
         'id': id,
         'username': username,
-        'password': password,
         'name': name,
         'role': role,
         'title': title,

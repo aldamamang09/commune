@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 enum PosSection { terminal, stock, restock }
 
@@ -52,25 +53,40 @@ class PosNavigationDrawer extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(20, 48, 20, 20),
               color: Colors.black,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  const Text(
-                    'commune.',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'commune.',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          'Cashier: $cashierName',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  Text(
-                    'Cashier: $cashierName',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
+                  TextButton.icon(
+                    onPressed: canLogout ? onLogout : null,
+                    icon: const Icon(Icons.logout, size: 18),
+                    label: const Text('Logout'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      disabledForegroundColor: Colors.white54,
                     ),
                   ),
                 ],
@@ -143,25 +159,36 @@ class PosNavigationDrawer extends StatelessWidget {
               ),
             ),
             const Divider(height: 1),
-            ListTile(
-              enabled: canLogout,
-              leading: Icon(
-                Icons.logout,
-                color: canLogout
-                    ? const Color(0xFFDC2626)
-                    : const Color(0xFF9CA3AF),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  Image.asset(
+                    'lib/src/images/synorra.jpg',
+                    width: 68,
+                    height: 40,
+                    fit: BoxFit.contain,
+                  ),
+                  const SizedBox(width: 12),
+                  InkWell(
+                    onTap: () => launchUrl(
+                      Uri.parse('https://synnora.vercel.app/'),
+                      mode: LaunchMode.externalApplication,
+                    ),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 10),
+                      child: Text(
+                        'Contact Developer',
+                        style: TextStyle(
+                          color: Color(0xFF374151),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              title: Text(
-                'Logout',
-                style: TextStyle(
-                    color: canLogout
-                        ? const Color(0xFFDC2626)
-                        : const Color(0xFF9CA3AF)),
-              ),
-              subtitle: canLogout ? null : Text(logoutDisabledMessage),
-              onTap: canLogout ? () => _closeThen(context, onLogout) : null,
             ),
-            const SizedBox(height: 8),
           ],
         ),
       ),

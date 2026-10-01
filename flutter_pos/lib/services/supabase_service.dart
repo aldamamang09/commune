@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -17,6 +18,21 @@ class SupabaseService {
   bool get isInitialized => true;
   String? get activeAdminApiUrl => _activeAdminApiUrl;
   bool get hasPosApiToken => _posApiToken?.isNotEmpty == true;
+  bool get isPosApiTokenExpired {
+    final token = _posApiToken;
+    if (token == null || token.isEmpty) return true;
+    try {
+      final payload = token.split('.').first;
+      final decoded = jsonDecode(
+        utf8.decode(base64Url.decode(base64Url.normalize(payload))),
+      ) as Map;
+      final expiry = decoded['exp'];
+      return expiry is! num ||
+          expiry <= DateTime.now().millisecondsSinceEpoch / 1000;
+    } catch (_) {
+      return true;
+    }
+  }
 
   void setPosApiToken(String? token) {
     _posApiToken = token;
@@ -142,6 +158,20 @@ class SupabaseService {
         'user': StaffUser.fromJson(
             Map<String, dynamic>.from(result['user'] as Map)),
         'token': token,
+      };
+    } on TimeoutException catch (e) {
+      debugPrint('POS API auth network error: $e');
+      return {
+        'ok': false,
+        'error': 'Unable to verify credentials while offline',
+        'offline': true,
+      };
+    } on http.ClientException catch (e) {
+      debugPrint('POS API auth network error: $e');
+      return {
+        'ok': false,
+        'error': 'Unable to verify credentials while offline',
+        'offline': true,
       };
     } catch (e) {
       debugPrint('POS API auth error: $e');
@@ -513,10 +543,12 @@ class SupabaseService {
       };
     } catch (e) {
       final msg = e.toString();
-      if (msg.contains('duplicate key') || msg.contains('already exists')) {
-        return {'ok': true, 'ticketNo': order.ticketNo};
-      }
-      return {'ok': false, 'error': msg};
+      debugPrint('POS API order sync failed (${order.id}): $msg');
+      return {
+        'ok': false,
+        'error': msg,
+        'retryable': e is http.ClientException || e is TimeoutException,
+      };
     }
   }
 

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../models/menu_item.dart';
 import '../../models/order.dart';
+import '../../models/staff_user.dart';
 import '../../services/sync_service.dart';
 import '../../state/pos_controller.dart';
 import '../widgets/product_card.dart';
@@ -134,7 +136,11 @@ class _PosScreenState extends State<PosScreen> {
               await widget.controller.voidCheckout(reason, username, password);
           if (res['ok'] == true && mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Checkout voided.')),
+              SnackBar(
+                content: Text(res['queued'] == true
+                    ? 'Void saved offline and will sync when online.'
+                    : 'Checkout voided.'),
+              ),
             );
           }
           return res;
@@ -175,8 +181,9 @@ class _PosScreenState extends State<PosScreen> {
       context: context,
       builder: (_) => ReceiptDialog(
         order: order,
+        orders: widget.controller.orders,
         menu: widget.controller.menu,
-        onPrint: () => _printOrder(order),
+        onPrint: _printOrder,
       ),
     );
   }
@@ -185,10 +192,17 @@ class _PosScreenState extends State<PosScreen> {
     showDialog(
       context: context,
       builder: (_) => BaristaShiftDialog(
-        staffUsers: widget.controller.staffUsers,
         onShiftBaristas: widget.controller.onShiftBaristas,
-        onPunch: (staff, type) {
-          widget.controller.punchShift(staff, type);
+        authenticateBarista: (username, password) async {
+          return widget.controller.authenticateStaffForPurpose(
+            username,
+            password,
+            accepts: (staff) => staff.canAccessBaristaShift,
+          );
+        },
+        onPunch: (staff, type) async {
+          await widget.controller.punchShift(staff, type);
+          if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
                 content: Text(
@@ -200,10 +214,53 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Future<void> _handleProceedOrder() async {
-    final res = await widget.controller.proceedOrder();
+    final controller = widget.controller;
+    final stockShortfalls =
+        controller.syncService.findStockShortfalls(controller.cart);
+    if (stockShortfalls.isNotEmpty) {
+      final number = NumberFormat('0.##');
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Low stock warning'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                const Text('The following items do not have enough stock:'),
+                const SizedBox(height: 8),
+                for (final item in stockShortfalls)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      '${item['itemName']}: ${number.format(item['required'])} '
+                      '${item['unit']} required, '
+                      '${number.format(item['available'])} available',
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final wasOffline = !controller.syncService.isOnline;
+    final res = await controller.proceedOrder();
+    final offline = wasOffline ||
+        !controller.syncService.isOnline ||
+        res['networkFailure'] == true;
     if (res['ok'] == true && mounted) {
       final order = res['order'] as Order;
-      if (res['synced'] != true) {
+      if (res['synced'] != true && !offline) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -214,7 +271,7 @@ class _PosScreenState extends State<PosScreen> {
         );
       }
       _openReceiptDialog(order);
-    } else if (mounted) {
+    } else if (mounted && !offline) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Checkout failed: ${res['error']}')),
       );
@@ -222,6 +279,7 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   void _openMobileCartSheet() {
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -249,6 +307,7 @@ class _PosScreenState extends State<PosScreen> {
               child: CartPanel(
                 controller: widget.controller,
                 isFullWidth: true,
+                isKeyboardOpen: keyboardOpen,
                 onProceedOrder: () async {
                   Navigator.pop(ctx);
                   await _handleProceedOrder();
@@ -329,7 +388,7 @@ class _PosScreenState extends State<PosScreen> {
     final cashier = widget.controller.currentUser;
     try {
       if (cashier != null) {
-        await widget.controller.recordCashierSessionEvent(cashier, 'logout');
+        await widget.controller.recordStaffSessionEvent(cashier, 'logout');
       }
       await widget.controller.clearActiveSession();
       if (!mounted) return;
@@ -433,26 +492,42 @@ class _PosScreenState extends State<PosScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.fromLTRB(20, 48, 20, 20),
                 color: Colors.black,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    const Text(
-                      'commune.',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: -0.5,
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'commune.',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          Text(
+                            'Cashier: ${controller.currentUser?.name ?? 'Cashier'}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    Text(
-                      'Cashier: ${controller.currentUser?.name ?? 'Cashier'}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500),
+                    TextButton.icon(
+                      onPressed: canLogout ? () => _handleLogout() : null,
+                      icon: const Icon(Icons.logout, size: 18),
+                      label: const Text('Logout'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        disabledForegroundColor: Colors.white54,
+                      ),
                     ),
                   ],
                 ),
@@ -538,55 +613,37 @@ class _PosScreenState extends State<PosScreen> {
                 ),
               ),
               const Divider(height: 1),
-              ListTile(
-                enabled: canLogout,
-                leading: Icon(
-                  Icons.logout,
-                  color: canLogout
-                      ? const Color(0xFFDC2626)
-                      : CommuneTheme.textMuted,
-                ),
-                title: Text(
-                  'Logout',
-                  style: TextStyle(
-                    color: canLogout
-                        ? const Color(0xFFDC2626)
-                        : CommuneTheme.textMuted,
-                  ),
-                ),
-                subtitle: canLogout
-                    ? null
-                    : Text(
-                        controller.isVoidRequestPending
-                            ? 'Wait for void approval first'
-                            : 'Clear checkout first',
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    Image.asset(
+                      'lib/src/images/synorra.jpg',
+                      width: 68,
+                      height: 40,
+                      fit: BoxFit.contain,
+                    ),
+                    const SizedBox(width: 12),
+                    InkWell(
+                      onTap: () => launchUrl(
+                        Uri.parse('https://synnora.vercel.app/'),
+                        mode: LaunchMode.externalApplication,
                       ),
-                onTap: canLogout
-                    ? () async {
-                        setState(() => _isLoggingOut = true);
-                        final cashier = controller.currentUser;
-                        try {
-                          if (cashier != null) {
-                            await controller.recordCashierSessionEvent(
-                                cashier, 'logout');
-                          }
-                          await controller.clearActiveSession();
-                          if (!context.mounted) return;
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) =>
-                                    LoginScreen(controller: controller)),
-                          );
-                        } finally {
-                          if (mounted) {
-                            setState(() => _isLoggingOut = false);
-                          }
-                        }
-                      }
-                    : null,
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 10),
+                        child: Text(
+                          'Contact Developer',
+                          style: TextStyle(
+                            color: Color(0xFF374151),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 8),
             ],
           ),
         ),
@@ -827,6 +884,7 @@ class _PosScreenState extends State<PosScreen> {
                 child: CartPanel(
                   panelWidth: checkoutPanelWidth,
                   controller: controller,
+                  isKeyboardOpen: keyboardOpen,
                   onProceedOrder: _handleProceedOrder,
                   onVoid: _openVoidDialog,
                   onPrint: () => _openReceiptDialog(),

@@ -10,8 +10,15 @@ import '../models/restock_record.dart';
 import '../models/staff_user.dart';
 import '../models/login_activity.dart';
 import '../models/print_job.dart';
+import 'offline_credential_store.dart';
 
 class LocalStorageService {
+  final OfflineCredentialStore _offlineCredentialStore;
+
+  LocalStorageService({OfflineCredentialStore? offlineCredentialStore})
+      : _offlineCredentialStore =
+            offlineCredentialStore ?? SecureOfflineCredentialStore();
+
   // Versioned cache keys so legacy hardcoded seed data is never loaded
   static const String _keyMenu = 'v2_cache_menu_items';
   static const String _keyCategories = 'v2_cache_categories';
@@ -46,6 +53,14 @@ class LocalStorageService {
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
+    await _removeLegacyCachedStaffPasswords();
+  }
+
+  Future<void> _removeLegacyCachedStaffPasswords() async {
+    final staff = getStaff();
+    if (staff.any((user) => user.password.isNotEmpty)) {
+      await saveStaff(staff);
+    }
   }
 
   String? getActiveStaffId() => _prefs.getString(_keyActiveStaffId);
@@ -63,6 +78,18 @@ class LocalStorageService {
   }
 
   String? getPosApiToken() => _prefs.getString(_keyPosApiToken);
+
+  Future<void> saveOfflineStaffCredential(
+    String staffId,
+    String password,
+  ) =>
+      _offlineCredentialStore.save(staffId: staffId, password: password);
+
+  Future<String?> getOfflineStaffCredential(String staffId) =>
+      _offlineCredentialStore.read(staffId: staffId);
+
+  Future<void> removeOfflineStaffCredential(String staffId) =>
+      _offlineCredentialStore.remove(staffId: staffId);
 
   Future<void> saveActiveStaffSession(
     StaffUser staff, {
