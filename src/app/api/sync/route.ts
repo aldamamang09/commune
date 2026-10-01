@@ -240,11 +240,25 @@ export async function POST(req: NextRequest) {
       }
 
       const orderItems = orderItemsFromApi(rawOrder.items);
+      const requestedCashierId = String(rawOrder.baristaUserId ?? '').trim();
+      const requestedCashier = store.users.find((user) => {
+        if (user.id !== requestedCashierId) return false;
+        const role = parseRole(String(user.title ?? ''), user.role);
+        return ['cashier', 'manager', 'admin'].includes(role);
+      });
+      if (requestedCashierId && !requestedCashier) {
+        return NextResponse.json(
+          { ok: false, error: "The cashier for this order could not be verified." },
+          { status: 400, headers: corsHeaders },
+        );
+      }
+      const cashierNameSnapshot = String(rawOrder.baristaName ?? '').trim();
 
       const order: Order = {
         id: String(rawOrder.id || `ord-${Date.now()}`),
         createdAt,
-        baristaName: claims.name,
+        baristaName: requestedCashier?.name ?? (cashierNameSnapshot || claims.name),
+        baristaUserId: requestedCashier?.id,
         items: orderItems,
         subtotal: Number(rawOrder.subtotal) || 0,
         discount: Number(rawOrder.discount) || 0,
@@ -362,10 +376,24 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      const requestedCashierId = String(rawOrder.baristaUserId ?? '').trim();
+      const requestedCashier = store.users.find((user) => {
+        if (user.id !== requestedCashierId) return false;
+        const role = parseRole(String(user.title ?? ''), user.role);
+        return ['cashier', 'manager', 'admin'].includes(role);
+      });
+      if (requestedCashierId && !requestedCashier) {
+        return NextResponse.json(
+          { ok: false, error: "The cashier for this order could not be verified." },
+          { status: 400, headers: corsHeaders },
+        );
+      }
+      const cashierNameSnapshot = String(rawOrder.baristaName ?? '').trim();
       const order: Order = {
         id: orderId || `ord-${Date.now()}`,
         createdAt,
-        baristaName: claims.name,
+        baristaName: requestedCashier?.name ?? (cashierNameSnapshot || claims.name),
+        baristaUserId: requestedCashier?.id,
         items,
         subtotal: Number(rawOrder.subtotal) || 0,
         discount: Number(rawOrder.discount) || 0,

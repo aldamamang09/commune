@@ -56,6 +56,7 @@ export type Order = {
   id: string;
   createdAt: string;
   baristaName: string;
+  baristaUserId?: string;
   items: OrderItem[];
   total: number;
   subtotal?: number;

@@ -380,6 +380,7 @@ export async function createOrder(
     id: orderId,
     createdAt,
     baristaName: session.name,
+    baristaUserId: session.userId,
     items: priced,
     subtotal,
     discount,
