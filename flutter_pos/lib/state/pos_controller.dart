@@ -504,6 +504,7 @@ class PosController extends ChangeNotifier {
 
     try {
       final now = ManilaTime.now();
+      final createdAt = ManilaTime.utcIsoFromManilaWallTime(now);
       final orderId = 'ord-${now.millisecondsSinceEpoch}';
 
       final existingTodayCount = orders.where((o) {
@@ -518,7 +519,7 @@ class PosController extends ChangeNotifier {
 
       final order = Order(
         id: orderId,
-        createdAt: ManilaTime.utcNowIso8601(),
+        createdAt: createdAt,
         baristaName: currentBaristaName,
         baristaUserId: currentBaristaUserId,
         items: List.from(cart),
@@ -537,7 +538,8 @@ class PosController extends ChangeNotifier {
       final deductions = syncService.buildDeductionsForOrder(order);
 
       // Push immediately to centralized database
-      final hasPosApiToken = supabaseService.hasPosApiToken;
+      final hasPosApiToken = syncService.isOnline &&
+          await syncService.ensurePosApiToken(forceRefresh: true);
       final pushRes = !syncService.isOnline || !hasPosApiToken
           ? {
               'ok': false,
@@ -695,9 +697,10 @@ class PosController extends ChangeNotifier {
     }
 
     final now = ManilaTime.now();
+    final createdAt = ManilaTime.utcIsoFromManilaWallTime(now);
     final order = Order(
       id: 'ord-${now.millisecondsSinceEpoch}',
-      createdAt: ManilaTime.utcNowIso8601(),
+      createdAt: createdAt,
       baristaName: currentBaristaName,
       baristaUserId: currentBaristaUserId,
       items: List<OrderItem>.from(cart),
@@ -777,7 +780,7 @@ class PosController extends ChangeNotifier {
       return staff;
     }
 
-    if (auth['offline'] != true) return null;
+    if (auth['offline'] != true || syncService.isOnline) return null;
 
     final normalizedUsername = username.trim().toLowerCase();
     final staff = localStorage.getStaff().where((cached) {
@@ -785,6 +788,24 @@ class PosController extends ChangeNotifier {
           cached.name.trim().toLowerCase() == normalizedUsername;
     }).firstOrNull;
     if (staff == null || !accepts(staff)) return null;
+
+    final savedPassword =
+        await localStorage.getOfflineStaffCredential(staff.id);
+    return savedPassword == password ? staff : null;
+  }
+
+  Future<StaffUser?> authenticateCachedStaffOffline(
+    String username,
+    String password,
+  ) async {
+    if (syncService.isOnline) return null;
+
+    final normalizedUsername = username.trim().toLowerCase();
+    final staff = localStorage.getStaff().where((cached) {
+      return cached.username.trim().toLowerCase() == normalizedUsername ||
+          cached.name.trim().toLowerCase() == normalizedUsername;
+    }).firstOrNull;
+    if (staff == null) return null;
 
     final savedPassword =
         await localStorage.getOfflineStaffCredential(staff.id);

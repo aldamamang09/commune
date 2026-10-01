@@ -107,6 +107,7 @@ void main() {
 
     final api = _StubSupabaseService({'ok': false, 'offline': true});
     final sync = SyncService(localStorage: storage, supabaseService: api);
+    sync.isOnline = false;
     final controller = PosController(
       localStorage: storage,
       supabaseService: api,
@@ -178,6 +179,45 @@ void main() {
       'barista-pass',
     );
     expect(storage.getStaff().single.password, isEmpty);
+
+    controller.dispose();
+    sync.dispose();
+  });
+
+  test('cached staff password is only accepted when the device is offline',
+      () async {
+    final credentials = _MemoryOfflineCredentialStore();
+    final storage = LocalStorageService(offlineCredentialStore: credentials);
+    await storage.init();
+    const staff = StaffUser(
+      id: 'staff-1',
+      username: 'rey',
+      password: '',
+      name: 'Rey',
+      role: 'cashier',
+    );
+    await storage.saveStaff([staff]);
+    await storage.saveOfflineStaffCredential(staff.id, '1234');
+
+    final api = _StubSupabaseService({'ok': false, 'offline': true});
+    final sync = SyncService(localStorage: storage, supabaseService: api);
+    final controller = PosController(
+      localStorage: storage,
+      supabaseService: api,
+      syncService: sync,
+    );
+
+    sync.isOnline = true;
+    expect(
+      await controller.authenticateCachedStaffOffline('rey', '1234'),
+      isNull,
+    );
+
+    sync.isOnline = false;
+    expect(
+      (await controller.authenticateCachedStaffOffline('rey', '1234'))?.id,
+      staff.id,
+    );
 
     controller.dispose();
     sync.dispose();

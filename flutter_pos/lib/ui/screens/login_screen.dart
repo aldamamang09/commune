@@ -67,27 +67,17 @@ class _LoginScreenState extends State<LoginScreen> {
     if (authRes['ok'] == true && authRes['user'] is StaffUser) {
       authenticatedStaff = authRes['user'] as StaffUser;
     } else if (authRes['offline'] == true) {
-      // Use only credentials previously validated online, and only on network failure.
-      final staffList = widget.controller.localStorage.getStaff();
-      final matched = staffList
-          .where((u) =>
-              u.username.trim().toLowerCase() == username ||
-              u.name.trim().toLowerCase() == username)
-          .firstOrNull;
-      final savedPassword = matched == null
-          ? null
-          : await widget.controller.localStorage
-              .getOfflineStaffCredential(matched.id);
-      if (matched != null && savedPassword == password) {
-        authenticatedStaff = matched;
-      }
+      authenticatedStaff = await widget.controller
+          .authenticateCachedStaffOffline(username, password);
     }
 
     if (authenticatedStaff == null) {
       setState(() {
         _isLoading = false;
-        _errorMessage =
-            authRes['error']?.toString() ?? 'Invalid Cashier credentials';
+        _errorMessage = authRes['offline'] == true &&
+                widget.controller.syncService.isOnline
+            ? 'Unable to verify credentials. Please try again.'
+            : authRes['error']?.toString() ?? 'Invalid Cashier credentials';
       });
       return;
     }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -5,13 +7,19 @@ import 'package:commune_pos/models/menu_item.dart';
 import 'package:commune_pos/models/inventory_item.dart';
 import 'package:commune_pos/models/order.dart';
 import 'package:commune_pos/models/order_item.dart';
+import 'package:commune_pos/models/staff_user.dart';
+import 'package:commune_pos/manila_time.dart';
 import 'package:commune_pos/services/local_storage_service.dart';
+import 'package:commune_pos/services/offline_credential_store.dart';
 import 'package:commune_pos/services/supabase_service.dart';
 import 'package:commune_pos/services/sync_service.dart';
 import 'package:commune_pos/state/pos_controller.dart';
 import 'package:commune_pos/ui/widgets/cart_panel.dart';
 
 class _RetryableFailureSupabaseService extends SupabaseService {
+  @override
+  bool get isPosApiTokenExpired => false;
+
   @override
   Future<Map<String, dynamic>> pushOrderAtomic(
     Order order,
@@ -24,6 +32,70 @@ class _RetryableFailureSupabaseService extends SupabaseService {
       'error': 'Connection timed out',
       'retryable': true,
     };
+  }
+}
+
+class _TimestampCaptureSupabaseService extends SupabaseService {
+  final pushedCreatedAt = <String>[];
+
+  @override
+  bool get isPosApiTokenExpired => false;
+
+  @override
+  Future<Map<String, dynamic>> pushOrderAtomic(
+    Order order,
+    List<Map<String, dynamic>> deductions, {
+    String? managerUsername,
+    String? managerPassword,
+  }) async {
+    pushedCreatedAt.add(order.createdAt);
+    return {'ok': true, 'ticketNo': order.ticketNo};
+  }
+
+  @override
+  Future<Map<String, dynamic>?> fetchFullStore() async => null;
+}
+
+class _RefreshingSessionSupabaseService
+    extends _TimestampCaptureSupabaseService {
+  final StaffUser staff;
+  final authStarted = Completer<void>();
+  final allowAuthentication = Completer<void>();
+  int authCalls = 0;
+
+  _RefreshingSessionSupabaseService(this.staff);
+
+  @override
+  Future<Map<String, dynamic>> authenticateStaff(
+    String username,
+    String password, {
+    bool persistSessionToken = true,
+  }) async {
+    authCalls++;
+    if (!authStarted.isCompleted) authStarted.complete();
+    await allowAuthentication.future;
+    return {
+      'ok': true,
+      'user': staff,
+      'token': 'fresh-pos-token',
+    };
+  }
+}
+
+class _MemoryOfflineCredentialStore implements OfflineCredentialStore {
+  final credentials = <String, String>{};
+
+  @override
+  Future<void> save({required String staffId, required String password}) async {
+    credentials[staffId] = password;
+  }
+
+  @override
+  Future<String?> read({required String staffId}) async => credentials[staffId];
+
+  @override
+  Future<void> remove({required String staffId}) async {
+    credentials.remove(staffId);
   }
 }
 
@@ -190,6 +262,96 @@ void main() {
     expect(storage.getPendingOrders(), hasLength(1));
     expect(storage.getPendingOrders().single.items.single.name, 'Latte');
 
+    controller.dispose();
+    sync.dispose();
+  });
+
+  test('preserves device order time when an offline order syncs later',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final storage = LocalStorageService();
+    await storage.init();
+    final api = _TimestampCaptureSupabaseService()
+      ..setPosApiToken('cached-pos-token');
+    final sync = SyncService(localStorage: storage, supabaseService: api)
+      ..isOnline = false;
+    final controller = PosController(
+      localStorage: storage,
+      supabaseService: api,
+      syncService: sync,
+    );
+
+    controller.addToCart(const MenuItem(
+      id: 'latte',
+      name: 'Latte',
+      price: 125,
+      category: 'Coffee',
+      image: '',
+    ));
+    final beforeCheckout = ManilaTime.now();
+    final result = await controller.proceedOrder();
+    final afterCheckout = ManilaTime.now();
+
+    expect(result['ok'], true);
+    final queuedOrder = storage.getPendingOrders().single;
+    final createdAt = ManilaTime.parse(queuedOrder.createdAt);
+    expect(createdAt, isNotNull);
+    expect(createdAt!.isBefore(beforeCheckout), isFalse);
+    expect(createdAt.isAfter(afterCheckout), isFalse);
+
+    sync.isOnline = true;
+    await sync.syncAll();
+
+    expect(api.pushedCreatedAt, [queuedOrder.createdAt]);
+    expect(storage.getPendingOrders(), isEmpty);
+
+    controller.dispose();
+    sync.dispose();
+  });
+
+  test('refreshes the POS session before placing an online order', () async {
+    SharedPreferences.setMockInitialValues({});
+    final storage = LocalStorageService(
+      offlineCredentialStore: _MemoryOfflineCredentialStore(),
+    );
+    await storage.init();
+    const staff = StaffUser(
+      id: 'cashier-1',
+      username: 'rey',
+      password: '',
+      name: 'Rey',
+      role: 'cashier',
+    );
+    await storage.saveActiveStaffSession(staff);
+    await storage.saveOfflineStaffCredential(staff.id, '1234');
+    final api = _RefreshingSessionSupabaseService(staff);
+    final sync = SyncService(localStorage: storage, supabaseService: api)
+      ..isOnline = true;
+    final controller = PosController(
+      localStorage: storage,
+      supabaseService: api,
+      syncService: sync,
+    );
+    controller.addToCart(const MenuItem(
+      id: 'latte',
+      name: 'Latte',
+      price: 125,
+      category: 'Coffee',
+      image: '',
+    ));
+
+    final backgroundRefresh = sync.ensurePosApiToken();
+    await api.authStarted.future;
+    final checkout = controller.proceedOrder();
+    api.allowAuthentication.complete();
+    final result = await checkout;
+    await backgroundRefresh;
+
+    expect(api.authCalls, 1);
+    expect(result['synced'], true);
+    expect(storage.getPendingOrders(), isEmpty);
+
+    await sync.syncAll();
     controller.dispose();
     sync.dispose();
   });

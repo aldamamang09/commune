@@ -27,6 +27,7 @@ class SyncService extends ChangeNotifier {
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
   Timer? _periodicSyncTimer;
   Future<void>? _activeSyncFuture;
+  Future<bool>? _activeCredentialRefreshFuture;
   DateTime? _lastCredentialRefreshAttempt;
   VoidCallback? onSyncCompleted;
 
@@ -89,12 +90,37 @@ class SyncService extends ChangeNotifier {
     }
   }
 
-  Future<bool> _ensurePosApiToken() async {
+  Future<bool> ensurePosApiToken({bool forceRefresh = false}) async {
     if (supabaseService.hasPosApiToken &&
         !supabaseService.isPosApiTokenExpired) {
       return true;
     }
+    if (!isOnline) return false;
 
+    final activeRefresh = _activeCredentialRefreshFuture;
+    if (activeRefresh != null) return activeRefresh;
+
+    final now = DateTime.now();
+    if (!forceRefresh &&
+        _lastCredentialRefreshAttempt != null &&
+        now.difference(_lastCredentialRefreshAttempt!) <
+            const Duration(seconds: 30)) {
+      return false;
+    }
+    _lastCredentialRefreshAttempt = now;
+
+    final refresh = _refreshPosApiToken();
+    _activeCredentialRefreshFuture = refresh;
+    try {
+      return await refresh;
+    } finally {
+      if (identical(_activeCredentialRefreshFuture, refresh)) {
+        _activeCredentialRefreshFuture = null;
+      }
+    }
+  }
+
+  Future<bool> _refreshPosApiToken() async {
     final activeStaff = localStorage.getActiveStaffProfile();
     final candidates = <StaffUser>[];
     if (activeStaff != null) candidates.add(activeStaff);
@@ -115,14 +141,6 @@ class SyncService extends ChangeNotifier {
     for (final staff in candidates) {
       final password = await localStorage.getOfflineStaffCredential(staff.id);
       if (password == null || password.isEmpty) continue;
-
-      final now = DateTime.now();
-      if (_lastCredentialRefreshAttempt != null &&
-          now.difference(_lastCredentialRefreshAttempt!) <
-              const Duration(seconds: 30)) {
-        return false;
-      }
-      _lastCredentialRefreshAttempt = now;
 
       final auth = await supabaseService.authenticateStaff(
         staff.username,
@@ -148,7 +166,7 @@ class SyncService extends ChangeNotifier {
   }
 
   Future<void> _performSync() async {
-    if (!isOnline || !await _ensurePosApiToken()) {
+    if (!isOnline || !await ensurePosApiToken()) {
       status = isOnline ? SyncStatus.idle : SyncStatus.offline;
       lastError = null;
       updatePendingCount();
