@@ -200,7 +200,7 @@ export async function POST(req: NextRequest) {
         { status: 401, headers: corsHeaders },
       );
     }
-    if (claims.role === "barista") {
+    if (claims.role === "barista" && action !== "barista_shift_activity") {
       return NextResponse.json(
         { ok: false, error: "This account cannot perform POS actions." },
         { status: 403, headers: corsHeaders },
@@ -247,13 +247,16 @@ export async function POST(req: NextRequest) {
       };
 
       // Calculate deductions using the exact Admin recipe/costing/addon configuration
-      const deductions: {
-        inventoryItemId: string;
-        itemName: string;
-        amount: number;
-        unit: string;
-        orderItemId?: string;
-      }[] = [];
+      const deductionsByInventoryItem = new Map<
+        string,
+        {
+          inventoryItemId: string;
+          itemName: string;
+          amount: number;
+          unit: string;
+          orderItemId?: string;
+        }
+      >();
 
       for (const line of order.items) {
         const ingredients = ingredientsForOrderLine(store, line);
@@ -266,15 +269,21 @@ export async function POST(req: NextRequest) {
           if (!matchedStock) continue;
           const usedAmount = roundQty(Number(ingredient.amount) * line.qty);
           if (usedAmount <= 0) continue;
-          deductions.push({
-            inventoryItemId: matchedStock.id,
-            itemName: matchedStock.name,
-            amount: usedAmount,
-            unit: ingredient.unit || matchedStock.unit || "pcs",
-            orderItemId: line.productId,
-          });
+          const existing = deductionsByInventoryItem.get(matchedStock.id);
+          if (existing) {
+            existing.amount = roundQty(existing.amount + usedAmount);
+          } else {
+            deductionsByInventoryItem.set(matchedStock.id, {
+              inventoryItemId: matchedStock.id,
+              itemName: matchedStock.name,
+              amount: usedAmount,
+              unit: ingredient.unit || matchedStock.unit || "pcs",
+              orderItemId: line.productId,
+            });
+          }
         }
       }
+      const deductions = [...deductionsByInventoryItem.values()];
 
       const result = await createOrderAtomic({
         order,
@@ -304,10 +313,10 @@ export async function POST(req: NextRequest) {
       }
 
       let voidedBy = claims.userId;
+      const store = await getFreshStore();
       if (claims.role !== "manager" && claims.role !== "admin") {
         const managerUsername = String(body.managerUsername ?? "").trim().toLowerCase();
         const managerPassword = String(body.managerPassword ?? "");
-        const store = await getFreshStore();
         const manager = store.users.find((user) => user.username.trim().toLowerCase() === managerUsername);
         const managerRole = manager ? parseRole(String(manager.title ?? manager.role ?? "barista")) : "barista";
         const validPassword = manager && (manager.password.startsWith("$2")
@@ -319,8 +328,23 @@ export async function POST(req: NextRequest) {
         voidedBy = manager.id;
       }
 
+      const orderId = String(rawOrder.id || "").trim();
+      const existingOrder = store.orders.find((entry) => entry.id === orderId);
+      if (existingOrder) {
+        if (existingOrder.voided) {
+          return NextResponse.json(
+            { ok: true, ticketNo: existingOrder.ticketNo, order: existingOrder },
+            { headers: corsHeaders },
+          );
+        }
+        return NextResponse.json(
+          { ok: false, error: "Order id already belongs to a completed checkout." },
+          { status: 409, headers: corsHeaders },
+        );
+      }
+
       const order: Order = {
-        id: String(rawOrder.id || `ord-${Date.now()}`),
+        id: orderId || `ord-${Date.now()}`,
         createdAt: phIsoTimestamp(String(rawOrder.createdAt ?? "")) || new Date().toISOString(),
         baristaName: claims.name,
         items,
@@ -507,10 +531,15 @@ export async function POST(req: NextRequest) {
       const store = await getFreshStore();
       let staff = store.users.find((user) => user.id === claims.userId);
       if (isBaristaShift) {
-        if (!["cashier", "manager", "admin"].includes(claims.role)) {
+        const requestedUserId = typeof raw.userId === "string" ? raw.userId : "";
+        const isOwnBaristaShift =
+          claims.role === "barista" && requestedUserId === claims.userId;
+        if (
+          !["cashier", "manager", "admin"].includes(claims.role) &&
+          !isOwnBaristaShift
+        ) {
           return NextResponse.json({ ok: false, error: "Cashier access required to record a barista shift." }, { status: 403, headers: corsHeaders });
         }
-        const requestedUserId = typeof raw.userId === "string" ? raw.userId : "";
         staff = store.users.find((user) => user.id === requestedUserId);
         const staffRole = staff ? parseRole(String(staff.title ?? ""), staff.role) : null;
         if (!staff || staffRole !== "barista") {

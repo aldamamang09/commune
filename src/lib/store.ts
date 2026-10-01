@@ -1758,15 +1758,18 @@ export async function insertLoginActivityRecord(entry: LoginActivity): Promise<v
       return;
     }
     const supabase = supabaseAdmin();
-    const { error } = await supabase.from("login_activity").insert({
-      id: entry.id,
-      user_id: entry.userId,
-      username: entry.username,
-      name: entry.name,
-      role: entry.role,
-      type: entry.type,
-      at: entry.at,
-    });
+    const { error } = await supabase.from("login_activity").upsert(
+      {
+        id: entry.id,
+        user_id: entry.userId,
+        username: entry.username,
+        name: entry.name,
+        role: entry.role,
+        type: entry.type,
+        at: entry.at,
+      },
+      { onConflict: "id", ignoreDuplicates: true },
+    );
     if (error) throw new Error(`Unable to record login activity: ${error.message}`);
     if (memoryStore) {
       if (!Array.isArray(memoryStore.loginActivity)) memoryStore.loginActivity = [];
