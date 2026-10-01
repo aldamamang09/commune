@@ -58,6 +58,11 @@ function orderItemsFromApi(value: unknown): OrderItem[] {
   });
 }
 
+function orderTimestampFromApi(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  return phIsoTimestamp(value) || null;
+}
+
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders });
 }
@@ -218,6 +223,13 @@ export async function POST(req: NextRequest) {
           { status: 400, headers: corsHeaders },
         );
       }
+      const createdAt = orderTimestampFromApi(rawOrder.createdAt);
+      if (!createdAt) {
+        return NextResponse.json(
+          { ok: false, error: "A valid device order timestamp is required." },
+          { status: 400, headers: corsHeaders },
+        );
+      }
       const store = await getFreshStore();
       const existingOrder = store.orders.find((o) => o.id === rawOrder.id);
       if (existingOrder) {
@@ -231,7 +243,7 @@ export async function POST(req: NextRequest) {
 
       const order: Order = {
         id: String(rawOrder.id || `ord-${Date.now()}`),
-        createdAt: phIsoTimestamp(String(rawOrder.createdAt ?? "")) || new Date().toISOString(),
+        createdAt,
         baristaName: claims.name,
         items: orderItems,
         subtotal: Number(rawOrder.subtotal) || 0,
@@ -329,6 +341,13 @@ export async function POST(req: NextRequest) {
       }
 
       const orderId = String(rawOrder.id || "").trim();
+      const createdAt = orderTimestampFromApi(rawOrder.createdAt);
+      if (!createdAt) {
+        return NextResponse.json(
+          { ok: false, error: "A valid device order timestamp is required." },
+          { status: 400, headers: corsHeaders },
+        );
+      }
       const existingOrder = store.orders.find((entry) => entry.id === orderId);
       if (existingOrder) {
         if (existingOrder.voided) {
@@ -345,7 +364,7 @@ export async function POST(req: NextRequest) {
 
       const order: Order = {
         id: orderId || `ord-${Date.now()}`,
-        createdAt: phIsoTimestamp(String(rawOrder.createdAt ?? "")) || new Date().toISOString(),
+        createdAt,
         baristaName: claims.name,
         items,
         subtotal: Number(rawOrder.subtotal) || 0,
