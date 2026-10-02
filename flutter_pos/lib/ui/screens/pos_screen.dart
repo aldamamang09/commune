@@ -677,15 +677,27 @@ class _PosScreenState extends State<PosScreen> {
                       },
                     ),
                     const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
-                      child: Text(
-                        'POWERED BY: SYNORRA',
-                        style: TextStyle(
-                          color: CommuneTheme.textMuted,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.2,
-                        ),
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Column(
+                        children: [
+                          Text(
+                            'Powered by Synorra',
+                            style: TextStyle(
+                              color: CommuneTheme.textMuted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Version 1.0',
+                            style: TextStyle(
+                              color: CommuneTheme.textMuted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
