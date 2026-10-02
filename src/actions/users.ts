@@ -482,27 +482,18 @@ export async function deleteOffRequest(id: string) {
 
 export async function updateLoginGates(
   adminPath: string,
-  cashierPath?: string,
-): Promise<{ error: string } | { ok: true; admin: string; cashier: string }> {
+): Promise<{ error: string } | { ok: true; admin: string }> {
   await requireAdmin();
   const admin = sanitizeLoginGate(adminPath);
   if (!admin.ok) return { error: admin.error };
-  const cashierRaw = (cashierPath ?? "").trim().toLowerCase();
-  const cashier = cashierRaw && cashierRaw !== "sale1803" ? sanitizeLoginGate(cashierRaw) : { ok: true as const, value: "" };
-  if (!cashier.ok) return { error: cashier.error };
-  if (cashier.value && admin.value === cashier.value) {
-    return { error: "Use different paths for admin and cashier." };
-  }
 
-  let previous = { admin: "", cashier: "" };
+  let previousAdmin = "";
   await updateStore((store) => {
-    previous = { ...store.loginGates };
-    store.loginGates = { admin: admin.value, cashier: cashier.value };
+    previousAdmin = store.loginGates.admin;
+    store.loginGates = { admin: admin.value };
   });
   refresh();
-  if (previous.admin) revalidatePath(`/${previous.admin}`);
-  if (previous.cashier) revalidatePath(`/${previous.cashier}`);
+  if (previousAdmin) revalidatePath(`/${previousAdmin}`);
   revalidatePath(`/${admin.value}`);
-  if (cashier.value) revalidatePath(`/${cashier.value}`);
-  return { ok: true, admin: admin.value, cashier: cashier.value };
+  return { ok: true, admin: admin.value };
 }

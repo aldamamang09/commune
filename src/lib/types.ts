@@ -245,6 +245,5 @@ export type StoreData = {
   voidRequests: VoidRequest[];
   loginGates: {
     admin: string;
-    cashier: string;
   };
 };

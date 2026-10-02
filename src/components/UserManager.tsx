@@ -51,7 +51,6 @@ export function UserManager({ users, session, loginActivity, offRequests, loginG
   const [offDate, setOffDate] = useState(phDateString());
   const [offReason, setOffReason] = useState("");
   const [adminGate, setAdminGate] = useState(loginGates.admin);
-  const cashierGate = loginGates.cashier ?? "";
   
   // Global filter/display date state for In / Out
   const [selectedDate, setSelectedDate] = useState(phDateString());
@@ -691,7 +690,7 @@ export function UserManager({ users, session, loginActivity, offRequests, loginG
               onSubmit={(event) => {
                 event.preventDefault();
                 startTransition(async () => {
-                  const result = await updateLoginGates(adminGate, cashierGate);
+                  const result = await updateLoginGates(adminGate);
                   if (result && "error" in result && result.error) {
                     setNotice(typeof result.error === "string" ? result.error : "Could not save.");
                     return;

@@ -443,7 +443,7 @@ async function readStore(options?: { fresh?: boolean }): Promise<StoreData> {
   const supabase = supabaseAdmin();
 
   try {
-    const [pos, users, categories, menu, promotions, inventory, orders, orderItems, usageLogs, restocks, costings, costingIngredients, recipes, recipeCostings, recipeCostingMenuItems, recipeCostingIngredients, loginActivity, offRequests, voidRequests] = await Promise.all([
+    const [pos, users, categories, menu, promotions, inventory, orders, orderItems, usageLogs, restocks, costings, costingIngredients, recipes, recipeCostings, recipeCostingMenuItems, recipeCostingIngredients, loginActivity, offRequests, voidRequests, loginGates] = await Promise.all([
       supabase.from("pos_state").select("*").eq("id", POS_STATE_ID).maybeSingle(),
       supabase.from("staff_users").select("*").order("created_at"),
       supabase.from("menu_categories").select("*").order("name"),
@@ -463,8 +463,9 @@ async function readStore(options?: { fresh?: boolean }): Promise<StoreData> {
       supabase.from("login_activity").select("*").order("at"),
       supabase.from("off_requests").select("*").order("created_at"),
       supabase.from("void_requests").select("*").order("requested_at", { ascending: false }),
+      supabase.from("login_links").select("*").eq("id", POS_STATE_ID).maybeSingle(),
     ]);
-    const firstError = [pos, users, categories, menu, promotions, inventory, orders, orderItems, usageLogs, restocks, costings, costingIngredients, recipes, recipeCostings, recipeCostingMenuItems, recipeCostingIngredients, loginActivity, offRequests, voidRequests].find((result) => result.error)?.error;
+    const firstError = [pos, users, categories, menu, promotions, inventory, orders, orderItems, usageLogs, restocks, costings, costingIngredients, recipes, recipeCostings, recipeCostingMenuItems, recipeCostingIngredients, loginActivity, offRequests, voidRequests, loginGates].find((result) => result.error)?.error;
     if (firstError) {
       if (!memoryStore) {
         memoryStore = normalizeStore(emptyStore());
@@ -613,10 +614,12 @@ async function readStore(options?: { fresh?: boolean }): Promise<StoreData> {
         createdAt: row.created_at,
       })),
       voidRequests: (voidRequests.data ?? []).map(voidRequestFromRow),
+      loginGates: loginGates.data
+        ? { admin: loginGates.data.admin_path }
+        : base.loginGates,
     });
     if (previousStore) {
       store.printJobs = previousStore.printJobs;
-      store.loginGates = previousStore.loginGates;
     }
     memoryStore = store;
     memoryStoreReadAt = Date.now();
@@ -768,6 +771,11 @@ async function writeStore(store: StoreData): Promise<void> {
 
   const operations = await Promise.all([
     supabase.from("pos_state").upsert({ id: POS_STATE_ID, is_open: store.pos.isOpen, opened_at: store.pos.openedAt, opened_by_name: store.pos.openedBy, updated_at: new Date().toISOString() }),
+    supabase.from("login_links").upsert({
+      id: POS_STATE_ID,
+      admin_path: store.loginGates.admin,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "id" }),
     supabase.from("staff_users").upsert(
       uniqueUsers.map((user) => ({
         id: user.id,

@@ -1,11 +1,9 @@
 export type LoginGates = {
   admin: string;
-  cashier: string;
 };
 
 export const DEFAULT_LOGIN_GATES: LoginGates = {
   admin: "mouna1233",
-  cashier: "",
 };
 
 const RESERVED = new Set(["admin", "pos", "login", "drinks", "images", "api", "sale1803"]);
@@ -27,25 +25,18 @@ export function sanitizeLoginGate(value: string): { ok: true; value: string } | 
 
 export function normalizeLoginGates(gates?: Partial<LoginGates> | null): LoginGates {
   const adminResult = sanitizeLoginGate(gates?.admin ?? "");
-  const cashierRaw = (gates?.cashier ?? "").trim().toLowerCase();
-  const cashierResult = cashierRaw && cashierRaw !== "sale1803" ? sanitizeLoginGate(cashierRaw) : null;
   const admin = adminResult.ok ? adminResult.value : DEFAULT_LOGIN_GATES.admin;
-  let cashier = cashierResult?.ok ? cashierResult.value : "";
-  if (cashier === admin || cashier === "sale1803") {
-    cashier = "";
-  }
-  return { admin, cashier };
+  return { admin };
 }
 
 export function roleForLoginGate(gate: string, gates: LoginGates): "admin" | "cashier" | null {
   const value = gate.trim().replace(/^\/+|\/+$/g, "").toLowerCase();
   if (!value || value === "sale1803") return null;
   if (value === gates.admin.toLowerCase()) return "admin";
-  if (gates.cashier && value === gates.cashier.toLowerCase()) return "cashier";
   return null;
 }
 
 export function loginPathForRole(role: "admin" | "cashier", gates: LoginGates) {
   if (role === "admin") return `/${gates.admin}`;
-  return gates.cashier ? `/${gates.cashier}` : "/";
+  return "/";
 }

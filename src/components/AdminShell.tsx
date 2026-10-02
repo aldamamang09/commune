@@ -61,7 +61,7 @@ export function AdminShell({ session, users, store, children }: AdminShellProps)
           session={session}
           loginActivity={store.loginActivity ?? []}
           offRequests={store.offRequests ?? []}
-          loginGates={store.loginGates ?? { admin: "mouna1233", cashier: "" }}
+          loginGates={store.loginGates ?? { admin: "mouna1233" }}
         />
       ) : null}
       {current === "sales" ? children : null}
