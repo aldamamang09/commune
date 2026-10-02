@@ -679,7 +679,7 @@ class _PosScreenState extends State<PosScreen> {
                     const Padding(
                       padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
                       child: Text(
-                        'POWERED BY SYNORRA',
+                        'POWERED BY: SYNORRA',
                         style: TextStyle(
                           color: CommuneTheme.textMuted,
                           fontSize: 10,
