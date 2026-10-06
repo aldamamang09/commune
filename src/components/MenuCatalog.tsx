@@ -259,9 +259,9 @@ export function MenuCatalog({ menu, categories, categoryTypes = {}, inventory = 
                     onChange={(event) => setNewCategoryType(normalizeMenuCategoryType(event.target.value))}
                     className={field}
                   >
-                    <option value="drink">Drink</option>
-                    <option value="food">Food</option>
-                    <option value="pastry">Pastry</option>
+                    <option value="Drinks">Drink</option>
+                    <option value="Foods">Food</option>
+                    <option value="Pastries">Pastry</option>
                     <option value="other">Other</option>
                   </select>
                   {newCategoryType === "other" ? (
