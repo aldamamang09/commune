@@ -10,12 +10,13 @@ import {
   setMenuItemAvailable,
   updateMenuItem,
 } from "@/actions/menu";
-import { addonIdFromName, DRINK_STYLES, drinkStyleLabel, drinkStyleLabelList, formatMoney, isFoodOrPastry, normalizeMenuAddons, normalizeMenuStyles } from "@/lib/menu";
-import type { DrinkStyle, InventoryItem, MenuAddon, MenuItem } from "@/lib/types";
+import { addonIdFromName, DRINK_STYLES, drinkStyleLabel, drinkStyleLabelList, formatMoney, inferMenuCategoryType, isFoodOrPastry, menuCategoryTypeLabel, normalizeMenuAddons, normalizeMenuCategoryType, normalizeMenuStyles, normalizeMenuTypes } from "@/lib/menu";
+import type { DrinkStyle, InventoryItem, MenuAddon, MenuCategoryType, MenuItem } from "@/lib/types";
 
 type MenuCatalogProps = {
   menu: MenuItem[];
   categories: string[];
+  categoryTypes?: Record<string, MenuCategoryType>;
   inventory?: InventoryItem[];
 };
 
@@ -90,13 +91,17 @@ function actionError(result: unknown) {
   return null;
 }
 
-export function MenuCatalog({ menu, categories, inventory = [] }: MenuCatalogProps) {
+export function MenuCatalog({ menu, categories, categoryTypes = {}, inventory = [] }: MenuCatalogProps) {
   const [tab, setTab] = useState<SubTab>("items");
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [newCategory, setNewCategory] = useState("");
+  const [newCategoryType, setNewCategoryType] = useState<MenuCategoryType>("drink");
+  const [newCustomCategoryType, setNewCustomCategoryType] = useState("");
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
   const [categoryName, setCategoryName] = useState("");
+  const [editingCategoryType, setEditingCategoryType] = useState<MenuCategoryType>("drink");
+  const [editingCustomCategoryType, setEditingCustomCategoryType] = useState("");
   const [filter, setFilter] = useState("All");
   const [editingId, setEditingId] = useState<string | "new" | null>(null);
   const [itemName, setItemName] = useState("");
@@ -105,6 +110,7 @@ export function MenuCatalog({ menu, categories, inventory = [] }: MenuCatalogPro
   const [itemAvailable, setItemAvailable] = useState(true);
   const [itemStyles, setItemStyles] = useState<DrinkStyle[]>([]);
   const [itemAddons, setItemAddons] = useState<MenuAddon[]>([]);
+  const [itemTypes, setItemTypes] = useState<string[]>([]);
 
   const counts = useMemo(() => {
     const map = new Map<string, number>();
@@ -121,9 +127,21 @@ export function MenuCatalog({ menu, categories, inventory = [] }: MenuCatalogPro
       .filter((item) => filter === "All" || item.category.toLowerCase() === needle)
       .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
   }, [menu, filter]);
+  const itemCategoryIsFoodOrPastry = isFoodOrPastry(itemCategory, categoryTypeForName(itemCategory));
 
   function flash(message: string | null) {
     setNotice(message);
+  }
+
+  function categoryTypeForName(category: string) {
+    const direct = categoryTypes[category] ?? categoryTypes[category.toLowerCase()];
+    return normalizeMenuCategoryType(direct ?? inferMenuCategoryType(category));
+  }
+
+  function categoryTypeValue(type: MenuCategoryType, fallback = "drink") {
+    return type === "food" || type === "pastry" || type === "drink" || type === "other"
+      ? type
+      : fallback;
   }
 
   function startCreateItem() {
@@ -134,6 +152,7 @@ export function MenuCatalog({ menu, categories, inventory = [] }: MenuCatalogPro
     setItemAvailable(true);
     setItemStyles([]);
     setItemAddons([]);
+    setItemTypes([]);
     setNotice(null);
     setTab("items");
   }
@@ -146,6 +165,7 @@ export function MenuCatalog({ menu, categories, inventory = [] }: MenuCatalogPro
     setItemAvailable(item.available !== false);
     setItemStyles(normalizeMenuStyles(item));
     setItemAddons(normalizeMenuAddons(item));
+    setItemTypes(normalizeMenuTypes(item));
     setNotice(null);
     setTab("items");
   }
@@ -164,6 +184,7 @@ export function MenuCatalog({ menu, categories, inventory = [] }: MenuCatalogPro
     data.set("stylesField", "1");
     for (const style of itemStyles) data.append("styles", style);
     data.set("addons", JSON.stringify(itemAddons.filter((addon) => addon.name.trim())));
+    data.set("types", JSON.stringify(itemTypes.filter((type) => type.trim())));
     return data;
   }
 
@@ -210,22 +231,25 @@ export function MenuCatalog({ menu, categories, inventory = [] }: MenuCatalogPro
         {tab === "categories" ? (
           <div className="space-y-5">
             <form
-              className="flex flex-col gap-3 rounded-2xl border border-neutral-200 bg-white p-4 sm:flex-row sm:items-end"
+              className="grid grid-cols-1 gap-3 rounded-2xl border border-neutral-200 bg-white p-4 lg:grid-cols-[minmax(0,1fr)_13rem_auto] lg:items-end"
               onSubmit={(event) => {
                 event.preventDefault();
+                const nextType = newCategoryType === "other" ? (newCustomCategoryType.trim() || "other") : newCategoryType;
                 startTransition(async () => {
-                  const result = await addMenuCategory(newCategory);
+                  const result = await addMenuCategory(newCategory, normalizeMenuCategoryType(nextType));
                   const error = actionError(result);
                   if (error) {
                     flash(error);
                     return;
                   }
                   setNewCategory("");
+                  setNewCategoryType("drink");
+                  setNewCustomCategoryType("");
                   flash("Category added.");
                 });
               }}
             >
-              <label className="min-w-0 flex-1 text-xs font-medium text-neutral-600">
+              <label className="min-w-0 w-full text-xs font-medium text-neutral-600">
                 <span className="mb-1.5 block">New category</span>
                 <input
                   value={newCategory}
@@ -234,10 +258,33 @@ export function MenuCatalog({ menu, categories, inventory = [] }: MenuCatalogPro
                   className={field}
                 />
               </label>
+              <label className="min-w-0 w-full text-xs font-medium text-neutral-600">
+                <span className="mb-1.5 block">Type</span>
+                <div className="space-y-2">
+                  <select
+                    value={newCategoryType}
+                    onChange={(event) => setNewCategoryType(normalizeMenuCategoryType(event.target.value))}
+                    className={field}
+                  >
+                    <option value="drink">Drink</option>
+                    <option value="food">Food</option>
+                    <option value="pastry">Pastry</option>
+                    <option value="other">Other</option>
+                  </select>
+                  {newCategoryType === "other" ? (
+                    <input
+                      value={newCustomCategoryType}
+                      onChange={(event) => setNewCustomCategoryType(event.target.value)}
+                      placeholder="Custom type"
+                      className={field}
+                    />
+                  ) : null}
+                </div>
+              </label>
               <button
                 type="submit"
                 disabled={pending || !newCategory.trim()}
-                className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-40"
+                className="w-full rounded-full bg-black px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-40 lg:w-auto"
               >
                 {pending ? "Saving..." : "Add category"}
               </button>
@@ -248,6 +295,7 @@ export function MenuCatalog({ menu, categories, inventory = [] }: MenuCatalogPro
                 <thead>
                   <tr className="border-b border-neutral-200 text-xs font-medium tracking-wide text-neutral-400 uppercase">
                     <th className="px-4 py-3">Category</th>
+                    <th className="px-4 py-3">Type</th>
                     <th className="px-4 py-3 text-right">Items</th>
                     <th className="sticky right-0 bg-white px-3 py-3 text-right"> </th>
                   </tr>
@@ -255,7 +303,7 @@ export function MenuCatalog({ menu, categories, inventory = [] }: MenuCatalogPro
                 <tbody>
                   {categories.length === 0 ? (
                     <tr>
-                      <td colSpan={3} className="px-4 py-10 text-center text-sm text-neutral-400">
+                      <td colSpan={4} className="px-4 py-10 text-center text-sm text-neutral-400">
                         No categories yet.
                       </td>
                     </tr>
@@ -263,6 +311,7 @@ export function MenuCatalog({ menu, categories, inventory = [] }: MenuCatalogPro
                     categories.map((category) => {
                       const count = counts.get(category.toLowerCase()) ?? 0;
                       const editing = editingCategory === category;
+                      const typeDisplay = menuCategoryTypeLabel(categoryTypeForName(category));
                       return (
                         <tr key={category} className="border-t border-neutral-100">
                           <td className="px-4 py-3">
@@ -277,6 +326,36 @@ export function MenuCatalog({ menu, categories, inventory = [] }: MenuCatalogPro
                               <span className="font-medium">{category}</span>
                             )}
                           </td>
+                          <td className="px-4 py-3 text-neutral-500">
+                            {editing ? (
+                              <div className="flex items-center gap-2">
+                                <select
+                                  value={categoryTypeValue(editingCategoryType)}
+                                  onChange={(event) => {
+                                    const next = normalizeMenuCategoryType(event.target.value);
+                                    setEditingCategoryType(next);
+                                    if (next !== "other") setEditingCustomCategoryType("");
+                                  }}
+                                  className={`${field} w-full`}
+                                >
+                                  <option value="drink">Drink</option>
+                                  <option value="food">Food</option>
+                                  <option value="pastry">Pastry</option>
+                                  <option value="other">Other</option>
+                                </select>
+                                {editingCategoryType === "other" || categoryTypeValue(editingCategoryType) === "other" ? (
+                                  <input
+                                    value={editingCustomCategoryType}
+                                    onChange={(event) => setEditingCustomCategoryType(event.target.value)}
+                                    placeholder="Custom type"
+                                    className={`${field} w-36 min-w-0`}
+                                  />
+                                ) : null}
+                              </div>
+                            ) : (
+                              typeDisplay
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-right text-neutral-500">{count}</td>
                           <td className="sticky right-0 bg-white px-3 py-3">
                             <div className="flex justify-end gap-0.5">
@@ -288,13 +367,18 @@ export function MenuCatalog({ menu, categories, inventory = [] }: MenuCatalogPro
                                     disabled={pending}
                                     onClick={() =>
                                       startTransition(async () => {
-                                        const result = await renameMenuCategory(category, categoryName);
+                                        const nextType =
+                                          editingCategoryType === "other"
+                                            ? (editingCustomCategoryType.trim() || "other")
+                                            : editingCategoryType;
+                                        const result = await renameMenuCategory(category, categoryName, normalizeMenuCategoryType(nextType));
                                         const error = actionError(result);
                                         if (error) {
                                           flash(error);
                                           return;
                                         }
                                         setEditingCategory(null);
+                                        setEditingCustomCategoryType("");
                                         if (filter === category) setFilter(categoryName.trim() || category);
                                         flash("Category renamed.");
                                       })
@@ -318,8 +402,11 @@ export function MenuCatalog({ menu, categories, inventory = [] }: MenuCatalogPro
                                     type="button"
                                     aria-label={`Rename ${category}`}
                                     onClick={() => {
+                                      const defaultType = categoryTypeForName(category);
                                       setEditingCategory(category);
                                       setCategoryName(category);
+                                      setEditingCategoryType(defaultType);
+                                      setEditingCustomCategoryType(defaultType === "other" ? "" : "");
                                       setNotice(null);
                                     }}
                                     className={iconBtn}
@@ -429,7 +516,7 @@ export function MenuCatalog({ menu, categories, inventory = [] }: MenuCatalogPro
                       onChange={(event) => {
                         const next = event.target.value;
                         setItemCategory(next);
-                        if (isFoodOrPastry(next)) setItemStyles([]);
+                        if (isFoodOrPastry(next, categoryTypeForName(next))) setItemStyles([]);
                       }}
                       className={field}
                       required
@@ -445,7 +532,7 @@ export function MenuCatalog({ menu, categories, inventory = [] }: MenuCatalogPro
                     </select>
                   </label>
                 </div>
-                {!isFoodOrPastry(itemCategory) ? (
+                {!itemCategoryIsFoodOrPastry ? (
                   <div>
                     <p className="mb-1.5 text-xs font-medium text-neutral-600">Type</p>
                     <div className="flex gap-2">
@@ -471,6 +558,52 @@ export function MenuCatalog({ menu, categories, inventory = [] }: MenuCatalogPro
                     </div>
                   </div>
                 ) : null}
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-neutral-600">Types</p>
+                    <button
+                      type="button"
+                      onClick={() => setItemTypes((current) => [...current, ""])}
+                      className="text-xs font-medium text-neutral-600 hover:text-black"
+                    >
+                      Add type
+                    </button>
+                  </div>
+                  {itemTypes.length === 0 ? (
+                    <p className="text-xs text-neutral-400">
+                      Optional choices customers select in POS, with no extra charge (e.g. Cheese or BBQ).
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {itemTypes.map((type, index) => (
+                        <div key={`type-${index}`} className="flex gap-2">
+                          <input
+                            value={type}
+                            onChange={(event) =>
+                              setItemTypes((current) =>
+                                current.map((entry, entryIndex) =>
+                                  entryIndex === index ? event.target.value : entry,
+                                ),
+                              )
+                            }
+                            placeholder="e.g. Cheese"
+                            className={field}
+                          />
+                          <button
+                            type="button"
+                            aria-label="Remove type"
+                            onClick={() =>
+                              setItemTypes((current) => current.filter((_, entryIndex) => entryIndex !== index))
+                            }
+                            className="text-xs text-neutral-400 hover:text-black"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <div>
                   <div className="mb-1.5 flex items-center justify-between gap-2">
                     <p className="text-xs font-medium text-neutral-600">Add-ons</p>
@@ -508,97 +641,102 @@ export function MenuCatalog({ menu, categories, inventory = [] }: MenuCatalogPro
                       {itemAddons.map((addon, index) => {
                         const stock = inventory.find((item) => item.id === addon.inventoryItemId);
                         return (
-                        <div key={addon.id} className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-[1fr_88px_1fr_88px_auto] lg:items-center">
-                          <input
-                            value={addon.name}
-                            onChange={(event) =>
-                              setItemAddons((current) =>
-                                current.map((entry, entryIndex) =>
-                                  entryIndex === index ? { ...entry, name: event.target.value } : entry,
-                                ),
-                              )
-                            }
-                            placeholder="Oat milk"
-                            className={field}
-                          />
-                          <input
-                            inputMode="numeric"
-                            value={addon.price === 0 ? "" : String(addon.price)}
-                            onChange={(event) => {
-                              const raw = event.target.value.replace(/[^\d]/g, "");
-                              setItemAddons((current) =>
-                                current.map((entry, entryIndex) =>
-                                  entryIndex === index
-                                    ? { ...entry, price: raw ? Math.max(0, Number(raw)) : 0 }
-                                    : entry,
-                                ),
-                              );
-                            }}
-                            className={field}
-                            aria-label="Add-on extra price"
-                            placeholder="20"
-                          />
-                          <select
-                            value={addon.inventoryItemId ?? ""}
-                            onChange={(event) => {
-                              const nextId = event.target.value;
-                              const nextStock = inventory.find((item) => item.id === nextId);
-                              setItemAddons((current) =>
-                                current.map((entry, entryIndex) =>
-                                  entryIndex === index
-                                    ? {
-                                        ...entry,
-                                        inventoryItemId: nextId || undefined,
-                                        usageUnit: nextStock?.unit || entry.usageUnit,
-                                      }
-                                    : entry,
-                                ),
-                              );
-                            }}
-                            className={field}
-                            aria-label="Stock item to deduct"
+                          <div
+                            key={addon.id}
+                            className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-[1fr_88px_1fr_88px_auto] lg:items-center"
                           >
-                            <option value="">No stock deduction</option>
-                            {inventory.map((item) => (
-                              <option key={item.id} value={item.id}>
-                                {item.name}
-                              </option>
-                            ))}
-                          </select>
-                          <div className="flex items-center gap-1">
                             <input
-                              inputMode="decimal"
-                              value={addon.usageAmount ? String(addon.usageAmount) : ""}
-                              onChange={(event) => {
-                                const raw = event.target.value.replace(/[^\d.]/g, "");
-                                const usageAmount = raw ? Math.max(0, Number(raw)) : 0;
+                              value={addon.name}
+                              onChange={(event) =>
                                 setItemAddons((current) =>
                                   current.map((entry, entryIndex) =>
-                                    entryIndex === index
-                                      ? { ...entry, usageAmount: usageAmount || undefined }
-                                      : entry,
+                                    entryIndex === index ? { ...entry, name: event.target.value } : entry,
                                   ),
-                                );
-                              }}
+                                )
+                              }
+                              placeholder="Oat milk"
                               className={field}
-                              aria-label="Add-on usage amount"
-                              placeholder="20"
                             />
-                            <span className="shrink-0 text-[11px] text-neutral-400">
-                              {stock?.unit || addon.usageUnit || "ml"}
-                            </span>
+                            <input
+                                  inputMode="numeric"
+                                  value={addon.price === 0 ? "" : String(addon.price)}
+                                  onChange={(event) => {
+                                    const raw = event.target.value.replace(/[^\d]/g, "");
+                                    setItemAddons((current) =>
+                                      current.map((entry, entryIndex) =>
+                                        entryIndex === index
+                                          ? { ...entry, price: raw ? Math.max(0, Number(raw)) : 0 }
+                                          : entry,
+                                      ),
+                                    );
+                                  }}
+                                  className={field}
+                                  aria-label="Add-on extra price"
+                                  placeholder="20"
+                                />
+                                <select
+                                  value={addon.inventoryItemId ?? ""}
+                                  onChange={(event) => {
+                                    const nextId = event.target.value;
+                                    const nextStock = inventory.find((item) => item.id === nextId);
+                                    setItemAddons((current) =>
+                                      current.map((entry, entryIndex) =>
+                                        entryIndex === index
+                                          ? {
+                                              ...entry,
+                                              inventoryItemId: nextId || undefined,
+                                              usageUnit: nextStock?.unit || entry.usageUnit,
+                                            }
+                                          : entry,
+                                      ),
+                                    );
+                                  }}
+                                  className={field}
+                                  aria-label="Stock item to deduct"
+                                >
+                                  <option value="">No stock deduction</option>
+                                  {inventory.map((item) => (
+                                    <option key={item.id} value={item.id}>
+                                      {item.name}
+                                    </option>
+                                  ))}
+                                </select>
+                            <div className="flex items-center gap-1">
+                              <input
+                                    inputMode="decimal"
+                                    value={addon.usageAmount ? String(addon.usageAmount) : ""}
+                                    onChange={(event) => {
+                                      const raw = event.target.value.replace(/[^\d.]/g, "");
+                                      const usageAmount = raw ? Math.max(0, Number(raw)) : 0;
+                                      setItemAddons((current) =>
+                                        current.map((entry, entryIndex) =>
+                                          entryIndex === index
+                                            ? { ...entry, usageAmount: usageAmount || undefined }
+                                            : entry,
+                                        ),
+                                      );
+                                    }}
+                                    className={field}
+                                    aria-label="Add-on usage amount"
+                                    placeholder="20"
+                              />
+                              <span className="shrink-0 text-[11px] text-neutral-400">
+                                {stock?.unit || addon.usageUnit || "ml"}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              aria-label="Remove add-on"
+                              onClick={() =>
+                                setItemAddons((current) =>
+                                  current.filter((_, entryIndex) => entryIndex !== index),
+                                )
+                              }
+                              className="text-xs text-neutral-400 hover:text-black"
+                            >
+                              Remove
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            aria-label="Remove add-on"
-                            onClick={() =>
-                              setItemAddons((current) => current.filter((_, entryIndex) => entryIndex !== index))
-                            }
-                            className="text-xs text-neutral-400 hover:text-black"
-                          >
-                            Remove
-                          </button>
-                        </div>
                         );
                       })}
                     </div>
@@ -662,6 +800,11 @@ export function MenuCatalog({ menu, categories, inventory = [] }: MenuCatalogPro
                                   return `${addon.name}${extra}${used}`;
                                 })
                                 .join(", ")}
+                            </p>
+                          ) : null}
+                          {normalizeMenuTypes(item).length > 0 ? (
+                            <p className="mt-0.5 text-[11px] text-neutral-400">
+                              Types: {normalizeMenuTypes(item).join(", ")}
                             </p>
                           ) : null}
                         </td>

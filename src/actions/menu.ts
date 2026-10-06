@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/auth";
-import { addonIdFromName, DRINK_STYLES, isFoodOrPastry, menuItemId, normalizeMenuAddons, normalizeMenuStyles, stripMenuImage } from "@/lib/menu";
-import type { DrinkStyle, MenuAddon, MenuItem } from "@/lib/types";
+import { addonIdFromName, DRINK_STYLES, isFoodOrPastry, menuItemId, normalizeMenuAddons, normalizeMenuCategoryType, normalizeMenuStyles, stripMenuImage } from "@/lib/menu";
+import type { DrinkStyle, MenuAddon, MenuCategoryType, MenuItem } from "@/lib/types";
 import {
   deleteMenuCategoryRecord,
   deleteMenuItemRecord,
@@ -82,8 +82,13 @@ function photoFromForm(formData: FormData) {
   return photo instanceof File && photo.size > 0 ? photo : null;
 }
 
-function stylesFromForm(formData: FormData, category: string, existing?: MenuItem): DrinkStyle[] {
-  if (isFoodOrPastry(category)) return [];
+function stylesFromForm(
+  formData: FormData,
+  category: string,
+  categoryType: MenuCategoryType,
+  existing?: MenuItem,
+): DrinkStyle[] {
+  if (isFoodOrPastry(category, categoryType)) return [];
   const selected: DrinkStyle[] = formData.getAll("styles").flatMap((value) => {
     const style = String(value);
     return style === "iced" || style === "hot" ? [style] : [];
@@ -127,20 +132,36 @@ function addonsFromForm(formData: FormData): MenuAddon[] {
   });
 }
 
-export async function addMenuCategory(name: string) {
+function typesFromForm(formData: FormData): string[] {
+  const packed = formData.get("types");
+  if (typeof packed !== "string" || !packed.trim()) return [];
+  try {
+    const parsed: unknown = JSON.parse(packed);
+    if (!Array.isArray(parsed)) return [];
+    return [...new Set(parsed
+      .filter((value): value is string => typeof value === "string")
+      .map((value) => value.trim())
+      .filter(Boolean))];
+  } catch {
+    return [];
+  }
+}
+
+export async function addMenuCategory(name: string, type?: MenuCategoryType) {
   await requireAdmin();
   const category = name.trim();
   if (!category) {
     return { error: "Enter a category name." };
   }
 
-  const result = await insertMenuCategoryRecord(category);
+  const categoryType = normalizeMenuCategoryType(type ?? "drink");
+  const result = await insertMenuCategoryRecord(category, categoryType);
   if (!result.ok) return { error: result.error };
   refresh();
   return { ok: true };
 }
 
-export async function renameMenuCategory(from: string, to: string) {
+export async function renameMenuCategory(from: string, to: string, type?: MenuCategoryType) {
   await requireAdmin();
   const prev = from.trim();
   const next = to.trim();
@@ -155,11 +176,8 @@ export async function renameMenuCategory(from: string, to: string) {
     return { error: "That category is already on the board." };
   }
 
-  // rename_menu_category_atomic updates the existing row in place (same
-  // slug) or inserts the new one, repoints menu_items.category_id, and
-  // deletes the old row - all in one transaction, so no duplicate/orphaned
-  // category row can be left behind the way the old insert-only path could.
-  const result = await renameMenuCategoryAtomic(prev, next);
+  const categoryType = normalizeMenuCategoryType(type ?? "drink");
+  const result = await renameMenuCategoryAtomic(prev, next, categoryType);
   if (!result.ok) return { error: result.error };
 
   refresh();
@@ -202,6 +220,12 @@ export async function createMenuItem(formData: FormData) {
   if (!Number.isFinite(price) || price <= 0) {
     return { error: "Enter a valid price." };
   }
+  const store = await getStore();
+  const categoryType = normalizeMenuCategoryType(
+    store.categoryTypes?.[category] ??
+      Object.entries(store.categoryTypes ?? {}).find(([name]) => name.toLowerCase() === category.toLowerCase())?.[1] ??
+      "other",
+  );
 
   const id = menuItemId(name);
   let image = "/images/logo.jpg";
@@ -216,10 +240,12 @@ export async function createMenuItem(formData: FormData) {
     name,
     price: Math.round(price),
     category,
+    categoryType,
     image,
     available,
-    styles: stylesFromForm(formData, category),
+    styles: stylesFromForm(formData, category, categoryType),
     addons: addonsFromForm(formData),
+    types: typesFromForm(formData),
   });
   refresh();
   return { ok: true };
@@ -254,15 +280,22 @@ export async function updateMenuItem(formData: FormData) {
   const store = await getFreshStore();
   const existing = store.menu.find((entry) => entry.id === id);
   if (!existing) return { error: "Item not found." };
+  const categoryType = normalizeMenuCategoryType(
+    store.categoryTypes?.[category] ??
+      Object.entries(store.categoryTypes ?? {}).find(([name]) => name.toLowerCase() === category.toLowerCase())?.[1] ??
+      "other",
+  );
 
   await upsertMenuItemRecord({
     ...existing,
     name,
     price: Math.round(price),
     category,
+    categoryType,
     available,
-    styles: stylesFromForm(formData, category, existing),
+    styles: stylesFromForm(formData, category, categoryType, existing),
     addons: addonsFromForm(formData),
+    types: typesFromForm(formData),
     image: uploaded ?? (isSafeImage(existing.image) ? existing.image : "/images/logo.jpg"),
   });
   refresh();

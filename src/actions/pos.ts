@@ -12,7 +12,6 @@ import {
   approveVoidRequestAtomic,
   createOrderAtomic,
   createRestockAtomic,
-  deleteCostingRecord,
   deleteInventoryItemRecord,
   deleteOrderAtomic,
   deleteRecipeCostingRecord,
@@ -24,8 +23,8 @@ import {
   getStore,
   getVoidRequestRecord,
   insertVoidRequestRecord,
-  saveCostingRecord,
   saveRecipeCostingRecord,
+  saveUsageLogRecords,
   updateStore,
   voidOrderAtomic,
 } from "@/lib/store";
@@ -38,10 +37,6 @@ import type {
   PrintJobType,
   StoreData,
 } from "@/lib/types";
-
-function isMissingOrderTable(error: { code?: string; message?: string }) {
-  return error.code === "PGRST205" || /orders|order_items.*schema cache|relation .*orders|relation .*order_items/i.test(error.message ?? "");
-}
 
 async function requirePos() {
   const session = await getSession();
@@ -142,29 +137,14 @@ function reprintId(orderId: string, type: PrintJobType): string {
 export async function saveAdminData(data: {
   inventory?: StoreData["inventory"];
   restocks?: StoreData["restocks"];
-  costings?: StoreData["costings"];
   recipes?: StoreData["recipes"];
   recipeCostings?: StoreData["recipeCostings"];
   usageLogs?: StoreData["usageLogs"];
-  orders?: StoreData["orders"];
 }) {
-  await requireInventoryAccess(data.costings !== undefined || data.recipeCostings !== undefined || data.orders !== undefined);
+  await requireInventoryAccess(data.recipeCostings !== undefined);
 
-  if (data.costings) {
-    // The client always sends the full resulting costings array (this is
-    // how the existing costing UI already calls saveAdminData for both add
-    // and delete), so reconcile against what's currently persisted: drop
-    // rows that vanished, upsert everything that's present.
-    const current = await getStore();
-    const nextIds = new Set(data.costings.map((entry) => entry.id));
-    for (const existing of current.costings) {
-      if (!nextIds.has(existing.id)) {
-        await deleteCostingRecord(existing.id);
-      }
-    }
-    for (const costing of data.costings) {
-      await saveCostingRecord(costing);
-    }
+  if (data.usageLogs) {
+    await saveUsageLogRecords(data.usageLogs);
   }
 
   if (data.recipeCostings) {
@@ -187,19 +167,16 @@ export async function saveAdminData(data: {
   await updateStore((store) => {
     if (data.inventory) store.inventory = data.inventory;
     if (data.restocks) store.restocks = data.restocks;
-    if (data.costings) store.costings = data.costings;
     if (data.recipes && Object.keys(data.recipes).length > 0) store.recipes = data.recipes;
     if (data.recipeCostings) store.recipeCostings = data.recipeCostings;
-    if (data.usageLogs) store.usageLogs = data.usageLogs;
-    if (data.orders) store.orders = data.orders;
   });
   revalidatePath("/pos");
   revalidatePath("/admin");
   return { ok: true };
 }
 
-export async function deleteAdminRecord(kind: "order" | "inventory" | "restock" | "costing" | "usage", id: string) {
-  await requireInventoryAccess(kind === "order" || kind === "costing" || kind === "usage");
+export async function deleteAdminRecord(kind: "order" | "inventory" | "restock" | "usage", id: string) {
+  await requireInventoryAccess(kind === "order" || kind === "usage");
 
   if (kind === "order") {
     // Admin deletion is soft: the row and its audit children remain stored.
@@ -210,8 +187,6 @@ export async function deleteAdminRecord(kind: "order" | "inventory" | "restock" 
   } else if (kind === "inventory") {
     const result = await deleteInventoryItemRecord(id);
     if ("error" in result) return result;
-  } else if (kind === "costing") {
-    await deleteCostingRecord(id);
   } else {
     // No live UI deletes a single usage_logs row directly; usage_logs
     // cleanup for a deleted order is handled by delete_order_atomic's cascade.
@@ -295,7 +270,6 @@ export async function closePos() {
 
 export async function createOrder(
   cart: OrderItem[],
-  promoId?: string | null,
   paymentMethod?: string | null,
   tendered?: number | null,
 ) {
@@ -324,20 +298,7 @@ export async function createOrder(
   }
 
   const subtotal = priced.reduce((sum, item) => sum + item.price * item.qty, 0);
-  let discount = 0;
-  let promoLabel: string | undefined;
-  if (promoId) {
-    const found = store.promotions.find((entry) => entry.id === promoId && entry.active);
-    if (!found) {
-      return { ok: false as const, error: "That promotion is no longer available." };
-    }
-    promoLabel = found.label;
-    discount =
-      found.type === "percent"
-        ? Math.round((subtotal * found.value) / 100)
-        : Math.min(subtotal, Math.round(found.value));
-  }
-  const total = Math.max(0, subtotal - discount);
+  const total = subtotal;
   const method = parsePayment(paymentMethod);
   const cashIn = method === "cash" ? Math.max(0, Math.round(Number(tendered) || 0)) : total;
   if (method === "cash" && cashIn < total) {
@@ -383,8 +344,7 @@ export async function createOrder(
     baristaUserId: session.userId,
     items: priced,
     subtotal,
-    discount,
-    promoLabel,
+    discount: 0,
     total,
     paymentMethod: method,
     paid: cashIn,
@@ -467,14 +427,13 @@ export async function requestVoidApproval(
   cart: OrderItem[],
   reason: string,
   orderId?: string | null,
-  promoId?: string | null,
   paymentMethod?: string | null,
 ) {
   const session = await requireCashier();
   const trimmedReason = reason.trim();
   if (!trimmedReason) return { error: "Enter a reason for voiding." };
 
-  // Validation needs current data (order state, menu, promos, existing
+  // Validation needs current data (order state, menu, existing
   // pending requests), not the TTL-cached snapshot.
   const store = await getFreshStore();
 
@@ -527,17 +486,7 @@ export async function requestVoidApproval(
       items.push(pricedOrderLine(menuItem, { ...line, qty }));
     }
     subtotal = items.reduce((sum, item) => sum + item.price * item.qty, 0);
-    const promotion = promoId
-      ? store.promotions.find((entry) => entry.id === promoId && entry.active)
-      : undefined;
-    if (promotion) {
-      promoLabel = promotion.label;
-      discount =
-        promotion.type === "percent"
-          ? Math.round((subtotal * promotion.value) / 100)
-          : Math.min(subtotal, Math.round(promotion.value));
-    }
-    total = Math.max(0, subtotal - discount);
+    total = subtotal;
   }
 
   const requestId = `void-request-${Date.now().toString(36)}-${Math.random()
@@ -646,7 +595,6 @@ export async function voidCheckout(
   reason: string,
   managerUsername: string,
   managerPassword: string,
-  promoId?: string | null,
   paymentMethod?: string | null,
 ) {
   const session = await requireCashier();
@@ -675,19 +623,7 @@ export async function voidCheckout(
   }
 
   const subtotal = priced.reduce((sum, item) => sum + item.price * item.qty, 0);
-  let discount = 0;
-  let promoLabel: string | undefined;
-  if (promoId) {
-    const found = store.promotions.find((entry) => entry.id === promoId && entry.active);
-    if (found) {
-      promoLabel = found.label;
-      discount =
-        found.type === "percent"
-          ? Math.round((subtotal * found.value) / 100)
-          : Math.min(subtotal, Math.round(found.value));
-    }
-  }
-  const total = Math.max(0, subtotal - discount);
+  const total = subtotal;
 
   // create_order_atomic writes the already-voided order + items atomically:
   // it allocates the ticket on the DB counter, sets voided_at = now(), and
@@ -700,8 +636,7 @@ export async function voidCheckout(
     baristaName: session.name,
     items: priced,
     subtotal,
-    discount,
-    promoLabel,
+    discount: 0,
     total,
     paymentMethod: parsePayment(paymentMethod),
     paid: 0,

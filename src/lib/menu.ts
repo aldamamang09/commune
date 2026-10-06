@@ -1,4 +1,4 @@
-import type { DrinkStyle, MenuAddon, MenuItem, OrderAddon, OrderItem } from "@/lib/types";
+import type { DrinkStyle, MenuAddon, MenuCategoryType, MenuItem, OrderAddon, OrderItem } from "@/lib/types";
 
 export const MENU_IMAGES = [
   { label: "Logo", src: "/images/logo.jpg" },
@@ -16,16 +16,48 @@ export const MENU_CATEGORIES = [
 
 export const DRINK_STYLES: DrinkStyle[] = ["iced", "hot"];
 
-export function isFoodOrPastry(category: string) {
-  return /food|pastr/i.test(category);
+export function normalizeMenuCategoryType(value: unknown): MenuCategoryType {
+  const text = typeof value === "string" ? value.trim() : "";
+  const normalized = text.toLowerCase();
+  if (normalized === "food") return "food";
+  if (normalized === "pastry") return "pastry";
+  if (normalized === "drink") return "drink";
+  if (normalized === "other") return "other";
+  return text || "other";
+}
+
+export function inferMenuCategoryType(category: string): MenuCategoryType {
+  const normalized = String(category ?? "").trim().toLowerCase();
+  if (/food|meal|snack/i.test(normalized)) return "food";
+  if (/pastr|cake|bread|dessert/i.test(normalized)) return "pastry";
+  if (/drink|coffee|matcha|tea|juice|smoothie|beverage|fresh/i.test(normalized)) return "drink";
+  return "other";
+}
+
+export function menuCategoryTypeLabel(type: MenuCategoryType) {
+  if (!type) return "Other";
+  if (type === "food") return "Food";
+  if (type === "pastry") return "Pastry";
+  if (type === "drink") return "Drink";
+  if (type === "other") return "Other";
+  return type.charAt(0).toUpperCase() + type.slice(1);
+}
+
+export function isFoodOrPastry(category: string, categoryType?: string) {
+  if (typeof categoryType === "string" && categoryType.trim()) {
+    const normalizedType = categoryType.trim().toLowerCase();
+    return normalizedType === "food" || normalizedType === "pastry";
+  }
+  const type = inferMenuCategoryType(category);
+  return type === "food" || type === "pastry";
 }
 
 export function drinkStyleLabel(style: DrinkStyle) {
   return style === "hot" ? "Hot" : "Iced";
 }
 
-export function normalizeMenuStyles(item: Pick<MenuItem, "category" | "styles">): DrinkStyle[] {
-  if (isFoodOrPastry(item.category)) return [];
+export function normalizeMenuStyles(item: Pick<MenuItem, "category" | "styles" | "categoryType">): DrinkStyle[] {
+  if (isFoodOrPastry(item.category, item.categoryType)) return [];
   const raw = Array.isArray(item.styles) ? item.styles : [];
   return DRINK_STYLES.filter((style) => raw.includes(style));
 }
@@ -98,6 +130,18 @@ export function normalizeMenuAddons(item: Pick<MenuItem, "addons"> | undefined):
   });
 }
 
+export function normalizeMenuTypes(item: Pick<MenuItem, "types"> | undefined): string[] {
+  if (!Array.isArray(item?.types)) return [];
+  const seen = new Set<string>();
+  return item.types.flatMap((value) => {
+    const name = String(value ?? "").trim();
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) return [];
+    seen.add(key);
+    return [name];
+  });
+}
+
 // Legacy rows written by another branch embed an options payload after this
 // marker in menu_items.image. We never write it, but we strip it on read /
 // validation so existing rows render and validate cleanly.
@@ -138,8 +182,20 @@ export function resolveOrderAddons(
   selected?: OrderAddon[] | null,
 ): OrderAddon[] {
   const catalog = new Map(normalizeMenuAddons(menuItem).map((addon) => [addon.id, addon]));
+  for (const [index, name] of normalizeMenuTypes(menuItem).entries()) {
+    const id = `type:${addonIdFromName(name, index)}`;
+    catalog.set(id, { id, name, price: 0 });
+  }
   if (!Array.isArray(selected)) return [];
-  return selected.flatMap((entry) => {
+  let typeSelected = false;
+  const selections = selected.filter((entry) => {
+    const id = String(entry?.id ?? "");
+    if (!id.startsWith("type:")) return true;
+    if (typeSelected || Number(entry?.qty) <= 0) return false;
+    typeSelected = true;
+    return true;
+  });
+  return selections.flatMap((entry) => {
     const addon = catalog.get(String(entry?.id ?? ""));
     if (!addon) return [];
     const qty = Math.max(0, Math.min(9, Math.floor(Number(entry.qty) || 0)));

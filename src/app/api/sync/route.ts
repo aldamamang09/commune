@@ -95,14 +95,12 @@ export async function GET(request: NextRequest) {
           addons: normalizeMenuAddons(item),
         })),
         categories: store.categories,
-        promotions: store.promotions,
         inventory: store.inventory,
         orders: store.orders,
         restocks: store.restocks,
         usageLogs: store.usageLogs,
         recipes: store.recipes,
         recipeCostings: store.recipeCostings,
-        costings: store.costings,
         voidRequests: store.voidRequests,
         loginActivity: store.loginActivity,
         users: store.users.map((u) => {
@@ -159,6 +157,7 @@ export async function POST(req: NextRequest) {
           u.name.trim().toLowerCase() === username,
       );
       if (!user || !user.password) {
+        console.warn("POS staff authentication rejected: staff account unavailable.");
         return NextResponse.json(
           { ok: false, error: "Invalid staff credentials." },
           { status: 401, headers: corsHeaders },
@@ -170,6 +169,7 @@ export async function POST(req: NextRequest) {
         : user.password === password || user.password.trim() === password.trim();
 
       if (!validPassword) {
+        console.warn("POS staff authentication rejected: password mismatch.");
         return NextResponse.json(
           { ok: false, error: "Invalid staff credentials." },
           { status: 401, headers: corsHeaders },
@@ -246,18 +246,10 @@ export async function POST(req: NextRequest) {
         const role = parseRole(String(user.title ?? ''), user.role);
         return ['cashier', 'manager', 'admin'].includes(role);
       });
-      if (requestedCashierId && !requestedCashier) {
-        return NextResponse.json(
-          { ok: false, error: "The cashier for this order could not be verified." },
-          { status: 400, headers: corsHeaders },
-        );
-      }
-      const cashierNameSnapshot = String(rawOrder.baristaName ?? '').trim();
-
       const order: Order = {
         id: String(rawOrder.id || `ord-${Date.now()}`),
         createdAt,
-        baristaName: requestedCashier?.name ?? (cashierNameSnapshot || claims.name),
+        baristaName: requestedCashier?.name ?? claims.name,
         baristaUserId: requestedCashier?.id,
         items: orderItems,
         subtotal: Number(rawOrder.subtotal) || 0,
@@ -382,17 +374,10 @@ export async function POST(req: NextRequest) {
         const role = parseRole(String(user.title ?? ''), user.role);
         return ['cashier', 'manager', 'admin'].includes(role);
       });
-      if (requestedCashierId && !requestedCashier) {
-        return NextResponse.json(
-          { ok: false, error: "The cashier for this order could not be verified." },
-          { status: 400, headers: corsHeaders },
-        );
-      }
-      const cashierNameSnapshot = String(rawOrder.baristaName ?? '').trim();
       const order: Order = {
         id: orderId || `ord-${Date.now()}`,
         createdAt,
-        baristaName: requestedCashier?.name ?? (cashierNameSnapshot || claims.name),
+        baristaName: requestedCashier?.name ?? claims.name,
         baristaUserId: requestedCashier?.id,
         items,
         subtotal: Number(rawOrder.subtotal) || 0,
@@ -575,10 +560,10 @@ export async function POST(req: NextRequest) {
     if (action === "login_activity" || action === "barista_shift_activity") {
       const isBaristaShift = action === "barista_shift_activity";
       const raw = body.activity ?? body;
-      const store = await getFreshStore();
-      let staff = store.users.find((user) => user.id === claims.userId);
+      let staff: Awaited<ReturnType<typeof getFreshStore>>["users"][number] | undefined;
+      let requestedUserId = claims.userId;
       if (isBaristaShift) {
-        const requestedUserId = typeof raw.userId === "string" ? raw.userId : "";
+        requestedUserId = typeof raw.userId === "string" ? raw.userId : "";
         const isOwnBaristaShift =
           claims.role === "barista" && requestedUserId === claims.userId;
         if (
@@ -587,21 +572,21 @@ export async function POST(req: NextRequest) {
         ) {
           return NextResponse.json({ ok: false, error: "Cashier access required to record a barista shift." }, { status: 403, headers: corsHeaders });
         }
+        const store = await getFreshStore();
         staff = store.users.find((user) => user.id === requestedUserId);
         const staffRole = staff ? parseRole(String(staff.title ?? ""), staff.role) : null;
-        if (!staff || staffRole !== "barista") {
+        if ((!staff && !isOwnBaristaShift) || (staff && staffRole !== "barista")) {
           return NextResponse.json({ ok: false, error: "Barista account not found." }, { status: 404, headers: corsHeaders });
         }
       }
-      if (!staff) {
-        return NextResponse.json({ ok: false, error: "Staff user not found." }, { status: 404, headers: corsHeaders });
-      }
       const entry = {
         id: String(raw.id || `log-${Date.now()}`),
-        userId: staff.id,
-        username: staff.username,
-        name: staff.name,
-        role: parseRole(String(staff.title ?? ""), staff.role),
+        userId: staff?.id ?? requestedUserId,
+        username: staff?.username ?? claims.username,
+        name: staff?.name ?? claims.name,
+        role: staff
+          ? parseRole(String(staff.title ?? ""), staff.role)
+          : claims.role,
         type: (raw.type === "logout" ? "logout" : "login") as "login" | "logout",
         at: phIsoTimestamp(String(raw.at ?? "")) || new Date().toISOString(),
       };

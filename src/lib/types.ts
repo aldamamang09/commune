@@ -9,6 +9,8 @@ export type Session = {
 
 export type DrinkStyle = "iced" | "hot";
 
+export type MenuCategoryType = string;
+
 export type MenuAddon = {
   id: string;
   name: string;
@@ -34,8 +36,10 @@ export type MenuItem = {
   name: string;
   price: number;
   category: string;
+  categoryType?: MenuCategoryType;
   image: string;
   available: boolean;
+  types?: string[];
   styles?: DrinkStyle[];
   addons?: MenuAddon[];
 };
@@ -102,14 +106,6 @@ export type PosState = {
   openedBy: string | null;
 };
 
-export type Promotion = {
-  id: string;
-  label: string;
-  type: "percent" | "amount";
-  value: number;
-  active: boolean;
-};
-
 export type StaffUser = {
   id: string;
   username: string;
@@ -174,19 +170,6 @@ export type RestockRecord = {
   date: string;
 };
 
-export type CostingIngredient = {
-  name: string;
-  amount: number;
-  unit: string;
-  outputCups?: number;
-};
-
-export type CostingItem = {
-  id: string;
-  productName: string;
-  ingredients: CostingIngredient[];
-};
-
 export type LoginActivity = {
   id: string;
   userId: string;
@@ -232,14 +215,13 @@ export type StoreData = {
   printJobs: PrintJob[];
   menu: MenuItem[];
   categories: string[];
-  promotions: Promotion[];
+  categoryTypes?: Record<string, MenuCategoryType>;
   users: StaffUser[];
   inventory: InventoryItem[];
   recipes: Record<string, RecipeIngredient[]>;
   recipeCostings: RecipeCosting[];
   usageLogs: UsageLog[];
   restocks: RestockRecord[];
-  costings: CostingItem[];
   loginActivity: LoginActivity[];
   offRequests: OffRequest[];
   voidRequests: VoidRequest[];

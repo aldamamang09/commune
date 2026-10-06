@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createRestock, deleteAdminRecord, deleteRestock, saveAdminData } from "@/actions/pos";
-import { costingIngredientForItem, cupsFromQuantity, formatQty, ingredientsForOrderLine, itemNameEquals, looksLikeCupItem, matchesInventoryRow, perCupAmount, remainingForUsages, roundQty, stockLedgerForRange } from "@/lib/inventory";
+import { formatQty, ingredientsForOrderLine, itemNameEquals, looksLikeCupItem, matchesInventoryRow, remainingForUsages, roundQty, stockLedgerForRange } from "@/lib/inventory";
 import { phDateString, phDateTimeLabel, phIsoFromDate, phPeriodBounds, type PeriodRange } from "@/lib/datetime";
-import { isFoodOrPastry, orderSoldAsLabel, orderSoldAsLines, orderSoldAsParts } from "@/lib/menu";
+import { cartLineUnitPrice, drinkDisplayName, orderLineOptionsLabel, orderSoldAsLabel, orderSoldAsLines, orderSoldAsParts } from "@/lib/menu";
 import type { Order, RecipeIngredient, StoreData } from "@/lib/types";
 
 function inventoryUsagePerPiece(item: StockItem, used: number) {
@@ -33,11 +33,11 @@ function toBaseQuantity(item: Pick<StockItem, "purchaseUnitSize">, pieces: numbe
   return pieces * pieceSize(item);
 }
 
-export type InventoryTab = "transactions" | "stock" | "restock" | "costing" | "used" | "units" | "recipes";
+export type InventoryTab = "transactions" | "stock" | "restock" | "used" | "units" | "recipes";
 
 type InventoryStore = Pick<
   StoreData,
-  "orders" | "inventory" | "usageLogs" | "restocks" | "costings"
+  "orders" | "inventory" | "usageLogs" | "restocks"
 > & Partial<Pick<StoreData, "recipes" | "recipeCostings" | "menu">>;
 
 type SalePurchaseTransactionsProps = {
@@ -52,6 +52,7 @@ type Transaction = {
   id: string;
   productName: string;
   productLines: { title: string; detail?: string }[];
+  productRows: { name: string; detail?: string; quantity: number; price: number; amount: number }[];
   type: "Purchase" | "Sale";
   quantity: number;
   price: number;
@@ -67,10 +68,30 @@ function ordersToTransactions(orders: Order[]): Transaction[] {
       const quantity = order.items.reduce((sum, item) => sum + item.qty, 0);
       const amount = order.total;
       const productLines = orderSoldAsParts(order.items);
+      const grossLines = order.items.map((item) => ({
+        name: drinkDisplayName(item),
+        detail: orderLineOptionsLabel(item) || undefined,
+        quantity: item.qty,
+        price: cartLineUnitPrice(item),
+      }));
+      const grossTotal = grossLines.reduce((sum, item) => sum + item.price * item.quantity, 0);
+      let allocatedAmount = 0;
+      const productRows = grossLines.map((item, index) => {
+        const lineGross = item.price * item.quantity;
+        const lineAmount =
+          index === grossLines.length - 1
+            ? amount - allocatedAmount
+            : grossTotal > 0
+              ? Math.round((amount * lineGross / grossTotal) * 100) / 100
+              : 0;
+        allocatedAmount += lineAmount;
+        return { ...item, amount: lineAmount };
+      });
       return {
         id: order.id,
         productName: orderSoldAsLines(order.items).join(", "),
         productLines,
+        productRows,
         type: (order.recordType === "Purchase" ? "Purchase" : "Sale") as "Purchase" | "Sale",
         quantity,
         price: quantity > 0 ? amount / quantity : amount,
@@ -152,41 +173,6 @@ function RowActions({
   );
 }
 
-function transactionToOrder(transaction: Transaction, existing?: Order): Order {
-  const createdAt = phIsoFromDate(transaction.date, existing?.createdAt);
-  const sameItems =
-    existing &&
-    existing.items.reduce((sum, item) => sum + item.qty, 0) === transaction.quantity &&
-    orderSoldAsLabel(existing.items) === transaction.productName;
-
-  return {
-    id: transaction.id,
-    createdAt,
-    baristaName: existing?.baristaName ?? "Admin",
-    items: sameItems && existing
-      ? existing.items
-      : [
-          {
-            productId: existing?.items[0]?.productId ?? `manual-${transaction.id}`,
-            name: transaction.productName,
-            qty: transaction.quantity,
-            price: transaction.price,
-          },
-        ],
-    total: transaction.amount,
-    subtotal: existing?.subtotal ?? transaction.amount,
-    discount: existing?.discount,
-    promoLabel: existing?.promoLabel,
-    paymentMethod: existing?.paymentMethod ?? "cash",
-    ticketNo: existing?.ticketNo,
-    paid: existing?.paid ?? transaction.amount,
-    change: existing?.change,
-    voided: existing?.voided,
-    voidReason: existing?.voidReason,
-    recordType: transaction.type,
-  };
-}
-
 type StockItem = {
   id: string;
   name: string;
@@ -207,12 +193,6 @@ type RestockRecord = {
   purchaseUnit?: string;
   date: string;
 };
-
-  type CostingItem = {
-    id: string;
-    productName: string;
-    ingredients: { name: string; amount: number; unit: string; outputCups?: number }[];
-  };
 
 type UsageRecord = {
   id: string;
@@ -346,9 +326,7 @@ export function SalePurchaseTransactions({
   stocksRef.current = stocks;
 
   const [restocks, setRestocks] = useState<RestockRecord[]>(store.restocks ?? []);
-  const [costings, setCostings] = useState<CostingItem[]>(store.costings ?? []);
   const [costingNotice, setCostingNotice] = useState<string | null>(null);
-  const [savingCosting, setSavingCosting] = useState(false);
 
   const [usages, setUsages] = useState<UsageRecord[]>(persistedUsages);
 
@@ -357,8 +335,7 @@ export function SalePurchaseTransactions({
     setStocks(persistedStocks);
     setUsages(persistedUsages);
     setRestocks(store.restocks ?? []);
-    setCostings(store.costings ?? []);
-  }, [store.orders, store.inventory, store.usageLogs, store.restocks, store.costings, store.recipes, store.recipeCostings]);
+  }, [store.orders, store.inventory, store.usageLogs, store.restocks, store.recipes, store.recipeCostings]);
 
   const [editStockId, setEditStockId] = useState<string | null>(null);
   const [stockName, setStockName] = useState("");
@@ -375,12 +352,6 @@ export function SalePurchaseTransactions({
     setStockPurchaseUnitSize("");
     setStockCupUsageAmount("");
   }
-
-  const [editCostingId, setEditCostingId] = useState<string | null>(null);
-  const [costingProduct, setCostingProduct] = useState("");
-  const [costingIngs, setCostingIngs] = useState<{ name: string; amount: number; unit: string; outputCups?: number }[]>([
-    { name: "", amount: 0, unit: "", outputCups: 0 },
-  ]);
 
   const [inlineRestockValues, setInlineRestockValues] = useState<{ [key: string]: string }>({});
   const [stockNotice, setStockNotice] = useState<string | null>(null);
@@ -676,101 +647,6 @@ export function SalePurchaseTransactions({
     });
   };
 
-  const applyTransactionInventoryEffect = (
-    currentStocks: StockItem[],
-    currentUsages: UsageRecord[],
-    productName: string,
-    type: "Purchase" | "Sale",
-    quantity: number,
-    dateStr: string,
-    isRevert = false,
-  ) => {
-    const nextStocks = currentStocks.map((item) => ({ ...item }));
-    let nextUsages = [...currentUsages];
-
-    if (type === "Sale") {
-      const costing = costings.find((c) => itemNameEquals(c.productName, productName));
-      if (costing) {
-        for (const ing of costing.ingredients) {
-          const stockIndex = nextStocks.findIndex((s) => itemNameEquals(s.name, ing.name));
-          if (stockIndex === -1) continue;
-          const totalUsed = roundQty(perCupAmount(ing) * quantity);
-          if (totalUsed <= 0) continue;
-          nextStocks[stockIndex].stock = roundQty(
-            isRevert
-              ? nextStocks[stockIndex].stock + totalUsed
-              : Math.max(0, nextStocks[stockIndex].stock - totalUsed),
-          );
-          if (isRevert) {
-            const idx = nextUsages.findIndex(
-              (usage) =>
-                itemNameEquals(usage.itemName, ing.name) &&
-                usage.usedAmount === totalUsed &&
-                phDateString(usage.date) === phDateString(dateStr),
-            );
-            if (idx !== -1) nextUsages.splice(idx, 1);
-          } else {
-            nextUsages = [
-              {
-                id: `${Date.now()}-${ing.name}-${Math.random()}`,
-                date: dateStr,
-                itemName: ing.name,
-                usedAmount: totalUsed,
-                unit: ing.unit,
-                remaining: nextStocks[stockIndex].stock,
-                soldAs: productName,
-              },
-              ...nextUsages,
-            ];
-          }
-        }
-      }
-    } else if (type === "Purchase") {
-      const stockIndex = nextStocks.findIndex((s) => itemNameEquals(s.name, productName));
-      if (stockIndex !== -1) {
-        nextStocks[stockIndex].stock = roundQty(
-          isRevert
-            ? Math.max(0, nextStocks[stockIndex].stock - quantity)
-            : nextStocks[stockIndex].stock + quantity,
-        );
-      }
-    }
-
-    return { nextStocks, nextUsages };
-  };
-
-  const persistInventoryAndUsage = async (nextStocks: StockItem[], nextUsages: UsageRecord[]) => {
-    setStocks(nextStocks);
-    setUsages(nextUsages);
-    await persistInventory(nextStocks);
-    await saveAdminData({
-      usageLogs: nextUsages.map((entry) => ({
-        id: entry.id,
-        orderId: store.usageLogs.find((item) => item.id === entry.id)?.orderId || "",
-        orderItemId: store.usageLogs.find((item) => item.id === entry.id)?.orderItemId || "",
-        date: entry.date,
-        itemName: entry.itemName,
-        usedAmount: entry.usedAmount,
-        unit: entry.unit,
-        remaining: entry.remaining,
-      })),
-    });
-  };
-
-  const persistOrders = async (nextTransactions: Transaction[]) => {
-    const nextById = new Map(nextTransactions.map((item) => [item.id, item]));
-    const kept = store.orders.flatMap((order) => {
-      if (order.voided) return [order];
-      const next = nextById.get(order.id);
-      if (!next) return [];
-      return [transactionToOrder(next, order)];
-    });
-    const created = nextTransactions
-      .filter((item) => !store.orders.some((order) => order.id === item.id))
-      .map((item) => transactionToOrder(item));
-    await saveAdminData({ orders: [...kept, ...created] });
-  };
-
   async function persistInventory(nextStocks: StockItem[]) {
     const existingById = new Map(store.inventory.map((item) => [item.id, item]));
     const inventory = nextStocks.map((item) => {
@@ -980,41 +856,6 @@ export function SalePurchaseTransactions({
     }
   };
 
-  const handleSaveCosting = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!costingProduct) return;
-
-    const previousCostings = costings;
-    let nextCostings: CostingItem[];
-    if (editCostingId) {
-      nextCostings = costings.map((c) => c.id === editCostingId ? { ...c, productName: costingProduct, ingredients: costingIngs } : c);
-    } else {
-      const newCosting: CostingItem = { id: Date.now().toString(), productName: costingProduct, ingredients: costingIngs };
-      nextCostings = [...costings, newCosting];
-    }
-
-    setCostingNotice(null);
-    setSavingCosting(true);
-    setCostings(nextCostings);
-    try {
-      await saveAdminData({ costings: nextCostings });
-      setEditCostingId(null);
-      setCostingProduct("");
-      setCostingIngs([{ name: "", amount: 0, unit: "", outputCups: 0 }]);
-    } catch (error) {
-      setCostings(previousCostings);
-      setCostingNotice(error instanceof Error ? error.message : "Could not save costing.");
-    } finally {
-      setSavingCosting(false);
-    }
-  };
-
-  const handleEditCosting = (c: CostingItem) => {
-    setEditCostingId(c.id);
-    setCostingProduct(c.productName);
-    setCostingIngs(c.ingredients);
-  };
-
   const deleteRecipeCosting = async (index: number) => {
     const previousCostings = recipeCostings;
     const nextCostings = recipeCostings.filter((_, rowIndex) => rowIndex !== index);
@@ -1033,19 +874,6 @@ export function SalePurchaseTransactions({
     }
   };
 
-  const handleDeleteCosting = async (id: string) => {
-    const previousCostings = costings;
-    const nextCostings = costings.filter((c) => c.id !== id);
-    setCostingNotice(null);
-    setCostings(nextCostings);
-    try {
-      await saveAdminData({ costings: nextCostings });
-    } catch (error) {
-      setCostings(previousCostings);
-      setCostingNotice(error instanceof Error ? error.message : "Could not delete costing.");
-    }
-  };
-
   const period = filterMode === "date"
     ? { from: filterDate, to: filterDate }
     : phPeriodBounds(rangeType);
@@ -1059,10 +887,15 @@ export function SalePurchaseTransactions({
   }
 
   const transactionsInRange = transactions.filter((transaction) => inDateRange(transaction.date));
-  const filteredTransactions = transactionsInRange.filter((t) => {
-    return t.productName.toLowerCase().includes(filterKeyword.toLowerCase());
+  const transactionKeyword = filterKeyword.trim().toLowerCase();
+  const filteredTransactions = transactionsInRange.flatMap((transaction) => {
+    const productRows = transaction.productRows.filter((row) =>
+      `${row.name} ${row.detail ?? ""}`.toLowerCase().includes(transactionKeyword),
+    );
+    return productRows.length > 0
+      ? [{ transaction, productRows }]
+      : [];
   });
-  const hasTransactionsInRange = transactionsInRange.length > 0;
 
   const usageGroups = useMemo(() => {
     const keyword = filterKeyword.trim().toLowerCase();
@@ -1148,7 +981,7 @@ export function SalePurchaseTransactions({
             onClick={() => setActiveTab(tab)}
             className={`shrink-0 px-4 py-1.5 rounded text-xs font-bold transition shadow-sm uppercase ${activeTab === tab ? "bg-black text-white" : "bg-white text-neutral-700 hover:bg-neutral-100"}`}
           >
-            {tab === "transactions" ? "Transactions" : tab === "stock" ? "Stock Inventory" : tab === "restock" ? "Restock" : tab === "costing" ? "Costing" : tab === "used" ? "Usage Logbook" : "Costing"}
+            {tab === "transactions" ? "Transactions" : tab === "stock" ? "Stock Inventory" : tab === "restock" ? "Restock" : tab === "used" ? "Usage Logbook" : "Recipes"}
           </button>
         ))}
       </div> : null}
@@ -1486,26 +1319,36 @@ export function SalePurchaseTransactions({
                 {filteredTransactions.length === 0 ? (
                   <tr><td colSpan={6} className="p-4 text-center text-neutral-500 text-xs">No transactions found for this date range.</td></tr>
                 ) : (
-                  filteredTransactions.map((t) => (
-                    <tr key={t.id} className="border-b border-neutral-200 hover:bg-neutral-50 text-xs">
-                      <td className="p-3 border-r border-neutral-200 text-neutral-600 font-medium whitespace-nowrap">
-                        {phDateTimeLabel(t.createdAt)}
-                      </td>
-                      <td className="p-3 border-r border-neutral-200 font-medium">
-                        <DrinkLines lines={t.productLines} />
-                      </td>
-                      <td className="p-3 border-r border-neutral-200 text-right">{t.quantity}</td>
-                      <td className="p-3 border-r border-neutral-200 text-right">₱{t.price.toFixed(2)}</td>
-                      <td className="p-3 border-r border-neutral-200 text-right font-semibold">₱{t.amount.toFixed(2)}</td>
-                      <td className="p-3 text-center">
-                        <RowActions
-                          deleteLabel={`Delete ${t.productName}`}
-                          deleteDisabled={deletingTransactionId === t.id}
-                          onDelete={() => void handleDeleteTransaction(t.id)}
-                        />
-                      </td>
-                    </tr>
-                  ))
+                  filteredTransactions.flatMap(({ transaction, productRows }) =>
+                    productRows.map((product, index) => (
+                      <tr
+                        key={`${transaction.id}-${product.name}-${index}`}
+                        className="border-b border-neutral-200 hover:bg-neutral-50 text-xs"
+                      >
+                        <td className="p-3 border-r border-neutral-200 text-neutral-600 font-medium whitespace-nowrap">
+                          {phDateTimeLabel(transaction.createdAt)}
+                        </td>
+                        <td className="p-3 border-r border-neutral-200 font-medium">
+                          <p>{product.name}</p>
+                          {product.detail ? (
+                            <p className="text-[11px] font-normal text-neutral-500">{product.detail}</p>
+                          ) : null}
+                        </td>
+                        <td className="p-3 border-r border-neutral-200 text-right">{product.quantity}</td>
+                        <td className="p-3 border-r border-neutral-200 text-right">₱{product.price.toFixed(2)}</td>
+                        <td className="p-3 border-r border-neutral-200 text-right font-semibold">₱{product.amount.toFixed(2)}</td>
+                        <td className="p-3 text-center">
+                          {index === 0 ? (
+                            <RowActions
+                              deleteLabel={`Delete ${transaction.productName}`}
+                              deleteDisabled={deletingTransactionId === transaction.id}
+                              onDelete={() => void handleDeleteTransaction(transaction.id)}
+                            />
+                          ) : null}
+                        </td>
+                      </tr>
+                    )),
+                  )
                 )}
               </tbody>
             </table>
@@ -1592,14 +1435,11 @@ export function SalePurchaseTransactions({
                     usages,
                   });
                   const isLiveDate = isLiveRange;
-                  const recipe = costingIngredientForItem(costings, s.name);
                   const configuredUsage = configuredUsagePerUnit(s);
-                  const cupsLeft = recipe
-                    ? cupsFromQuantity(remaining, recipe)
-                    : configuredCupsLeft(s, remaining) ??
-                      (s.unit.trim().toLowerCase() !== "pcs" && s.cupsMake != null
-                        ? Number(s.cupsMake)
-                        : null);
+                  const cupsLeft = configuredCupsLeft(s, remaining) ??
+                    (s.unit.trim().toLowerCase() !== "pcs" && s.cupsMake != null
+                      ? Number(s.cupsMake)
+                      : null);
                   return (
                     <tr key={s.id} className="border-b border-neutral-200 text-xs">
                       <td className="p-2 border-r border-neutral-200 font-medium">{s.name}</td>
@@ -1737,130 +1577,6 @@ export function SalePurchaseTransactions({
                   </tr>
                                   ))
                 })()}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {activeTab === "costing" && (
-        <div className="space-y-6">
-          {costingNotice ? <p role="alert" className="text-sm text-red-600">{costingNotice}</p> : null}
-          <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-400 space-y-4">
-            <h3 className="text-xs font-bold text-neutral-700 uppercase">{editCostingId ? "Edit Costing Config" : "Configure Product Costing & Ingredients"}</h3>
-            <form onSubmit={handleSaveCosting} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-neutral-600 mb-1">Product Name</label>
-                  <input type="text" placeholder="e.g. Iced Latte" value={costingProduct} onChange={(e) => setCostingProduct(e.target.value)} className="w-full bg-white border border-neutral-400 rounded px-3 py-1.5 text-sm" />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-xs font-medium text-neutral-600">
-                  Recipe yield: pack amount and how many cups that pack makes. Per cup is calculated automatically.
-                </label>
-                {costingIngs.map((ing, idx) => (
-                  <div key={idx} className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-                    <input type="text" placeholder="Ingredient Name (e.g. Coffee Beans)" value={ing.name} onChange={(e) => {
-                      const updated = [...costingIngs];
-                      updated[idx].name = e.target.value;
-                      setCostingIngs(updated);
-                    }} className="col-span-2 flex-1 bg-white border border-neutral-400 rounded px-3 py-1.5 text-sm" />
-                    <input type="number" min="0" step="0.01" placeholder="Pack amount" value={ing.amount || ""} onChange={(e) => {
-                      const updated = [...costingIngs];
-                      updated[idx].amount = Number(e.target.value);
-                      setCostingIngs(updated);
-                    }} className="w-full sm:w-24 bg-white border border-neutral-400 rounded px-3 py-1.5 text-sm" />
-                      <input type="text" placeholder="Unit" value={ing.unit} onChange={(e) => {
-                      const updated = [...costingIngs];
-                      updated[idx].unit = e.target.value;
-                      setCostingIngs(updated);
-                    }} className="w-full sm:w-28 bg-white border border-neutral-400 rounded px-3 py-1.5 text-sm" />
-                    <input type="number" min="0" step="0.01" placeholder="Cups produced" value={ing.outputCups || ""} onChange={(e) => {
-                      const updated = [...costingIngs];
-                      updated[idx].outputCups = Number(e.target.value);
-                      setCostingIngs(updated);
-                    }} className="w-full sm:w-28 bg-white border border-neutral-400 rounded px-3 py-1.5 text-sm" aria-label="Cups produced" />
-                    <button
-                      type="button"
-                      aria-label="Remove ingredient"
-                      onClick={() => setCostingIngs(costingIngs.filter((_, i) => i !== idx))}
-                      className={`${iconBtn} hover:bg-red-50 hover:text-red-600`}
-                    >
-                      
-                      <TrashIcon />
-                    </button>
-                  </div>
-                ))}
-                <button type="button" onClick={() => setCostingIngs([...costingIngs, { name: "", amount: 0, unit: "", outputCups: 0 }])} className="text-xs border border-neutral-300 bg-white text-black hover:bg-neutral-100 px-3 py-1 rounded">
-                  + Add Ingredient
-                </button>
-              </div>
-
-              <div className="flex gap-2 pt-2">
-                <button type="submit" disabled={savingCosting} className="bg-black text-white px-4 py-1.5 rounded text-sm font-medium disabled:opacity-50">{savingCosting ? "Saving…" : editCostingId ? "Update Costing" : "Save Costing"}</button>
-                <button type="button" onClick={() => { setEditCostingId(null); setCostingProduct(""); setCostingIngs([{ name: "", amount: 0, unit: "", outputCups: 0 }]); }} className="border border-neutral-300 bg-white text-black hover:bg-neutral-100 px-4 py-1.5 rounded text-sm font-medium">Clear</button>
-              </div>
-            </form>
-          </div>
-
-          <div className="overflow-x-auto rounded-lg border border-neutral-400 bg-white">
-            <table className="w-full min-w-[800px] text-left text-sm">
-              <thead>
-                <tr className="bg-black border-b border-black text-white text-xs font-semibold">
-                  <th className="p-3 border-r border-white/15">Item</th>
-                  <th className="p-3 border-r border-white/15">Pack recipe</th>
-                  <th className="p-3 border-r border-white/15">Per cup</th>
-                  <th className="p-3 border-r border-white/15 text-right">{isLiveRange ? "Used today" : "Used"}</th>
-                  <th className="p-3 border-r border-white/15 text-right">Stock</th>
-                  <th className="p-3 border-r border-white/15 text-right">Cups left</th>
-                  <th className="p-3 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {costings.map((c) => {
-                  const ing = c.ingredients[0];
-                  const stock = stocks.find((item) => itemNameEquals(item.name, c.productName) || (ing ? itemNameEquals(item.name, ing.name) : false));
-                  const remaining = stock?.stock ?? 0;
-                  const used = hasTransactionsInRange
-                    ? usages
-                        .filter((entry) => inDateRange(entry.date))
-                        .filter((entry) => itemNameEquals(entry.itemName, c.productName) || (ing ? itemNameEquals(entry.itemName, ing.name) : false))
-                        .reduce((sum, entry) => sum + entry.usedAmount, 0)
-                    : 0;
-                  const perCup = ing ? perCupAmount(ing) : 0;
-                  const cupsLeft = ing ? cupsFromQuantity(remaining, ing) : 0;
-                  const cupsUsed = ing ? cupsFromQuantity(used, ing) : 0;
-                  return (
-                    <tr key={c.id} className="border-b border-neutral-200 text-xs">
-                      <td className="p-3 border-r border-neutral-200 font-medium">{c.productName}</td>
-                      <td className="p-3 border-r border-neutral-200">
-                        {ing ? `${ing.amount} ${ing.unit} → ${ing.outputCups ?? 0} cups` : "—"}
-                      </td>
-                      <td className="p-3 border-r border-neutral-200">
-                        {ing && perCup > 0 ? `${perCup.toFixed(2)} ${ing.unit}` : "—"}
-                      </td>
-                      <td className="p-3 border-r border-neutral-200 text-right text-red-600">
-                        {used} {ing?.unit} ({cupsUsed.toFixed(1)} cups)
-                      </td>
-                      <td className="p-3 border-r border-neutral-200 text-right">
-                        {remaining} {stock?.unit || ing?.unit}
-                      </td>
-                      <td className="p-3 border-r border-neutral-200 text-right font-semibold">
-                        {cupsLeft.toFixed(1)} cups
-                      </td>
-                      <td className="p-3 text-center">
-                        <RowActions
-                          editLabel={`Edit costing ${c.productName}`}
-                          deleteLabel={`Delete costing ${c.productName}`}
-                          onEdit={() => handleEditCosting(c)}
-                          onDelete={() => void handleDeleteCosting(c.id)}
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
               </tbody>
             </table>
           </div>

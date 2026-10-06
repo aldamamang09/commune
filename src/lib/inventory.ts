@@ -1,8 +1,6 @@
 import { phDateString, phTimestamp } from "@/lib/datetime";
 import { hydrateOrderLine, normalizeMenuAddons } from "@/lib/menu";
 import type {
-  CostingIngredient,
-  CostingItem,
   DrinkStyle,
   InventoryItem,
   MenuItem,
@@ -155,52 +153,6 @@ export function remainingForUsages(
   return remaining;
 }
 
-export function perCupAmount(ing: Pick<CostingIngredient, "amount" | "outputCups">): number {
-  const amount = Number(ing.amount) || 0;
-  const cups = Number(ing.outputCups) || 0;
-  if (amount <= 0) return 0;
-  if (cups > 0) return amount / cups;
-  return amount;
-}
-
-export function cupsFromQuantity(
-  quantity: number,
-  ing: Pick<CostingIngredient, "amount" | "outputCups">,
-): number {
-  const perCup = perCupAmount(ing);
-  if (perCup <= 0) return 0;
-  return quantity / perCup;
-}
-
-function comparableItemName(value: string) {
-  return value.trim().toLowerCase().replace(/(.)\1+/g, "$1");
-}
-
-export function findCostingForItem(costings: CostingItem[], name: string): CostingItem | undefined {
-  const needle = comparableItemName(name);
-  if (!needle) return undefined;
-  return costings.find((costing) => {
-    if (costing.productName.toLowerCase() === needle) return true;
-    return costing.ingredients.some((ing) => {
-      const ingName = comparableItemName(ing.name);
-      return ingName === needle || ingName.includes(needle) || needle.includes(ingName);
-    });
-  });
-}
-
-export function costingIngredientForItem(
-  costings: CostingItem[],
-  name: string,
-): CostingIngredient | undefined {
-  const costing = findCostingForItem(costings, name);
-  if (!costing) return undefined;
-  const needle = comparableItemName(name);
-  return (
-    costing.ingredients.find((ing) => comparableItemName(ing.name) === needle) ??
-    costing.ingredients[0]
-  );
-}
-
 type CupAssignment = Pick<
   RecipeCosting,
   "hotCupInventoryItemId" | "icedCupInventoryItemId" | "otherCupInventoryItemId"
@@ -298,7 +250,7 @@ export function ingredientsForOrderLine(
   const recipeCostings = store.recipeCostings ?? [];
   const costing = [...recipeCostings].reverse().find((entry) => entry.menuItems.some(matchesDrink));
 
-  // When costings exist, they are the only source of truth. Never fall back to a stale recipe.
+  // Configured recipe costings are authoritative; otherwise use the legacy recipe map.
   const recipe = recipeCostings.length > 0
     ? costing?.ingredients ?? []
     : (store.recipes ?? {})[line.productId] ?? Object.entries(store.recipes ?? {}).find(([recipeKey]) => matchesDrink(recipeKey))?.[1] ?? [];

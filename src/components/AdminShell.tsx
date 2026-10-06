@@ -66,7 +66,12 @@ export function AdminShell({ session, users, store, children }: AdminShellProps)
       ) : null}
       {current === "sales" ? children : null}
       {current === "menu" ? (
-        <MenuCatalog menu={store.menu} categories={store.categories} inventory={store.inventory} />
+        <MenuCatalog
+          menu={store.menu}
+          categories={store.categories}
+          categoryTypes={store.categoryTypes ?? {}}
+          inventory={store.inventory}
+        />
       ) : null}
       {current === "transactions" ? <SalePurchaseTransactions store={store} /> : null}
       {current === "voids" ? <VoidRequestApproval requests={store.voidRequests ?? []} /> : null}

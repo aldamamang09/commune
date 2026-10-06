@@ -22,6 +22,7 @@ import {
   type InventoryTab,
 } from "@/components/SalePurchaseTransactions";
 import {
+  addonIdFromName,
   addonAllowsQty,
   cartLineKey,
   cartLineUnitPrice,
@@ -30,6 +31,7 @@ import {
   formatMoney,
   normalizeMenuAddons,
   normalizeMenuStyles,
+  normalizeMenuTypes,
   orderLineListLabel,
   orderLineOptionsLabel,
   resolveOrderAddons,
@@ -52,7 +54,6 @@ import type {
   PrintJob,
   PrintJobType,
   PosState,
-  Promotion,
   Session,
   StoreData,
   VoidRequest,
@@ -63,7 +64,6 @@ type PosClientProps = {
   pos: PosState;
   menu: MenuItem[];
   categories: string[];
-  promotions: Promotion[];
   orders: Order[];
   clockedInBaristas: { id: string; name: string; username: string }[];
   printJobs: PrintJob[];
@@ -74,7 +74,6 @@ type PosClientProps = {
     | "inventory"
     | "usageLogs"
     | "restocks"
-    | "costings"
     | "recipes"
     | "recipeCostings"
     | "menu"
@@ -86,14 +85,11 @@ type PosPanel = "pos" | "voids" | Extract<InventoryTab, "stock" | "restock">;
 const CASH_PRESETS = [500, 1000, 2000];
 const CHECKOUT_KEY = "commune_pos_checkout";
 const TEST_PRINTER_ENABLED = process.env.NEXT_PUBLIC_TEST_PRINTER === "true";
-const PROMOTIONS_ENABLED = false;
-
 type SavedCheckout = {
   userId: string;
   cart: OrderItem[];
   tendered: string;
   paymentMethod: PaymentMethod;
-  promoId: string | null;
   voidRequestId: string | null;
 };
 
@@ -129,7 +125,6 @@ function readCheckout(userId: string, menu: MenuItem[]): SavedCheckout | null {
       cart,
       tendered: typeof saved.tendered === "string" ? saved.tendered : "",
       paymentMethod: parsePayment(saved.paymentMethod),
-      promoId: typeof saved.promoId === "string" ? saved.promoId : null,
       voidRequestId:
         typeof saved.voidRequestId === "string" ? saved.voidRequestId : null,
     };
@@ -147,7 +142,6 @@ export function PosClient({
   pos,
   menu,
   categories,
-  promotions,
   orders,
   clockedInBaristas,
   printJobs,
@@ -168,8 +162,6 @@ export function PosClient({
   const [voidSearch, setVoidSearch] = useState("");
   const [voidTodayOnly, setVoidTodayOnly] = useState(true);
   const [activeVoidRequestId, setActiveVoidRequestId] = useState<string | null>(null);
-  const [promoOpen, setPromoOpen] = useState(false);
-  const [promoId, setPromoId] = useState<string | null>(null);
   const [printOrderId, setPrintOrderId] = useState<string | null>(null);
   const [lastTicket, setLastTicket] = useState<ReceiptTicket | null>(null);
   const [lastOrderId, setLastOrderId] = useState<string | null>(null);
@@ -195,10 +187,6 @@ export function PosClient({
   const [checkoutReady, setCheckoutReady] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activePanel, setActivePanel] = useState<PosPanel>("pos");
-  const activePromos = PROMOTIONS_ENABLED
-    ? promotions.filter((item) => item.active)
-    : [];
-  const appliedPromoId = PROMOTIONS_ENABLED ? promoId : null;
   const availableOrders = useMemo(() => {
     const byId = new Map(
       orders.filter((order) => !order.voided && !order.deletedAt).map((order) => [order.id, order]),
@@ -277,7 +265,6 @@ export function PosClient({
         setCart(saved.cart);
         setTendered(saved.tendered);
         setPaymentMethod(saved.paymentMethod);
-        setPromoId(PROMOTIONS_ENABLED ? saved.promoId : null);
         setActiveVoidRequestId(saved.voidRequestId);
       }
       setCheckoutReady(true);
@@ -294,10 +281,9 @@ export function PosClient({
       cart,
       tendered,
       paymentMethod,
-      promoId: appliedPromoId,
       voidRequestId: activeVoidRequestId,
     });
-  }, [checkoutReady, session.userId, cart, tendered, paymentMethod, appliedPromoId, activeVoidRequestId]);
+  }, [checkoutReady, session.userId, cart, tendered, paymentMethod, activeVoidRequestId]);
 
   useEffect(() => {
     document.body.style.overflow = menuOpen ? "hidden" : "";
@@ -315,31 +301,8 @@ export function PosClient({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [menuOpen]);
 
-  useEffect(() => {
-    if (
-      !promoId ||
-      (PROMOTIONS_ENABLED &&
-        promotions.some((item) => item.id === promoId && item.active))
-    ) {
-      return;
-    }
-    let cancelled = false;
-    Promise.resolve().then(() => {
-      if (!cancelled) setPromoId(null);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [promoId, promotions]);
-
   const subtotal = cart.reduce((sum, item) => sum + cartLineUnitPrice(item) * item.qty, 0);
-  const promo = activePromos.find((item) => item.id === promoId) ?? null;
-  const discount = promo
-    ? promo.type === "percent"
-      ? Math.round((subtotal * promo.value) / 100)
-      : Math.min(subtotal, promo.value)
-    : 0;
-  const total = Math.max(0, subtotal - discount);
+  const total = subtotal;
   const isCash = paymentMethod === "cash";
   const paid = isCash ? Number(tendered) || 0 : total;
   const change = isCash && paid >= total ? paid - total : 0;
@@ -404,8 +367,6 @@ export function PosClient({
       setCart([]);
       setTendered("");
       setPaymentMethod("cash");
-      setPromoId(null);
-      setPromoOpen(false);
     }
     setActiveVoidRequestId(null);
     setVoidTargetId(null);
@@ -452,12 +413,20 @@ export function PosClient({
   function selectedAddonsFor(item: MenuItem, selected: Record<string, number>): OrderAddon[] {
     return resolveOrderAddons(
       item,
-      normalizeMenuAddons(item).map((addon) => ({
-        id: addon.id,
-        name: addon.name,
-        price: addon.price,
-        qty: selected[addon.id] ?? 0,
-      })),
+      [
+        ...normalizeMenuAddons(item).map((addon) => ({
+          id: addon.id,
+          name: addon.name,
+          price: addon.price,
+          qty: selected[addon.id] ?? 0,
+        })),
+        ...normalizeMenuTypes(item).map((name, index) => ({
+          id: `type:${addonIdFromName(name, index)}`,
+          name,
+          price: 0,
+          qty: selected[`type:${addonIdFromName(name, index)}`] ?? 0,
+        })),
+      ],
     );
   }
 
@@ -493,7 +462,7 @@ export function PosClient({
  function handleMenuTap(item: MenuItem) {
     const styles = normalizeMenuStyles(item);
     const addons = normalizeMenuAddons(item);
-    if (styles.length > 1 || addons.length > 0) {
+    if (styles.length > 1 || addons.length > 0 || normalizeMenuTypes(item).length > 0) {
       setDrinkPick({
         item,
         style: styles.length === 1 ? styles[0] : undefined,
@@ -518,8 +487,6 @@ export function PosClient({
           setCart([]);
           setTendered("");
           setPaymentMethod("cash");
-          setPromoId(null);
-          setPromoOpen(false);
           setVoidReason("");
           setVoidModalOpen(false);
           setMessage("Checkout voided.");
@@ -558,7 +525,6 @@ export function PosClient({
           voidReason,
           voidUsername,
           voidPassword,
-          appliedPromoId,
           paymentMethod,
         );
         if ("error" in result && result.error) {
@@ -568,8 +534,6 @@ export function PosClient({
         setCart([]);
         setTendered("");
         setPaymentMethod("cash");
-        setPromoId(null);
-        setPromoOpen(false);
         setVoidUsername("");
         setVoidPassword("");
         setVoidReason("");
@@ -591,8 +555,6 @@ export function PosClient({
       setCart([]);
       setTendered("");
       setPaymentMethod("cash");
-      setPromoId(null);
-      setPromoOpen(false);
       setLastOrderId(null);
       setLastTicket(null);
       setLastOrder(null);
@@ -621,7 +583,6 @@ export function PosClient({
         cart,
         voidReason,
         targetId,
-        appliedPromoId,
         paymentMethod,
       );
       if (!result.requestId) {
@@ -1106,6 +1067,45 @@ export function PosClient({
                   </button>
                 </div>
               </div>
+
+              {normalizeMenuTypes(drinkPick.item).length > 0 ? (
+                <div className="mt-5 space-y-2">
+                  <p className="text-sm text-neutral-500">Types (optional)</p>
+                  {normalizeMenuTypes(drinkPick.item).map((name, index) => {
+                    const typeId = `type:${addonIdFromName(name, index)}`;
+                    const on = (drinkPick.addons[typeId] ?? 0) > 0;
+                    return (
+                      <button
+                        key={typeId}
+                        type="button"
+                        onClick={() =>
+                          setDrinkPick({
+                            ...drinkPick,
+                            addons: {
+                              ...Object.fromEntries(
+                                Object.entries(drinkPick.addons).filter(([id]) => !id.startsWith("type:")),
+                              ),
+                              ...(on ? {} : { [typeId]: 1 }),
+                            },
+                          })
+                        }
+                        className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition ${
+                          on ? "border-black bg-neutral-50" : "border-neutral-200 bg-white"
+                        }`}
+                      >
+                        <span className="text-sm font-medium">{name}</span>
+                        <span
+                          className={`flex h-5 w-5 items-center justify-center rounded-full border ${
+                            on ? "border-black" : "border-neutral-300"
+                          }`}
+                        >
+                          {on ? <span className="h-2.5 w-2.5 rounded-full bg-black" /> : null}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
 
               {normalizeMenuAddons(drinkPick.item).length > 0 ? (
                 <div className="mt-5 space-y-2">
@@ -1762,10 +1762,15 @@ export function PosClient({
                       {normalizeMenuStyles(item).length > 0 ? (
                         <p className="mt-0.5 text-[10px] text-neutral-400">
                           {normalizeMenuStyles(item).map(drinkStyleLabel).join(" / ")}
+                          {normalizeMenuTypes(item).length > 0 ? " · Types" : ""}
                           {normalizeMenuAddons(item).length > 0 ? " · Add-ons" : ""}
                         </p>
                       ) : normalizeMenuAddons(item).length > 0 ? (
-                        <p className="mt-0.5 text-[10px] text-neutral-400">Add-ons</p>
+                        <p className="mt-0.5 text-[10px] text-neutral-400">
+                          {normalizeMenuTypes(item).length > 0 ? "Types · Add-ons" : "Add-ons"}
+                        </p>
+                      ) : normalizeMenuTypes(item).length > 0 ? (
+                        <p className="mt-0.5 text-[10px] text-neutral-400">Types</p>
                       ) : null}
                       <p className="mt-0.5 text-xs text-neutral-600">
                         {formatMoney(item.price)}
@@ -1901,12 +1906,6 @@ export function PosClient({
                 <span className="text-neutral-500">Subtotal</span>
                 <span>{formatMoney(subtotal)}</span>
               </div>
-              {discount > 0 && promo ? (
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-neutral-500">{promo.label}</span>
-                  <span>−{formatMoney(discount)}</span>
-                </div>
-              ) : null}
               <div className="flex items-center justify-between text-xs">
                 <span className="text-neutral-500">Total</span>
                 <span className="text-base font-semibold">{formatMoney(total)}</span>
@@ -1916,51 +1915,7 @@ export function PosClient({
                 <span>{formatMoney(isCash ? change : total)}</span>
               </div>
 
-              {PROMOTIONS_ENABLED && promoOpen ? (
-                <div className="grid grid-cols-2 gap-1.5">
-                  {activePromos.length === 0 ? (
-                    <p className="col-span-2 text-center text-[11px] text-neutral-500">
-                      No active promotions.
-                    </p>
-                  ) : (
-                    activePromos.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() =>
-                          setPromoId((current) => (current === item.id ? null : item.id))
-                        }
-                        className={`rounded-lg border px-2 py-1 text-[11px] transition ${
-                          promoId === item.id
-                            ? "border-black bg-black text-white"
-                            : "border-neutral-300 bg-white hover:border-black"
-                        }`}
-                      >
-                        {item.label}
-                      </button>
-                    ))
-                  )}
-                </div>
-              ) : null}
-
-              <div
-                className={`grid gap-1.5 pt-1 ${
-                  PROMOTIONS_ENABLED ? "grid-cols-3" : "grid-cols-2"
-                }`}
-              >
-                {PROMOTIONS_ENABLED ? (
-                  <button
-                    type="button"
-                    onClick={() => setPromoOpen((value) => !value)}
-                    className={`rounded-lg border py-2 text-xs transition ${
-                      promoId
-                        ? "border-black bg-black text-white"
-                        : "border-neutral-300 hover:border-black"
-                    }`}
-                  >
-                    Promotions
-                  </button>
-                ) : null}
+              <div className="grid grid-cols-2 gap-1.5 pt-1">
                 <button
                   type="button"
                   onClick={printTicket}
@@ -1993,7 +1948,6 @@ export function PosClient({
                   startTransition(async () => {
                     const result = await createOrder(
                       cart,
-                      appliedPromoId,
                       paymentMethod,
                       paid,
                     );
@@ -2014,8 +1968,6 @@ export function PosClient({
                     setCart([]);
                     setTendered("");
                     setPaymentMethod("cash");
-                    setPromoId(null);
-                    setPromoOpen(false);
                     setMessage(
                       `Paid ${formatMoney(result.total ?? 0)}. Tap Print for labels and receipt.`,
                     );
