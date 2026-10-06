@@ -137,6 +137,20 @@ daily_ledger as (
   from public.admin_ledger_entries
   group by entry_date
 ),
+daily_expense_details as (
+  select
+    entry_date as sales_date,
+    jsonb_agg(
+      jsonb_build_object(
+        'amount', amount,
+        'reason', reason
+      )
+      order by created_at, id
+    ) as expenses_breakdown
+  from public.admin_ledger_entries
+  where kind = 'expense'
+  group by entry_date
+),
 date_bounds as (
   select
     least(
@@ -250,12 +264,14 @@ select
     when 23 then '11 PM'
     else null
   end as peak_hour,
-  coalesce(daily_peak_hours.item_count, 0::bigint) as peak_hour_items
+  coalesce(daily_peak_hours.item_count, 0::bigint) as peak_hour_items,
+  coalesce(daily_expense_details.expenses_breakdown, '[]'::jsonb) as expenses_breakdown
 from all_dates dates
 left join daily_sales using (sales_date)
 left join daily_types using (sales_date)
 left join daily_drink_products using (sales_date)
 left join daily_ledger using (sales_date)
+left join daily_expense_details using (sales_date)
 left join daily_payment_breakdown using (sales_date)
 left join daily_peak_hours using (sales_date);
 
