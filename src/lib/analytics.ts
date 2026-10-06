@@ -151,7 +151,8 @@ export function productStats(
 export function drinkProductStats(stats: ProductStat[]): ProductStat[] {
   return stats.filter((item) => {
     if (item.categoryType !== undefined) {
-      return item.categoryType.trim().toLowerCase() === "drink";
+      const type = item.categoryType.trim().toLowerCase();
+      return type === "drink" || type === "drinks";
     }
     const category = item.category.replace(/[^a-z]/gi, "").toLowerCase();
     return category !== "other" && category !== "food" && !category.includes("pastr") && category !== "addons" && category !== "addson";

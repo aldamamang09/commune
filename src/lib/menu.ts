@@ -18,11 +18,6 @@ export const DRINK_STYLES: DrinkStyle[] = ["iced", "hot"];
 
 export function normalizeMenuCategoryType(value: unknown): MenuCategoryType {
   const text = typeof value === "string" ? value.trim() : "";
-  const normalized = text.toLowerCase();
-  if (normalized === "food") return "food";
-  if (normalized === "pastry") return "pastry";
-  if (normalized === "drink") return "drink";
-  if (normalized === "other") return "other";
   return text || "other";
 }
 
@@ -35,18 +30,19 @@ export function inferMenuCategoryType(category: string): MenuCategoryType {
 }
 
 export function menuCategoryTypeLabel(type: MenuCategoryType) {
-  if (!type) return "Other";
-  if (type === "food") return "Food";
-  if (type === "pastry") return "Pastry";
-  if (type === "drink") return "Drink";
-  if (type === "other") return "Other";
-  return type.charAt(0).toUpperCase() + type.slice(1);
+  const trimmed = type.trim();
+  return trimmed ? trimmed.charAt(0).toUpperCase() + trimmed.slice(1) : "Other";
 }
 
 export function isFoodOrPastry(category: string, categoryType?: string) {
   if (typeof categoryType === "string" && categoryType.trim()) {
     const normalizedType = categoryType.trim().toLowerCase();
-    return normalizedType === "food" || normalizedType === "pastry";
+    return (
+      normalizedType === "food" ||
+      normalizedType === "foods" ||
+      normalizedType === "pastry" ||
+      normalizedType === "pastries"
+    );
   }
   const type = inferMenuCategoryType(category);
   return type === "food" || type === "pastry";

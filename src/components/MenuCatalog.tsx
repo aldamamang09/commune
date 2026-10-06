@@ -96,8 +96,7 @@ export function MenuCatalog({ menu, categories, categoryTypes = {}, inventory = 
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [newCategory, setNewCategory] = useState("");
-  const [newCategoryType, setNewCategoryType] = useState<MenuCategoryType>("drink");
-  const [newCustomCategoryType, setNewCustomCategoryType] = useState("");
+  const [newCategoryType, setNewCategoryType] = useState<MenuCategoryType>("");
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
   const [categoryName, setCategoryName] = useState("");
   const [categoryTypeDrafts, setCategoryTypeDrafts] = useState<Record<string, string>>({});
@@ -126,6 +125,17 @@ export function MenuCatalog({ menu, categories, categoryTypes = {}, inventory = 
       .filter((item) => filter === "All" || item.category.toLowerCase() === needle)
       .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
   }, [menu, filter]);
+  const categoryTypeOptions = useMemo(() => {
+    const uniqueTypes = new Map<string, string>();
+    for (const type of [
+      ...Object.values(categoryTypes),
+      ...menu.flatMap((item) => item.categoryType ? [item.categoryType] : []),
+    ]) {
+      const value = normalizeMenuCategoryType(type);
+      if (value) uniqueTypes.set(value.toLowerCase(), value);
+    }
+    return [...uniqueTypes.values()].sort((a, b) => a.localeCompare(b));
+  }, [categoryTypes, menu]);
   const itemCategoryIsFoodOrPastry = isFoodOrPastry(itemCategory, categoryTypeForName(itemCategory));
 
   function flash(message: string | null) {
@@ -227,7 +237,11 @@ export function MenuCatalog({ menu, categories, categoryTypes = {}, inventory = 
               className="grid grid-cols-1 gap-3 rounded-2xl border border-neutral-200 bg-white p-4 lg:grid-cols-[minmax(0,1fr)_13rem_auto] lg:items-end"
               onSubmit={(event) => {
                 event.preventDefault();
-                const nextType = newCategoryType === "other" ? (newCustomCategoryType.trim() || "other") : newCategoryType;
+                const nextType = newCategoryType.trim();
+                if (!nextType) {
+                  flash("Enter a category type.");
+                  return;
+                }
                 startTransition(async () => {
                   const result = await addMenuCategory(newCategory, normalizeMenuCategoryType(nextType));
                   const error = actionError(result);
@@ -236,8 +250,7 @@ export function MenuCatalog({ menu, categories, categoryTypes = {}, inventory = 
                     return;
                   }
                   setNewCategory("");
-                  setNewCategoryType("drink");
-                  setNewCustomCategoryType("");
+                  setNewCategoryType("");
                   flash("Category added.");
                 });
               }}
@@ -245,6 +258,7 @@ export function MenuCatalog({ menu, categories, categoryTypes = {}, inventory = 
               <label className="min-w-0 w-full text-xs font-medium text-neutral-600">
                 <span className="mb-1.5 block">New category</span>
                 <input
+                  required
                   value={newCategory}
                   onChange={(event) => setNewCategory(event.target.value)}
                   placeholder="e.g. Coffee"
@@ -253,26 +267,13 @@ export function MenuCatalog({ menu, categories, categoryTypes = {}, inventory = 
               </label>
               <label className="min-w-0 w-full text-xs font-medium text-neutral-600">
                 <span className="mb-1.5 block">Type</span>
-                <div className="space-y-2">
-                  <select
-                    value={newCategoryType}
-                    onChange={(event) => setNewCategoryType(normalizeMenuCategoryType(event.target.value))}
-                    className={field}
-                  >
-                    <option value="Drinks">Drink</option>
-                    <option value="Foods">Food</option>
-                    <option value="Pastries">Pastry</option>
-                    <option value="other">Other</option>
-                  </select>
-                  {newCategoryType === "other" ? (
-                    <input
-                      value={newCustomCategoryType}
-                      onChange={(event) => setNewCustomCategoryType(event.target.value)}
-                      placeholder="Custom type"
-                      className={field}
-                    />
-                  ) : null}
-                </div>
+                <input
+                  required
+                  value={newCategoryType}
+                  onChange={(event) => setNewCategoryType(event.target.value)}
+                  placeholder="e.g. Drinks, Foods, Pastries"
+                  className={field}
+                />
               </label>
               <button
                 type="submit"
@@ -322,19 +323,24 @@ export function MenuCatalog({ menu, categories, categoryTypes = {}, inventory = 
                           </td>
                           <td className="px-4 py-3 text-neutral-500">
                             {editing ? (
-                              <input
+                              <select
                                 aria-label={`Type for ${category}`}
                                 value={typeDraft}
                                 disabled={pending}
-                                onChange={(event) =>
+                                onChange={(event) => {
                                   setCategoryTypeDrafts((drafts) => ({
                                     ...drafts,
                                     [category]: event.target.value,
-                                  }))
-                                }
-                                placeholder="Type (e.g. DRINK)"
+                                  }));
+                                }}
                                 className={field}
-                              />
+                              >
+                                {[...new Set([...categoryTypeOptions, typeDraft])].map((type) => (
+                                  <option key={type} value={type}>
+                                    {menuCategoryTypeLabel(type)}
+                                  </option>
+                                ))}
+                              </select>
                             ) : (
                               <span>{menuCategoryTypeLabel(currentType)}</span>
                             )}
