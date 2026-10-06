@@ -104,13 +104,14 @@ export type ProductStat = {
   id: string;
   name: string;
   category: string;
+  categoryType?: string;
   qty: number;
   sales: number;
 };
 
 export function productStats(
   orders: Order[],
-  menu: { id: string; name: string; category: string }[] = [],
+  menu: { id: string; name: string; category: string; categoryType?: string }[] = [],
 ): ProductStat[] {
   const map = new Map<string, ProductStat>();
 
@@ -119,6 +120,7 @@ export function productStats(
       id: item.id,
       name: item.name,
       category: item.category,
+      categoryType: item.categoryType,
       qty: 0,
       sales: 0,
     });
@@ -131,6 +133,7 @@ export function productStats(
         id: line.productId,
         name: line.name,
         category: matchingMenuItem?.category ?? "Other",
+        categoryType: matchingMenuItem?.categoryType,
         qty: 0,
         sales: 0,
       };
@@ -147,6 +150,9 @@ export function productStats(
 // Helper para i-filter ang Drinks lang
 export function drinkProductStats(stats: ProductStat[]): ProductStat[] {
   return stats.filter((item) => {
+    if (item.categoryType !== undefined) {
+      return item.categoryType.trim().toLowerCase() === "drink";
+    }
     const category = item.category.replace(/[^a-z]/gi, "").toLowerCase();
     return category !== "other" && category !== "food" && !category.includes("pastr") && category !== "addons" && category !== "addson";
   });

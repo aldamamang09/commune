@@ -2,11 +2,17 @@
 
 import { useState, useEffect, useTransition } from "react";
 import { approveVoidRequest } from "@/actions/pos";
+import {
+  createAdminLedgerEntry,
+  deleteAdminLedgerEntry,
+  importLegacyAdminLedgerEntries,
+} from "@/actions/admin-ledger";
 import { drinkDisplayName, formatMoney, orderLineListLabel, orderLineOptionsLabel } from "@/lib/menu";
-import { phDateTimeLabel, phPeriodBounds, phTimestamp, type PeriodRange } from "@/lib/datetime";
+import { phDateString, phDateTimeLabel, phPeriodBounds, phTimestamp, type PeriodRange } from "@/lib/datetime";
 import { paymentLabel } from "@/lib/payments";
 import { ingredientsForOrderLine } from "@/lib/inventory";
 import { inferMenuCategoryType, menuCategoryTypeLabel, normalizeMenuCategoryType } from "@/lib/menu";
+import { useHiddenAdminTransactionIds } from "@/lib/admin-hidden-transactions";
 import {
   bestSellers,
   busiestDay,
@@ -23,15 +29,7 @@ import {
   salesByYearMonths,
   sumSales,
 } from "@/lib/analytics";
-import type { Order, StoreData } from "@/lib/types";
-
-type CustomEntry = {
-  id: string;
-  title: string;
-  reason: string;
-  amount: number;
-  date: string;
-};
+import type { AdminLedgerEntry, AdminLedgerKind, Order, StoreData } from "@/lib/types";
 
 function Metric({
   label,
@@ -144,8 +142,19 @@ function entryInPeriod(dateStr: string, start: Date, end: Date) {
   return dayStart <= end.getTime() && dayEnd >= start.getTime();
 }
 
-export function AdminDashboard({ store }: { store: StoreData }) {
+export function AdminDashboard({
+  store,
+  initialExpenses,
+  initialCredits,
+  initialLedgerError,
+}: {
+  store: StoreData;
+  initialExpenses: AdminLedgerEntry[];
+  initialCredits: AdminLedgerEntry[];
+  initialLedgerError: string | null;
+}) {
   const [isClient, setIsClient] = useState(false);
+  const hiddenAdminTransactionIds = useHiddenAdminTransactionIds();
   const [filterDateStr, setFilterDateStr] = useState("");
   const [rangeType, setRangeType] = useState<string>("today");
   const [activeFilterMode, setActiveFilterMode] = useState<"range" | "date">("range");
@@ -154,36 +163,71 @@ export function AdminDashboard({ store }: { store: StoreData }) {
   const [drinksOpen, setDrinksOpen] = useState(true);
   const [ordersOpen, setOrdersOpen] = useState(true);
 
-  const [expenses, setExpenses] = useState<CustomEntry[]>([]);
-  const [credits, setCredits] = useState<CustomEntry[]>([]);
+  const expenses = initialExpenses;
+  const credits = initialCredits;
+  const [ledgerMessage, setLedgerMessage] = useState<string | null>(null);
+  const [ledgerPending, setLedgerPending] = useState(false);
 
   useEffect(() => {
     setIsClient(true);
-    const today = new Date();
-    setFilterDateStr(toInputDateStr(today));
+    setFilterDateStr(toInputDateStr(new Date()));
+    if (initialLedgerError) return;
 
-    const savedExpenses = localStorage.getItem("cafe_expenses");
-    if (savedExpenses) {
-      try { setExpenses(JSON.parse(savedExpenses)); } catch (e) {}
-    }
+    const readLegacyEntries = (
+      storageKey: string,
+      kind: AdminLedgerKind,
+    ): AdminLedgerEntry[] => {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return [];
+      const parsed: unknown = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        throw new Error(`Cannot import old ${kind} entries: saved data is invalid.`);
+      }
+      return parsed.map((entry: unknown) => {
+        if (!entry || typeof entry !== "object") {
+          throw new Error(`Cannot import old ${kind} entries: saved data is invalid.`);
+        }
+        const candidate = entry as Partial<AdminLedgerEntry>;
+        return {
+          id: String(candidate.id ?? ""),
+          kind,
+          title: String(candidate.title ?? ""),
+          reason: String(candidate.reason ?? ""),
+          amount: Number(candidate.amount),
+          date: String(candidate.date ?? ""),
+        };
+      });
+    };
 
-    const savedCredits = localStorage.getItem("cafe_credits");
-    if (savedCredits) {
-      try { setCredits(JSON.parse(savedCredits)); } catch (e) {}
+    let legacyEntries: AdminLedgerEntry[];
+    try {
+      legacyEntries = [
+        ...readLegacyEntries("cafe_expenses", "expense"),
+        ...readLegacyEntries("cafe_credits", "credit"),
+      ];
+    } catch (error) {
+      setLedgerMessage(error instanceof Error ? error.message : "Could not read old ledger entries.");
+      return;
     }
-  }, []);
+    if (legacyEntries.length === 0) return;
 
-  useEffect(() => {
-    if (isClient) {
-      localStorage.setItem("cafe_expenses", JSON.stringify(expenses));
-    }
-  }, [expenses, isClient]);
-
-  useEffect(() => {
-    if (isClient) {
-      localStorage.setItem("cafe_credits", JSON.stringify(credits));
-    }
-  }, [credits, isClient]);
+    let cancelled = false;
+    void importLegacyAdminLedgerEntries(legacyEntries)
+      .then(() => {
+        if (cancelled) return;
+        localStorage.removeItem("cafe_expenses");
+        localStorage.removeItem("cafe_credits");
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setLedgerMessage(
+          error instanceof Error ? error.message : "Could not import old ledger entries.",
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialLedgerError]);
 
   const [newExpTitle, setNewExpTitle] = useState("");
   const [newExpReason, setNewExpReason] = useState("");
@@ -193,7 +237,7 @@ export function AdminDashboard({ store }: { store: StoreData }) {
   const [newCredReason, setNewCredReason] = useState("");
   const [newCredAmount, setNewCredAmount] = useState("");
 
-  const todayStr = toInputDateStr(new Date());
+  const todayStr = phDateString();
   const isTodaySelected = activeFilterMode === "date"
     ? filterDateStr === todayStr
     : rangeType === "today";
@@ -206,10 +250,14 @@ export function AdminDashboard({ store }: { store: StoreData }) {
   const todayDateStr = formatDateStr(now);
   const yesterdayDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const yesterdayDateStr = formatDateStr(yesterdayDate);
+  const hiddenOrderIds = new Set(hiddenAdminTransactionIds);
+  const ordersForDashboard = isClient
+    ? store.orders.filter((order) => !hiddenOrderIds.has(order.id))
+    : store.orders;
 
-  const today = ordersOnDay(store.orders, now);
-  const yesterday = ordersOnDay(store.orders, yesterdayDate);
-  const week = lastNDays(store.orders, 7, now);
+  const today = ordersOnDay(ordersForDashboard, now);
+  const yesterday = ordersOnDay(ordersForDashboard, yesterdayDate);
+  const week = lastNDays(ordersForDashboard, 7, now);
   const currentWeekStart = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000);
   const currentWeekRangeStr = `${formatDateStr(currentWeekStart)} – ${todayDateStr}`;
 
@@ -219,7 +267,7 @@ export function AdminDashboard({ store }: { store: StoreData }) {
 
   if (rangeType === "month" || rangeType === "lastMonth") {
     const daysInMonth = Number(periodBounds.to.slice(8, 10));
-    const monthDays = lastNDays(store.orders, daysInMonth, now);
+    const monthDays = lastNDays(ordersForDashboard, daysInMonth, now);
     trackingTitle = `Sales tracking · ${rangeType === "month" ? "This Month" : "Last Month"}`;
     trackingItems = monthDays.map((d) => ({
       key: d.date,
@@ -230,7 +278,7 @@ export function AdminDashboard({ store }: { store: StoreData }) {
     }));
   } else if (rangeType === "thisYear") {
     trackingTitle = "Sales tracking · This Year (Monthly)";
-    const yearMonths = salesByYearMonths(store.orders, Number(periodBounds.to.slice(0, 4)));
+    const yearMonths = salesByYearMonths(ordersForDashboard, Number(periodBounds.to.slice(0, 4)));
     trackingItems = yearMonths.map((m) => ({
       key: m.key,
       label: m.label,
@@ -241,7 +289,7 @@ export function AdminDashboard({ store }: { store: StoreData }) {
   } else if (rangeType === "lastYear") {
     trackingTitle = "Sales tracking · Last Year (Monthly)";
     const targetYear = Number(periodBounds.to.slice(0, 4));
-    const yearMonths = salesByYearMonths(store.orders, targetYear);
+    const yearMonths = salesByYearMonths(ordersForDashboard, targetYear);
     trackingItems = yearMonths.map((m) => ({
       key: m.key,
       label: m.label,
@@ -252,7 +300,7 @@ export function AdminDashboard({ store }: { store: StoreData }) {
   } else if (rangeType === "week" || rangeType === "lastWeek") {
     trackingTitle = rangeType === "lastWeek" ? "Sales tracking · Last Week" : "Sales tracking · 7 days";
     trackingSubtitle = currentWeekRangeStr;
-    const targetWeekDays = lastNDays(store.orders, 7, now);
+    const targetWeekDays = lastNDays(ordersForDashboard, 7, now);
     trackingItems = targetWeekDays.map((day) => ({
       key: day.date,
       label: day.label,
@@ -262,12 +310,25 @@ export function AdminDashboard({ store }: { store: StoreData }) {
     }));
   }
 
-  const filteredOrdersList = liveOrders(store.orders).filter((order) => {
+  const filteredOrdersList = liveOrders(ordersForDashboard).filter((order) => {
     const orderTime = new Date(order.createdAt).getTime();
     return orderTime >= startOfPeriod.getTime() && orderTime <= now.getTime();
   });
 
-  const productStatsList = productStats(filteredOrdersList, store.menu);
+  const categoryTypeByName = new Map(
+    Object.entries(store.categoryTypes ?? {}).map(([category, type]) => [
+      category.trim().toLowerCase(),
+      normalizeMenuCategoryType(type),
+    ]),
+  );
+  const analyticsMenu = store.menu.map((item) => ({
+    ...item,
+    categoryType:
+      categoryTypeByName.get(item.category.trim().toLowerCase()) ??
+      item.categoryType ??
+      inferMenuCategoryType(item.category),
+  }));
+  const productStatsList = productStats(filteredOrdersList, analyticsMenu);
   const best = bestSellers(productStatsList, 5);
   const low = lowSellers(productStatsList, 5);
   const drinkStyles = new Map<string, { iced: number; hot: number }>();
@@ -325,12 +386,6 @@ export function AdminDashboard({ store }: { store: StoreData }) {
 
   const netProfitOrLoss = totalSalesAmount - (totalExpensesAmount + totalCreditsAmount);
 
-  const categoryTypeByName = new Map(
-    Object.entries(store.categoryTypes ?? {}).map(([category, type]) => [
-      category.trim().toLowerCase(),
-      normalizeMenuCategoryType(type),
-    ]),
-  );
   const menuCategoryTypeByName = new Map(
     store.menu.map((item) => [
       item.category.trim().toLowerCase(),
@@ -410,7 +465,7 @@ export function AdminDashboard({ store }: { store: StoreData }) {
     ? totalSalesAmount / filteredOrdersList.length 
     : 0;
 
-  const latest = [...store.orders]
+  const latest = [...ordersForDashboard]
     .filter((order) => {
       if (order.deletedAt) return false;
       const orderTime = phTimestamp(order.createdAt);
@@ -421,50 +476,69 @@ export function AdminDashboard({ store }: { store: StoreData }) {
     (request) => request.status === "pending",
   );
 
-  const handleAddExpense = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!canEditLedgers || !newExpTitle || !newExpAmount) return;
-    const item: CustomEntry = {
-      id: String(Date.now()),
-      title: newExpTitle,
-      reason: newExpReason,
-      amount: parseFloat(newExpAmount) || 0,
-      date: toInputDateStr(new Date()),
-    };
-    setExpenses([item, ...expenses]);
-    setNewExpTitle("");
-    setNewExpReason("");
-    setNewExpAmount("");
+  const createEntry = async (
+    event: React.FormEvent,
+    kind: AdminLedgerKind,
+    title: string,
+    reason: string,
+    amountText: string,
+  ) => {
+    event.preventDefault();
+    const amount = Number(amountText);
+    if (initialLedgerError) return;
+    if (!canEditLedgers || !title.trim() || !Number.isFinite(amount) || amount <= 0) {
+      setLedgerMessage("Enter a title and a valid amount greater than zero.");
+      return;
+    }
+    setLedgerPending(true);
+    setLedgerMessage(null);
+    try {
+      await createAdminLedgerEntry(kind, title, reason, amount);
+      if (kind === "expense") {
+        setNewExpTitle("");
+        setNewExpReason("");
+        setNewExpAmount("");
+      } else {
+        setNewCredTitle("");
+        setNewCredReason("");
+        setNewCredAmount("");
+      }
+    } catch (error) {
+      setLedgerMessage(error instanceof Error ? error.message : `Could not save ${kind}.`);
+    } finally {
+      setLedgerPending(false);
+    }
   };
 
-  const handleDeleteExpense = (id: string) => {
-    if (!canEditLedgers) return;
-    const entry = expenses.find((ex) => ex.id === id);
+  const handleAddExpense = (e: React.FormEvent) => {
+    void createEntry(e, "expense", newExpTitle, newExpReason, newExpAmount);
+  };
+
+  const removeEntry = async (id: string, kind: AdminLedgerKind) => {
+    if (!canEditLedgers || initialLedgerError) return;
+    const entry = (kind === "expense" ? expenses : credits).find((item) => item.id === id);
     if (!entry || entry.date !== todayStr) return;
-    setExpenses(expenses.filter((ex) => ex.id !== id));
+    setLedgerPending(true);
+    setLedgerMessage(null);
+    try {
+      await deleteAdminLedgerEntry(id, kind);
+    } catch (error) {
+      setLedgerMessage(error instanceof Error ? error.message : `Could not delete ${kind}.`);
+    } finally {
+      setLedgerPending(false);
+    }
   };
 
   const handleAddCredit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!canEditLedgers || !newCredTitle || !newCredAmount) return;
-    const item: CustomEntry = {
-      id: String(Date.now()),
-      title: newCredTitle,
-      reason: newCredReason,
-      amount: parseFloat(newCredAmount) || 0,
-      date: toInputDateStr(new Date()),
-    };
-    setCredits([item, ...credits]);
-    setNewCredTitle("");
-    setNewCredReason("");
-    setNewCredAmount("");
+    void createEntry(e, "credit", newCredTitle, newCredReason, newCredAmount);
   };
 
   const handleDeleteCredit = (id: string) => {
-    if (!canEditLedgers) return;
-    const entry = credits.find((cr) => cr.id === id);
-    if (!entry || entry.date !== todayStr) return;
-    setCredits(credits.filter((cr) => cr.id !== id));
+    void removeEntry(id, "credit");
+  };
+
+  const handleDeleteExpense = (id: string) => {
+    void removeEntry(id, "expense");
   };
 
   if (!isClient) {
@@ -710,6 +784,12 @@ export function AdminDashboard({ store }: { store: StoreData }) {
         </div>
       </section>
 
+      {ledgerMessage || initialLedgerError ? (
+        <p role="alert" className="border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {ledgerMessage ?? initialLedgerError}
+        </p>
+      ) : null}
+
       <section className="grid gap-6 lg:grid-cols-2">
         {!isTodaySelected && (
           <div className="min-w-0 border border-neutral-200 bg-white p-4 sm:p-5">
@@ -831,11 +911,12 @@ export function AdminDashboard({ store }: { store: StoreData }) {
             </div>
           </div>
 
-          {canEditLedgers ? (
+          {canEditLedgers && !initialLedgerError ? (
           <form onSubmit={handleAddExpense} className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-neutral-100">
             <input
               type="text"
               placeholder="Expense title..."
+              required
               value={newExpTitle}
               onChange={(e) => setNewExpTitle(e.target.value)}
               className="border border-neutral-300 rounded px-3 py-1.5 text-sm outline-none focus:border-black"
@@ -850,15 +931,19 @@ export function AdminDashboard({ store }: { store: StoreData }) {
             <input
               type="number"
               placeholder="Amount (₱)"
+              min="0.01"
+              step="0.01"
+              required
               value={newExpAmount}
               onChange={(e) => setNewExpAmount(e.target.value)}
               className="border border-neutral-300 rounded px-3 py-1.5 text-sm outline-none focus:border-black"
             />
             <button
               type="submit"
+              disabled={ledgerPending}
               className="sm:col-span-3 bg-black text-white rounded px-3 py-1.5 text-sm font-medium hover:bg-neutral-800 transition"
             >
-              Add Expense
+              {ledgerPending ? "Saving..." : "Add Expense"}
             </button>
           </form>
           ) : null}
@@ -883,9 +968,10 @@ export function AdminDashboard({ store }: { store: StoreData }) {
                       <td className="py-2 text-neutral-500">{ex.reason || "—"}</td>
                       <td className="py-2 text-right font-medium">{formatMoney(ex.amount)}</td>
                       <td className="py-2 text-right">
-                        {canEditLedgers && ex.date === todayStr ? (
+                        {canEditLedgers && !initialLedgerError && ex.date === todayStr ? (
                           <button
                             type="button"
+                            disabled={ledgerPending}
                             onClick={() => handleDeleteExpense(ex.id)}
                             className="text-red-500 hover:text-red-700 font-medium px-2 py-1"
                           >
@@ -911,11 +997,12 @@ export function AdminDashboard({ store }: { store: StoreData }) {
             </div>
           </div>
 
-          {canEditLedgers ? (
+          {canEditLedgers && !initialLedgerError ? (
           <form onSubmit={handleAddCredit} className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-neutral-100">
             <input
               type="text"
               placeholder="Credit title..."
+              required
               value={newCredTitle}
               onChange={(e) => setNewCredTitle(e.target.value)}
               className="border border-neutral-300 rounded px-3 py-1.5 text-sm outline-none focus:border-black"
@@ -930,15 +1017,19 @@ export function AdminDashboard({ store }: { store: StoreData }) {
             <input
               type="number"
               placeholder="Amount (₱)"
+              min="0.01"
+              step="0.01"
+              required
               value={newCredAmount}
               onChange={(e) => setNewCredAmount(e.target.value)}
               className="border border-neutral-300 rounded px-3 py-1.5 text-sm outline-none focus:border-black"
             />
             <button
               type="submit"
+              disabled={ledgerPending}
               className="sm:col-span-3 bg-black text-white rounded px-3 py-1.5 text-sm font-medium hover:bg-neutral-800 transition"
             >
-              Add Credit
+              {ledgerPending ? "Saving..." : "Add Credit"}
             </button>
           </form>
           ) : null}
@@ -963,9 +1054,10 @@ export function AdminDashboard({ store }: { store: StoreData }) {
                       <td className="py-2 text-neutral-500">{cr.reason || "—"}</td>
                       <td className="py-2 text-right font-medium">{formatMoney(cr.amount)}</td>
                       <td className="py-2 text-right">
-                        {canEditLedgers && cr.date === todayStr ? (
+                        {canEditLedgers && !initialLedgerError && cr.date === todayStr ? (
                           <button
                             type="button"
+                            disabled={ledgerPending}
                             onClick={() => handleDeleteCredit(cr.id)}
                             className="text-red-500 hover:text-red-700 font-medium px-2 py-1"
                           >

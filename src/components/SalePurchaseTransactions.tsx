@@ -1,5 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createRestock, deleteAdminRecord, deleteRestock, saveAdminData } from "@/actions/pos";
+import {
+  hideAdminTransaction,
+  useHiddenAdminTransactionIds,
+} from "@/lib/admin-hidden-transactions";
 import { formatQty, ingredientsForOrderLine, itemNameEquals, looksLikeCupItem, matchesInventoryRow, remainingForUsages, roundQty, stockLedgerForRange } from "@/lib/inventory";
 import { phDateString, phDateTimeLabel, phIsoFromDate, phPeriodBounds, type PeriodRange } from "@/lib/datetime";
 import { cartLineUnitPrice, drinkDisplayName, orderLineOptionsLabel, orderSoldAsLabel, orderSoldAsLines, orderSoldAsParts } from "@/lib/menu";
@@ -34,8 +38,6 @@ function toBaseQuantity(item: Pick<StockItem, "purchaseUnitSize">, pieces: numbe
 }
 
 export type InventoryTab = "transactions" | "stock" | "restock" | "used" | "units" | "recipes";
-
-const HIDDEN_ADMIN_TRANSACTIONS_KEY = "admin-hidden-transactions";
 
 type InventoryStore = Pick<
   StoreData,
@@ -319,20 +321,7 @@ export function SalePurchaseTransactions({
 
   const getTodayDate = () => phDateString();
 
-  const [hiddenTransactionIds, setHiddenTransactionIds] = useState<string[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const saved = window.localStorage.getItem(HIDDEN_ADMIN_TRANSACTIONS_KEY);
-      if (!saved) return [];
-      const parsed: unknown = JSON.parse(saved);
-      return Array.isArray(parsed) && parsed.every((id) => typeof id === "string")
-        ? parsed
-        : [];
-    } catch (error) {
-      console.error("Could not load hidden Admin transactions.", error);
-      return [];
-    }
-  });
+  const hiddenTransactionIds = useHiddenAdminTransactionIds();
   const transactions = persistedTransactions.filter(
     (transaction) => !hiddenTransactionIds.includes(transaction.id),
   );
@@ -689,12 +678,7 @@ export function SalePurchaseTransactions({
     if (deletingTransactionId) return;
     setDeletingTransactionId(id);
     try {
-      const nextHiddenIds = [...new Set([...hiddenTransactionIds, id])];
-      window.localStorage.setItem(
-        HIDDEN_ADMIN_TRANSACTIONS_KEY,
-        JSON.stringify(nextHiddenIds),
-      );
-      setHiddenTransactionIds(nextHiddenIds);
+      hideAdminTransaction(id);
       setTransactionNotice(null);
     } catch (error) {
       console.error("Could not hide Admin transaction.", error);
@@ -909,12 +893,18 @@ export function SalePurchaseTransactions({
   const transactionsInRange = transactions.filter((transaction) => inDateRange(transaction.date));
   const transactionKeyword = filterKeyword.trim().toLowerCase();
   const filteredTransactions = transactionsInRange.flatMap((transaction) => {
-    const productRows = transaction.productRows.filter((row) =>
+    if (!transactionKeyword) return [{ transaction, productRows: transaction.productRows }];
+    const orderMatches =
+      transaction.id.toLowerCase().includes(transactionKeyword) ||
+      transaction.productName.toLowerCase().includes(transactionKeyword);
+    const matchingRows = transaction.productRows.filter((row) =>
       `${row.name} ${row.detail ?? ""}`.toLowerCase().includes(transactionKeyword),
     );
-    return productRows.length > 0
-      ? [{ transaction, productRows }]
-      : [];
+    return orderMatches
+      ? [{ transaction, productRows: transaction.productRows }]
+      : matchingRows.length > 0
+        ? [{ transaction, productRows: matchingRows }]
+        : [];
   });
 
   const usageGroups = useMemo(() => {
@@ -1342,36 +1332,38 @@ export function SalePurchaseTransactions({
                 {filteredTransactions.length === 0 ? (
                   <tr><td colSpan={6} className="p-4 text-center text-neutral-500 text-xs">No transactions found for this date range.</td></tr>
                 ) : (
-                  filteredTransactions.flatMap(({ transaction, productRows }) =>
-                    productRows.map((product, index) => (
-                      <tr
-                        key={`${transaction.id}-${product.name}-${index}`}
-                        className="border-b border-neutral-200 hover:bg-neutral-50 text-xs"
-                      >
-                        <td className="p-3 border-r border-neutral-200 text-neutral-600 font-medium whitespace-nowrap">
-                          {phDateTimeLabel(transaction.createdAt)}
-                        </td>
-                        <td className="p-3 border-r border-neutral-200 font-medium">
-                          <p>{product.name}</p>
-                          {product.detail ? (
-                            <p className="text-[11px] font-normal text-neutral-500">{product.detail}</p>
-                          ) : null}
-                        </td>
-                        <td className="p-3 border-r border-neutral-200 text-right">{product.quantity}</td>
-                        <td className="p-3 border-r border-neutral-200 text-right">₱{product.price.toFixed(2)}</td>
-                        <td className="p-3 border-r border-neutral-200 text-right font-semibold">₱{product.amount.toFixed(2)}</td>
-                        <td className="p-3 text-center">
-                          {index === 0 ? (
-                            <RowActions
-                              deleteLabel={`Hide ${transaction.productName} from Admin transactions`}
-                              deleteDisabled={deletingTransactionId === transaction.id}
-                              onDelete={() => void handleDeleteTransaction(transaction.id)}
-                            />
-                          ) : null}
-                        </td>
-                      </tr>
-                    )),
-                  )
+                  filteredTransactions.map(({ transaction, productRows }) => (
+                    <tr
+                      key={transaction.id}
+                      className="border-b border-neutral-200 hover:bg-neutral-50 text-xs"
+                    >
+                      <td className="p-3 border-r border-neutral-200 text-neutral-600 font-medium whitespace-nowrap">
+                        {phDateTimeLabel(transaction.createdAt)}
+                      </td>
+                      <td className="p-3 border-r border-neutral-200 font-medium">
+                        <ul className="space-y-1">
+                          {productRows.map((product, index) => (
+                            <li key={`${product.name}-${index}`} className="break-words">
+                              <p>{product.quantity}x {product.name}</p>
+                              {product.detail ? (
+                                <p className="text-[11px] font-normal text-neutral-500">{product.detail}</p>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ul>
+                      </td>
+                      <td className="p-3 border-r border-neutral-200 text-right">{transaction.quantity}</td>
+                      <td className="p-3 border-r border-neutral-200 text-right">₱{transaction.price.toFixed(2)}</td>
+                      <td className="p-3 border-r border-neutral-200 text-right font-semibold">₱{transaction.amount.toFixed(2)}</td>
+                      <td className="p-3 text-center">
+                        <RowActions
+                          deleteLabel={`Hide ${transaction.productName} from Admin transactions`}
+                          deleteDisabled={deletingTransactionId === transaction.id}
+                          onDelete={() => void handleDeleteTransaction(transaction.id)}
+                        />
+                      </td>
+                    </tr>
+                  ))
                 )}
               </tbody>
             </table>

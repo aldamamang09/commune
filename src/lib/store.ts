@@ -1,6 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import type {
   InventoryItem,
+  AdminLedgerEntry,
+  AdminLedgerKind,
   LoginActivity,
   MenuCategoryType,
   MenuItem,
@@ -775,6 +777,125 @@ export function getStore(): Promise<StoreData> {
 // whether an order is already voided before inserting a related row).
 export function getFreshStore(): Promise<StoreData> {
   return withStore((store) => store, { fresh: true });
+}
+
+function adminLedgerEntryFromRow(row: {
+  id: string;
+  kind: AdminLedgerKind;
+  title: string;
+  reason: string | null;
+  amount: number | string;
+  entry_date: string;
+}): AdminLedgerEntry {
+  return {
+    id: row.id,
+    kind: row.kind,
+    title: row.title,
+    reason: row.reason ?? "",
+    amount: Number(row.amount),
+    date: row.entry_date,
+  };
+}
+
+export async function getAdminLedgerEntries(): Promise<{
+  expenses: AdminLedgerEntry[];
+  credits: AdminLedgerEntry[];
+  error?: string;
+}> {
+  const supabase = supabaseAdmin();
+  const entries: AdminLedgerEntry[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await supabase
+      .from("admin_ledger_entries")
+      .select("id, kind, title, reason, amount, entry_date")
+      .order("entry_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .range(offset, offset + 999);
+    if (error) {
+      if (error.code === "PGRST205" || error.code === "42P01") {
+        return {
+          expenses: [],
+          credits: [],
+          error: "Sales ledger is not installed in Supabase yet. Apply migration 20261006000700_sales_summary_and_ledger.sql.",
+        };
+      }
+      throw new Error(`Unable to read admin ledger entries from Supabase: ${error.message}`);
+    }
+    const rows = data ?? [];
+    entries.push(...rows.map((row) => adminLedgerEntryFromRow(row)));
+    if (rows.length < 1000) break;
+  }
+
+  return {
+    expenses: entries.filter((entry) => entry.kind === "expense"),
+    credits: entries.filter((entry) => entry.kind === "credit"),
+  };
+}
+
+export async function insertAdminLedgerEntryRecord(
+  entry: Omit<AdminLedgerEntry, "date">,
+): Promise<AdminLedgerEntry> {
+  const supabase = supabaseAdmin();
+  const { data, error } = await supabase
+    .from("admin_ledger_entries")
+    .insert({
+      id: entry.id,
+      kind: entry.kind,
+      title: entry.title,
+      reason: entry.reason,
+      amount: entry.amount,
+    })
+    .select("id, kind, title, reason, amount, entry_date")
+    .single();
+  if (error) {
+    throw new Error(`Unable to save ${entry.kind} entry to Supabase: ${error.message}`);
+  }
+  return adminLedgerEntryFromRow(data);
+}
+
+export async function importAdminLedgerEntries(
+  entries: AdminLedgerEntry[],
+): Promise<void> {
+  if (entries.length > 5000) {
+    throw new Error("Too many legacy ledger entries to import at once.");
+  }
+  const supabase = supabaseAdmin();
+  if (entries.length > 0) {
+    const { error } = await supabase.from("admin_ledger_entries").upsert(
+      entries.map((entry) => ({
+        id: entry.id,
+        kind: entry.kind,
+        title: entry.title,
+        reason: entry.reason,
+        amount: entry.amount,
+        entry_date: entry.date,
+      })),
+      { onConflict: "id", ignoreDuplicates: true },
+    );
+    if (error) {
+      throw new Error(`Unable to import existing ledger entries to Supabase: ${error.message}`);
+    }
+  }
+}
+
+export async function deleteAdminLedgerEntryRecord(
+  id: string,
+  kind: AdminLedgerKind,
+): Promise<void> {
+  const supabase = supabaseAdmin();
+  const { data, error } = await supabase
+    .from("admin_ledger_entries")
+    .delete()
+    .eq("id", id)
+    .eq("kind", kind)
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Unable to delete ${kind} entry from Supabase: ${error.message}`);
+  }
+  if (!data) {
+    throw new Error("Ledger entry was not found.");
+  }
 }
 
 export async function saveUsageLogRecords(records: UsageLog[]): Promise<void> {

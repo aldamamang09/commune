@@ -11,6 +11,17 @@ export type DrinkStyle = "iced" | "hot";
 
 export type MenuCategoryType = string;
 
+export type AdminLedgerKind = "expense" | "credit";
+
+export type AdminLedgerEntry = {
+  id: string;
+  kind: AdminLedgerKind;
+  title: string;
+  reason: string;
+  amount: number;
+  date: string;
+};
+
 export type MenuAddon = {
   id: string;
   name: string;
