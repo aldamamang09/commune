@@ -105,7 +105,7 @@ daily_drink_products as (
       sum(qty)::bigint as quantity,
       sum(allocated_sales) as sales
     from allocated_order_lines
-    where type = 'drink'
+    where lower(btrim(type)) ~ '(^|[^a-z])drinks?([^a-z]|$)'
     group by sales_date, product_id, product_name
   ) grouped_drinks
   group by sales_date
