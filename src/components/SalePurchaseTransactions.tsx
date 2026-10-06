@@ -35,6 +35,8 @@ function toBaseQuantity(item: Pick<StockItem, "purchaseUnitSize">, pieces: numbe
 
 export type InventoryTab = "transactions" | "stock" | "restock" | "used" | "units" | "recipes";
 
+const HIDDEN_ADMIN_TRANSACTIONS_KEY = "admin-hidden-transactions";
+
 type InventoryStore = Pick<
   StoreData,
   "orders" | "inventory" | "usageLogs" | "restocks"
@@ -317,8 +319,25 @@ export function SalePurchaseTransactions({
 
   const getTodayDate = () => phDateString();
 
-  const [transactions, setTransactions] = useState<Transaction[]>(persistedTransactions);
+  const [hiddenTransactionIds, setHiddenTransactionIds] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = window.localStorage.getItem(HIDDEN_ADMIN_TRANSACTIONS_KEY);
+      if (!saved) return [];
+      const parsed: unknown = JSON.parse(saved);
+      return Array.isArray(parsed) && parsed.every((id) => typeof id === "string")
+        ? parsed
+        : [];
+    } catch (error) {
+      console.error("Could not load hidden Admin transactions.", error);
+      return [];
+    }
+  });
+  const transactions = persistedTransactions.filter(
+    (transaction) => !hiddenTransactionIds.includes(transaction.id),
+  );
   const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(null);
+  const [transactionNotice, setTransactionNotice] = useState<string | null>(null);
 
   const [stocks, setStocks] = useState<StockItem[]>(persistedStocks);
   const [unitSetupDrafts, setUnitSetupDrafts] = useState<Record<string, { purchaseUnitSize: string; unit?: string; cupUsageAmount: string }>>({});
@@ -331,7 +350,6 @@ export function SalePurchaseTransactions({
   const [usages, setUsages] = useState<UsageRecord[]>(persistedUsages);
 
   useEffect(() => {
-    setTransactions(persistedTransactions);
     setStocks(persistedStocks);
     setUsages(persistedUsages);
     setRestocks(store.restocks ?? []);
@@ -670,15 +688,17 @@ export function SalePurchaseTransactions({
   const handleDeleteTransaction = async (id: string) => {
     if (deletingTransactionId) return;
     setDeletingTransactionId(id);
-    const previous = transactions;
-    setTransactions((current) => current.filter((t) => t.id !== id));
     try {
-      // delete_order_atomic restores stock and removes usage logs. The old
-      // persistInventoryAndUsage() rewrite of the whole store made this feel stuck.
-      await deleteAdminRecord("order", id);
+      const nextHiddenIds = [...new Set([...hiddenTransactionIds, id])];
+      window.localStorage.setItem(
+        HIDDEN_ADMIN_TRANSACTIONS_KEY,
+        JSON.stringify(nextHiddenIds),
+      );
+      setHiddenTransactionIds(nextHiddenIds);
+      setTransactionNotice(null);
     } catch (error) {
-      setTransactions(previous);
-      throw error;
+      console.error("Could not hide Admin transaction.", error);
+      setTransactionNotice("Could not hide this transaction in this browser.");
     } finally {
       setDeletingTransactionId(null);
     }
@@ -1296,6 +1316,9 @@ export function SalePurchaseTransactions({
 
       {activeTab === "transactions" && (
         <div className="space-y-6">
+          {transactionNotice ? (
+            <p role="alert" className="text-sm text-red-600">{transactionNotice}</p>
+          ) : null}
           <div className="flex flex-wrap gap-4 items-center bg-neutral-50 p-3 rounded-lg border border-neutral-400 text-sm">
             <div className="flex min-w-0 w-full items-center gap-2 sm:flex-1">
               <span className="shrink-0 text-xs text-neutral-600">Search:</span>
@@ -1340,7 +1363,7 @@ export function SalePurchaseTransactions({
                         <td className="p-3 text-center">
                           {index === 0 ? (
                             <RowActions
-                              deleteLabel={`Delete ${transaction.productName}`}
+                              deleteLabel={`Hide ${transaction.productName} from Admin transactions`}
                               deleteDisabled={deletingTransactionId === transaction.id}
                               onDelete={() => void handleDeleteTransaction(transaction.id)}
                             />

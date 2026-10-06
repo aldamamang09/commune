@@ -1205,12 +1205,17 @@ export async function renameMenuCategoryAtomic(
       }
       memoryStore.categories = memoryStore.categories.map((c) => c.toLowerCase() === fromLower ? toName : c);
       if (memoryStore.categoryTypes) {
-        delete memoryStore.categoryTypes[fromLower];
+        for (const categoryName of Object.keys(memoryStore.categoryTypes)) {
+          if (categoryName.trim().toLowerCase() === fromLower) {
+            delete memoryStore.categoryTypes[categoryName];
+          }
+        }
         memoryStore.categoryTypes[toName] = normalizeMenuCategoryType(type);
       }
       for (const item of memoryStore.menu) {
         if (item.category.toLowerCase() === fromLower) {
           item.category = toName;
+          item.categoryType = normalizeMenuCategoryType(type);
         }
       }
       return { ok: true };

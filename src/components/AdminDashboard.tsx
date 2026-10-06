@@ -6,6 +6,7 @@ import { drinkDisplayName, formatMoney, orderLineListLabel, orderLineOptionsLabe
 import { phDateTimeLabel, phPeriodBounds, phTimestamp, type PeriodRange } from "@/lib/datetime";
 import { paymentLabel } from "@/lib/payments";
 import { ingredientsForOrderLine } from "@/lib/inventory";
+import { inferMenuCategoryType, menuCategoryTypeLabel, normalizeMenuCategoryType } from "@/lib/menu";
 import {
   bestSellers,
   busiestDay,
@@ -21,7 +22,6 @@ import {
   salesByHour,
   salesByYearMonths,
   sumSales,
-  unitsSold,
 } from "@/lib/analytics";
 import type { Order, StoreData } from "@/lib/types";
 
@@ -325,21 +325,63 @@ export function AdminDashboard({ store }: { store: StoreData }) {
 
   const netProfitOrLoss = totalSalesAmount - (totalExpensesAmount + totalCreditsAmount);
 
-  const drinksQty = drinkProductStats(productStatsList).reduce((sum, item) => sum + item.qty, 0);
-  const drinksSales = drinkProductStats(productStatsList).reduce((sum, item) => sum + item.sales, 0);
-  const foodSales = productStatsList
-    .filter((item) => /food/i.test(item.category) && !/pastr/i.test(item.category))
-    .reduce((sum, item) => sum + item.sales, 0);
-  const pastriesSales = productStatsList
-    .filter((item) => /pastr/i.test(item.category))
-    .reduce((sum, item) => sum + item.sales, 0);
-  const foodQty = productStatsList
-    .filter((item) => /food/i.test(item.category) && !/pastr/i.test(item.category))
-    .reduce((sum, item) => sum + item.qty, 0);
-  const pastryQty = productStatsList
-    .filter((item) => /pastr/i.test(item.category))
-    .reduce((sum, item) => sum + item.qty, 0);
-  const totalSoldQty = drinksQty + foodQty + pastryQty;
+  const categoryTypeByName = new Map(
+    Object.entries(store.categoryTypes ?? {}).map(([category, type]) => [
+      category.trim().toLowerCase(),
+      normalizeMenuCategoryType(type),
+    ]),
+  );
+  const menuCategoryTypeByName = new Map(
+    store.menu.map((item) => [
+      item.category.trim().toLowerCase(),
+      normalizeMenuCategoryType(
+        categoryTypeByName.get(item.category.trim().toLowerCase()) ??
+          item.categoryType ??
+          inferMenuCategoryType(item.category),
+      ),
+    ]),
+  );
+  const getCategoryType = (category: string) =>
+    categoryTypeByName.get(category.trim().toLowerCase()) ??
+    menuCategoryTypeByName.get(category.trim().toLowerCase()) ??
+    inferMenuCategoryType(category);
+  const menuCategoryTypeByProductId = new Map(
+    store.menu.map((item) => [
+      item.id,
+      getCategoryType(item.category),
+    ]),
+  );
+  const getProductCategoryType = (product: (typeof productStatsList)[number]) =>
+    menuCategoryTypeByProductId.get(product.id) ??
+    getCategoryType(product.category);
+  const soldProductGroups = new Map<
+    string,
+    { type: string; quantity: number; sales: number }
+  >();
+  const configuredCategoryNames = new Set([
+    ...store.categories,
+    ...store.menu.map((item) => item.category),
+    ...productStatsList.map((item) => item.category),
+  ]);
+  for (const category of configuredCategoryNames) {
+    const type = getCategoryType(category);
+    if (!soldProductGroups.has(type.toLowerCase())) {
+      soldProductGroups.set(type.toLowerCase(), { type, quantity: 0, sales: 0 });
+    }
+  }
+  for (const product of productStatsList) {
+    const type = getProductCategoryType(product);
+    const key = type.toLowerCase();
+    const group = soldProductGroups.get(key) ?? { type, quantity: 0, sales: 0 };
+    group.quantity += product.qty;
+    group.sales += product.sales;
+    soldProductGroups.set(key, group);
+  }
+  const soldProductSummary = [...soldProductGroups.values()].sort((a, b) =>
+    a.type.localeCompare(b.type),
+  );
+  const totalSoldQty = soldProductSummary.reduce((sum, group) => sum + group.quantity, 0);
+  const totalSoldSales = soldProductSummary.reduce((sum, group) => sum + group.sales, 0);
   const costByCategory = filteredOrdersList.reduce((totals, order) => {
     order.items.forEach((line) => {
       const menuItem = store.menu.find((item) => item.id === line.productId) ?? store.menu.find((item) => item.name.trim().toLowerCase() === line.name.trim().toLowerCase());
@@ -612,31 +654,24 @@ export function AdminDashboard({ store }: { store: StoreData }) {
               Sold Products
             </p>
             <div className="mt-3 space-y-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium">Drinks</p>
-                  <p className="text-xs text-neutral-500">{formatMoney(drinksSales)}</p>
+              {soldProductSummary.map((group) => (
+                <div
+                  key={group.type.toLowerCase()}
+                  className="flex items-start justify-between gap-3"
+                >
+                  <div>
+                    <p className="text-sm font-medium">
+                      {menuCategoryTypeLabel(group.type).toUpperCase()}
+                    </p>
+                    <p className="text-xs text-neutral-500">{formatMoney(group.sales)}</p>
+                  </div>
+                  <p className="text-2xl font-semibold sm:text-3xl">{group.quantity}</p>
                 </div>
-                <p className="text-2xl font-semibold sm:text-3xl">{drinksQty}</p>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium">Food</p>
-                  <p className="text-xs text-neutral-500">{formatMoney(foodSales)}</p>
-                </div>
-                <p className="text-2xl font-semibold sm:text-3xl">{foodQty}</p>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium">Pastries</p>
-                  <p className="text-xs text-neutral-500">{formatMoney(pastriesSales)}</p>
-                </div>
-                <p className="text-2xl font-semibold sm:text-3xl">{pastryQty}</p>
-              </div>
+              ))}
               <div className="flex items-center justify-between gap-3 border-t border-neutral-200 pt-3">
                 <div>
                   <p className="text-sm font-semibold">Total Sold</p>
-                  <p className="text-xs text-neutral-500">{formatMoney(drinksSales + foodSales + pastriesSales)}</p>
+                  <p className="text-xs text-neutral-500">{formatMoney(totalSoldSales)}</p>
                 </div>
                 <p className="text-2xl font-semibold sm:text-3xl">{totalSoldQty}</p>
               </div>

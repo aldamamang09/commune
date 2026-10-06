@@ -100,8 +100,7 @@ export function MenuCatalog({ menu, categories, categoryTypes = {}, inventory = 
   const [newCustomCategoryType, setNewCustomCategoryType] = useState("");
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
   const [categoryName, setCategoryName] = useState("");
-  const [editingCategoryType, setEditingCategoryType] = useState<MenuCategoryType>("drink");
-  const [editingCustomCategoryType, setEditingCustomCategoryType] = useState("");
+  const [categoryTypeDrafts, setCategoryTypeDrafts] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState("All");
   const [editingId, setEditingId] = useState<string | "new" | null>(null);
   const [itemName, setItemName] = useState("");
@@ -136,12 +135,6 @@ export function MenuCatalog({ menu, categories, categoryTypes = {}, inventory = 
   function categoryTypeForName(category: string) {
     const direct = categoryTypes[category] ?? categoryTypes[category.toLowerCase()];
     return normalizeMenuCategoryType(direct ?? inferMenuCategoryType(category));
-  }
-
-  function categoryTypeValue(type: MenuCategoryType, fallback = "drink") {
-    return type === "food" || type === "pastry" || type === "drink" || type === "other"
-      ? type
-      : fallback;
   }
 
   function startCreateItem() {
@@ -311,7 +304,8 @@ export function MenuCatalog({ menu, categories, categoryTypes = {}, inventory = 
                     categories.map((category) => {
                       const count = counts.get(category.toLowerCase()) ?? 0;
                       const editing = editingCategory === category;
-                      const typeDisplay = menuCategoryTypeLabel(categoryTypeForName(category));
+                      const currentType = categoryTypeForName(category);
+                      const typeDraft = categoryTypeDrafts[category] ?? currentType;
                       return (
                         <tr key={category} className="border-t border-neutral-100">
                           <td className="px-4 py-3">
@@ -328,32 +322,21 @@ export function MenuCatalog({ menu, categories, categoryTypes = {}, inventory = 
                           </td>
                           <td className="px-4 py-3 text-neutral-500">
                             {editing ? (
-                              <div className="flex items-center gap-2">
-                                <select
-                                  value={categoryTypeValue(editingCategoryType)}
-                                  onChange={(event) => {
-                                    const next = normalizeMenuCategoryType(event.target.value);
-                                    setEditingCategoryType(next);
-                                    if (next !== "other") setEditingCustomCategoryType("");
-                                  }}
-                                  className={`${field} w-full`}
-                                >
-                                  <option value="drink">Drink</option>
-                                  <option value="food">Food</option>
-                                  <option value="pastry">Pastry</option>
-                                  <option value="other">Other</option>
-                                </select>
-                                {editingCategoryType === "other" || categoryTypeValue(editingCategoryType) === "other" ? (
-                                  <input
-                                    value={editingCustomCategoryType}
-                                    onChange={(event) => setEditingCustomCategoryType(event.target.value)}
-                                    placeholder="Custom type"
-                                    className={`${field} w-36 min-w-0`}
-                                  />
-                                ) : null}
-                              </div>
+                              <input
+                                aria-label={`Type for ${category}`}
+                                value={typeDraft}
+                                disabled={pending}
+                                onChange={(event) =>
+                                  setCategoryTypeDrafts((drafts) => ({
+                                    ...drafts,
+                                    [category]: event.target.value,
+                                  }))
+                                }
+                                placeholder="Type (e.g. DRINK)"
+                                className={field}
+                              />
                             ) : (
-                              typeDisplay
+                              <span>{menuCategoryTypeLabel(currentType)}</span>
                             )}
                           </td>
                           <td className="px-4 py-3 text-right text-neutral-500">{count}</td>
@@ -367,20 +350,33 @@ export function MenuCatalog({ menu, categories, categoryTypes = {}, inventory = 
                                     disabled={pending}
                                     onClick={() =>
                                       startTransition(async () => {
-                                        const nextType =
-                                          editingCategoryType === "other"
-                                            ? (editingCustomCategoryType.trim() || "other")
-                                            : editingCategoryType;
-                                        const result = await renameMenuCategory(category, categoryName, normalizeMenuCategoryType(nextType));
+                                        const nextType = typeDraft.trim();
+                                        if (!nextType) {
+                                          flash("Enter a category type.");
+                                          return;
+                                        }
+                                        const result = await renameMenuCategory(
+                                          category,
+                                          categoryName,
+                                          normalizeMenuCategoryType(nextType),
+                                        );
                                         const error = actionError(result);
                                         if (error) {
                                           flash(error);
                                           return;
                                         }
                                         setEditingCategory(null);
-                                        setEditingCustomCategoryType("");
+                                        setCategoryTypeDrafts((drafts) => {
+                                          const next = { ...drafts };
+                                          delete next[category];
+                                          return next;
+                                        });
                                         if (filter === category) setFilter(categoryName.trim() || category);
-                                        flash("Category renamed.");
+                                        flash(
+                                          categoryName.trim().toLowerCase() === category.toLowerCase()
+                                            ? "Category updated."
+                                            : "Category renamed.",
+                                        );
                                       })
                                     }
                                     className={iconBtn}
@@ -390,7 +386,14 @@ export function MenuCatalog({ menu, categories, categoryTypes = {}, inventory = 
                                   <button
                                     type="button"
                                     aria-label="Cancel rename"
-                                    onClick={() => setEditingCategory(null)}
+                                    onClick={() => {
+                                      setEditingCategory(null);
+                                      setCategoryTypeDrafts((drafts) => {
+                                        const next = { ...drafts };
+                                        delete next[category];
+                                        return next;
+                                      });
+                                    }}
                                     className={iconBtn}
                                   >
                                     <CloseIcon />
@@ -402,11 +405,12 @@ export function MenuCatalog({ menu, categories, categoryTypes = {}, inventory = 
                                     type="button"
                                     aria-label={`Rename ${category}`}
                                     onClick={() => {
-                                      const defaultType = categoryTypeForName(category);
                                       setEditingCategory(category);
                                       setCategoryName(category);
-                                      setEditingCategoryType(defaultType);
-                                      setEditingCustomCategoryType(defaultType === "other" ? "" : "");
+                                      setCategoryTypeDrafts((drafts) => ({
+                                        ...drafts,
+                                        [category]: currentType,
+                                      }));
                                       setNotice(null);
                                     }}
                                     className={iconBtn}
