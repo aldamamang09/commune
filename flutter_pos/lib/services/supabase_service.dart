@@ -140,6 +140,10 @@ class SupabaseService {
         authenticated: false,
       );
       if (result['ok'] != true || result['user'] is! Map) {
+        debugPrint(
+          'POS API auth rejected (API: $_posApiUri): '
+          '${result['error'] ?? 'Invalid username or password'}',
+        );
         return {
           'ok': false,
           'error': result['error'] ?? 'Invalid username or password'
@@ -160,21 +164,21 @@ class SupabaseService {
         'token': token,
       };
     } on TimeoutException catch (e) {
-      debugPrint('POS API auth network error: $e');
+      debugPrint('POS API auth network error (API: $_posApiUri): $e');
       return {
         'ok': false,
         'error': 'Unable to verify credentials while offline',
         'offline': true,
       };
     } on http.ClientException catch (e) {
-      debugPrint('POS API auth network error: $e');
+      debugPrint('POS API auth network error (API: $_posApiUri): $e');
       return {
         'ok': false,
         'error': 'Unable to verify credentials while offline',
         'offline': true,
       };
     } catch (e) {
-      debugPrint('POS API auth error: $e');
+      debugPrint('POS API auth error (API: $_posApiUri): $e');
       return {'ok': false, 'error': 'Unable to verify credentials'};
     }
   }
@@ -654,7 +658,7 @@ class SupabaseService {
       });
       return result['ok'] == true;
     } catch (e) {
-      debugPrint('Push void request error: $e');
+      debugPrint('Push void request error (API: $_posApiUri): $e');
       return false;
     }
   }
@@ -669,7 +673,7 @@ class SupabaseService {
       });
       return result['ok'] == true;
     } catch (e) {
-      debugPrint('Push login activity error: $e');
+      debugPrint('Push login activity error (API: $_posApiUri): $e');
       return false;
     }
   }
