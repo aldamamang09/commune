@@ -1,9 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createRestock, deleteAdminRecord, deleteRestock, saveAdminData } from "@/actions/pos";
-import {
-  hideAdminTransaction,
-  useHiddenAdminTransactionIds,
-} from "@/lib/admin-hidden-transactions";
 import { formatQty, ingredientsForOrderLine, itemNameEquals, looksLikeCupItem, matchesInventoryRow, remainingForUsages, roundQty, stockLedgerForRange } from "@/lib/inventory";
 import { phDateString, phDateTimeLabel, phIsoFromDate, phPeriodBounds, type PeriodRange } from "@/lib/datetime";
 import { cartLineUnitPrice, drinkDisplayName, orderLineOptionsLabel, orderSoldAsLabel, orderSoldAsLines, orderSoldAsParts } from "@/lib/menu";
@@ -292,12 +288,13 @@ export function SalePurchaseTransactions({
       soldAs: orderSoldAsLabel(order.items),
     }))));
   const extraUsageLogs = (store.usageLogs ?? [])
-    .map((entry) => {
+    .flatMap((entry) => {
       const order = store.orders.find((item) => item.id === entry.orderId);
-      return {
+      if (entry.orderId && (!order || order.voided || order.deletedAt)) return [];
+      return [{
         ...entry,
         soldAs: order ? orderSoldAsLabel(order.items) : "",
-      };
+      }];
     });
   const sourceUsages = aggregateUsageRows([...orderUsageRows, ...extraUsageLogs]);
   const reconstructedRemaining = remainingForUsages(
@@ -321,10 +318,7 @@ export function SalePurchaseTransactions({
 
   const getTodayDate = () => phDateString();
 
-  const hiddenTransactionIds = useHiddenAdminTransactionIds();
-  const transactions = persistedTransactions.filter(
-    (transaction) => !hiddenTransactionIds.includes(transaction.id),
-  );
+  const transactions = persistedTransactions;
   const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(null);
   const [transactionNotice, setTransactionNotice] = useState<string | null>(null);
 
@@ -678,11 +672,11 @@ export function SalePurchaseTransactions({
     if (deletingTransactionId) return;
     setDeletingTransactionId(id);
     try {
-      hideAdminTransaction(id);
+      await deleteAdminRecord("order", id);
       setTransactionNotice(null);
     } catch (error) {
-      console.error("Could not hide Admin transaction.", error);
-      setTransactionNotice("Could not hide this transaction in this browser.");
+      console.error("Could not delete Admin transaction.", error);
+      setTransactionNotice(error instanceof Error ? error.message : "Could not delete this transaction.");
     } finally {
       setDeletingTransactionId(null);
     }
@@ -1357,7 +1351,7 @@ export function SalePurchaseTransactions({
                       <td className="p-3 border-r border-neutral-200 text-right font-semibold">₱{transaction.amount.toFixed(2)}</td>
                       <td className="p-3 text-center">
                         <RowActions
-                          deleteLabel={`Hide ${transaction.productName} from Admin transactions`}
+                          deleteLabel={`Delete ${transaction.productName} transaction and restore stock`}
                           deleteDisabled={deletingTransactionId === transaction.id}
                           onDelete={() => void handleDeleteTransaction(transaction.id)}
                         />

@@ -1184,8 +1184,15 @@ export async function deleteOrderAtomic(orderId: string): Promise<void> {
       return;
     }
     const supabase = supabaseAdmin();
-    const { error } = await supabase.rpc("delete_order_atomic", { p_order_id: orderId });
+    const { data, error } = await supabase.rpc("delete_order_atomic", { p_order_id: orderId });
     if (error) throw new Error(`Unable to delete order: ${error.message}`);
+    if (!data?.ok) {
+      throw new Error(
+        data?.error === "ORDER_NOT_FOUND"
+          ? "Unable to delete order: transaction not found."
+          : "Unable to delete order: the database did not confirm the deletion.",
+      );
+    }
     invalidateStoreCache();
   });
 }

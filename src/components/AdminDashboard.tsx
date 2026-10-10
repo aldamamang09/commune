@@ -12,7 +12,6 @@ import { phDateString, phDateTimeLabel, phPeriodBounds, phTimestamp, type Period
 import { paymentLabel } from "@/lib/payments";
 import { ingredientsForOrderLine } from "@/lib/inventory";
 import { inferMenuCategoryType, menuCategoryTypeLabel, normalizeMenuCategoryType } from "@/lib/menu";
-import { useHiddenAdminTransactionIds } from "@/lib/admin-hidden-transactions";
 import {
   bestSellers,
   busiestDay,
@@ -154,7 +153,6 @@ export function AdminDashboard({
   initialLedgerError: string | null;
 }) {
   const [isClient, setIsClient] = useState(false);
-  const hiddenAdminTransactionIds = useHiddenAdminTransactionIds();
   const [filterDateStr, setFilterDateStr] = useState("");
   const [rangeType, setRangeType] = useState<string>("today");
   const [activeFilterMode, setActiveFilterMode] = useState<"range" | "date">("range");
@@ -250,10 +248,7 @@ export function AdminDashboard({
   const todayDateStr = formatDateStr(now);
   const yesterdayDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const yesterdayDateStr = formatDateStr(yesterdayDate);
-  const hiddenOrderIds = new Set(hiddenAdminTransactionIds);
-  const ordersForDashboard = isClient
-    ? store.orders.filter((order) => !hiddenOrderIds.has(order.id))
-    : store.orders;
+  const ordersForDashboard = store.orders;
 
   const today = ordersOnDay(ordersForDashboard, now);
   const yesterday = ordersOnDay(ordersForDashboard, yesterdayDate);

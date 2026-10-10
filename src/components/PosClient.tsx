@@ -150,7 +150,6 @@ export function PosClient({
 }: PosClientProps) {
   const router = useRouter();
   const [cart, setCart] = useState<OrderItem[]>([]);
-  const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
   const [tendered, setTendered] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
@@ -231,9 +230,8 @@ export function PosClient({
     return ["All", ...Array.from(set)];
   }, [categories]);
 
-  // Filter items based on query and normalized category match
+  // Filter items by category.
   const items = useMemo(() => {
-    const needle = query.trim().toLowerCase();
     return menu.filter((item) => {
       if (!item.available) return false;
       if (isAddOnCategory(item.category)) return false;
@@ -243,11 +241,9 @@ export function PosClient({
 
       const matchesCategory =
         category === "All" || itemCatNormalized === selectedCatNormalized;
-      const matchesQuery = !needle || item.name.toLowerCase().includes(needle);
-
-      return matchesCategory && matchesQuery;
+      return matchesCategory;
     });
-  }, [menu, category, query]);
+  }, [menu, category]);
 
   useEffect(() => {
     setOnShift((current) => {
@@ -1724,25 +1720,6 @@ export function PosClient({
               ) : null}
           {/* Menu Catalog Section */}
           <section className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-            <div className="flex items-center gap-3 px-4 py-2">
-              <div className="relative ml-auto w-full max-w-sm">
-                <svg
-                  viewBox="0 0 24 24"
-                  className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 stroke-neutral-400"
-                  fill="none"
-                >
-                  <circle cx="11" cy="11" r="6" strokeWidth="1.6" />
-                  <path d="M16 16l4 4" strokeWidth="1.6" />
-                </svg>
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search item..."
-                  className="w-full rounded-full border border-neutral-300 bg-white py-2 pr-4 pl-10 text-xs outline-none placeholder:text-neutral-400 focus:border-black"
-                />
-              </div>
-            </div>
-
             <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
               {items.length === 0 ? (
                 <div className="flex h-full items-center justify-center text-xs text-neutral-400">
