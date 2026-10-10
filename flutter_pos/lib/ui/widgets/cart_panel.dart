@@ -5,8 +5,6 @@ import '../../state/pos_controller.dart';
 class CartPanel extends StatefulWidget {
   final PosController controller;
   final VoidCallback onProceedOrder;
-  final VoidCallback onVoid;
-  final VoidCallback onPrint;
   final bool isFullWidth;
   final double panelWidth;
   final bool isKeyboardOpen;
@@ -15,8 +13,6 @@ class CartPanel extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onProceedOrder,
-    required this.onVoid,
-    required this.onPrint,
     this.isFullWidth = false,
     this.panelWidth = 350,
     this.isKeyboardOpen = false,
@@ -331,7 +327,10 @@ class _CartPanelState extends State<CartPanel> {
                         ),
                         onChanged: (val) {
                           final parsed = double.tryParse(val) ?? 0;
-                          controller.setTenderedAmount(parsed);
+                          controller.setTenderedAmount(parsed, notify: false);
+                          setState(() {
+                            _hasSelectedCashAmount = true;
+                          });
                         },
                       ),
                     ),
@@ -436,44 +435,6 @@ class _CartPanelState extends State<CartPanel> {
                     ],
                   ),
                   const SizedBox(height: 5),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: controller.isVoidRequestPending
-                              ? null
-                              : widget.onPrint,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF374151),
-                            side: const BorderSide(color: Color(0xFFD1D5DB)),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10)),
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                          ),
-                          child: const Text('Print',
-                              style: TextStyle(
-                                  fontSize: 10, fontWeight: FontWeight.w500)),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: widget.onVoid,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF374151),
-                            side: const BorderSide(color: Color(0xFFD1D5DB)),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10)),
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                          ),
-                          child: const Text('Void',
-                              style: TextStyle(
-                                  fontSize: 10, fontWeight: FontWeight.w500)),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
                 ],
                 SizedBox(
                   width: double.infinity,

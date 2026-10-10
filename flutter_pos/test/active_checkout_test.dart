@@ -456,8 +456,6 @@ void main() {
                 isFullWidth: true,
                 isKeyboardOpen: true,
                 onProceedOrder: () {},
-                onVoid: () {},
-                onPrint: () {},
               ),
             ),
           ),
@@ -469,6 +467,16 @@ void main() {
     expect(find.text('Amount'), findsOneWidget);
     expect(find.text('Proceed Order'), findsOneWidget);
     expect(find.text('Print'), findsNothing);
+
+    var controllerNotifications = 0;
+    controller.addListener(() => controllerNotifications++);
+    await tester.enterText(find.byType(TextField), '123');
+    await tester.pump();
+
+    expect(controller.tenderedAmount, 123);
+    expect(controllerNotifications, 0);
+    expect(tester.widget<TextField>(find.byType(TextField)).focusNode?.hasFocus,
+        isTrue);
 
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();

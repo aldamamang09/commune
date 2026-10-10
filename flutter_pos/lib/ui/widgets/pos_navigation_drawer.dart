@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 enum PosSection { terminal, stock, restock }
 
@@ -21,6 +20,7 @@ class PosNavigationDrawer extends StatelessWidget {
   final VoidCallback onConnectReceipt;
   final VoidCallback onSync;
   final VoidCallback onLogout;
+  final VoidCallback onContactSupport;
 
   const PosNavigationDrawer({
     super.key,
@@ -39,6 +39,7 @@ class PosNavigationDrawer extends StatelessWidget {
     required this.onConnectReceipt,
     required this.onSync,
     required this.onLogout,
+    required this.onContactSupport,
   });
 
   @override
@@ -94,7 +95,7 @@ class PosNavigationDrawer extends StatelessWidget {
             ),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.symmetric(vertical: 8),
+                padding: EdgeInsets.zero,
                 children: [
                   _destination(
                     context,
@@ -102,6 +103,18 @@ class PosNavigationDrawer extends StatelessWidget {
                     icon: Icons.point_of_sale_outlined,
                     label: 'POS Terminal',
                     onTap: onOpenTerminal,
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
+                    child: Text(
+                      'INVENTORY',
+                      style: TextStyle(
+                        color: Color(0xFF6B7280),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
                   ),
                   _destination(
                     context,
@@ -114,8 +127,20 @@ class PosNavigationDrawer extends StatelessWidget {
                     context,
                     section: PosSection.restock,
                     icon: Icons.add_shopping_cart_outlined,
-                    label: 'Restock',
+                    label: 'Restock inventory',
                     onTap: onOpenRestock,
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
+                    child: Text(
+                      'BARISTA SHIFT',
+                      style: TextStyle(
+                        color: Color(0xFF6B7280),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
                   ),
                   ListTile(
                     leading:
@@ -149,11 +174,47 @@ class PosNavigationDrawer extends StatelessWidget {
                     subtitle: Text(receiptConnection),
                     onTap: () => _closeThen(context, onConnectReceipt),
                   ),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
+                    child: Text(
+                      'SYNC STATUS',
+                      style: TextStyle(
+                        color: Color(0xFF6B7280),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
                   ListTile(
                     leading: const Icon(Icons.sync, color: Colors.black87),
                     title: const Text('Sync with Admin Database'),
                     subtitle: Text(syncStatus),
                     onTap: () => _closeThen(context, onSync),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Column(
+                      children: [
+                        Text(
+                          'Powered by Synorra',
+                          style: TextStyle(
+                            color: Color(0xFF6B7280),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Version 1.0',
+                          style: TextStyle(
+                            color: Color(0xFF6B7280),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -171,14 +232,11 @@ class PosNavigationDrawer extends StatelessWidget {
                   ),
                   const SizedBox(width: 12),
                   InkWell(
-                    onTap: () => launchUrl(
-                      Uri.parse('https://synnora.vercel.app/'),
-                      mode: LaunchMode.externalApplication,
-                    ),
+                    onTap: onContactSupport,
                     child: const Padding(
                       padding: EdgeInsets.symmetric(vertical: 10),
                       child: Text(
-                        'Contact Developer',
+                        'Contact Support',
                         style: TextStyle(
                           color: Color(0xFF374151),
                           fontWeight: FontWeight.w600,

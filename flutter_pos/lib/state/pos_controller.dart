@@ -44,7 +44,6 @@ class PosController extends ChangeNotifier {
 
   // Filtering
   String selectedCategory = 'All';
-  String searchQuery = '';
 
   // Cart
   List<OrderItem> cart = [];
@@ -367,22 +366,12 @@ class PosController extends ChangeNotifier {
               selectedCategory.trim().toLowerCase()) {
         return false;
       }
-      if (searchQuery.isNotEmpty) {
-        final query = searchQuery.toLowerCase().trim();
-        return item.name.toLowerCase().contains(query) ||
-            item.category.toLowerCase().contains(query);
-      }
       return true;
     }).toList();
   }
 
   void setCategory(String category) {
     selectedCategory = category;
-    notifyListeners();
-  }
-
-  void setSearchQuery(String query) {
-    searchQuery = query;
     notifyListeners();
   }
 
@@ -481,10 +470,10 @@ class PosController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setTenderedAmount(double amount) {
+  void setTenderedAmount(double amount, {bool notify = true}) {
     tenderedAmount = amount;
     _persistActiveCheckout();
-    notifyListeners();
+    if (notify) notifyListeners();
   }
 
   // --- Order Checkout ---

@@ -3,16 +3,21 @@ import 'package:intl/intl.dart';
 import '../../manila_time.dart';
 import '../../models/restock_record.dart';
 import '../../state/pos_controller.dart';
+import '../widgets/pos_app_bar.dart';
 import '../widgets/pos_navigation_drawer.dart';
 
 class RestockScreen extends StatefulWidget {
   final PosController controller;
   final PosDrawerBuilder drawerBuilder;
+  final VoidCallback onPrint;
+  final VoidCallback onVoid;
 
   const RestockScreen({
     super.key,
     required this.controller,
     required this.drawerBuilder,
+    required this.onPrint,
+    required this.onVoid,
   });
 
   @override
@@ -190,57 +195,17 @@ class _RestockScreenState extends State<RestockScreen> {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        elevation: 0,
-        leading: Builder(
-          builder: (context) => IconButton(
-            tooltip: 'Open navigation menu',
-            icon: const Icon(Icons.menu, color: Colors.white, size: 20),
-            onPressed: () => Scaffold.of(context).openDrawer(),
-          ),
-        ),
-        titleSpacing: 0,
-        title: Row(
-          children: [
-            Image.asset(
-              'lib/src/images/favicon.png',
-              width: 18,
-              height: 18,
-              fit: BoxFit.contain,
-            ),
-            const SizedBox(width: 8),
-            const Text(
-              'commune.',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-                letterSpacing: -0.5,
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Flexible(
-              child: Text(
-                'Restock',
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.normal,
-                  color: Color(0xFF9CA3AF),
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Sync with Admin',
-            icon: const Icon(Icons.sync, color: Colors.white, size: 18),
-            onPressed: () => widget.controller.syncService.syncAll(),
-          ),
-          const SizedBox(width: 8),
-        ],
+      appBar: PosAppBar(
+        sectionTitle: 'Restock',
+        isVoidRequestPending: widget.controller.isVoidRequestPending,
+        syncStatus:
+            widget.controller.syncService.isOnline ? 'Online' : 'Offline',
+        syncDotColor: widget.controller.syncService.isOnline
+            ? const Color(0xFF22C55E)
+            : const Color(0xFF9CA3AF),
+        onPrint: widget.onPrint,
+        onVoid: widget.onVoid,
+        onSync: () => widget.controller.syncService.syncAll(),
       ),
       drawer: widget.drawerBuilder(PosSection.restock),
       body: SingleChildScrollView(

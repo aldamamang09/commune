@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../models/menu_item.dart';
 import '../../models/order.dart';
-import '../../models/staff_user.dart';
 import '../../services/sync_service.dart';
 import '../../state/pos_controller.dart';
 import '../widgets/product_card.dart';
@@ -15,8 +14,8 @@ import '../widgets/void_dialog.dart';
 import '../widgets/barista_shift_dialog.dart';
 import '../widgets/bluetooth_printer_picker_dialog.dart';
 import '../widgets/pos_navigation_drawer.dart';
+import '../widgets/pos_app_bar.dart';
 import '../../services/bluetooth_printer_service.dart';
-import '../theme.dart';
 import 'stock_screen.dart';
 import 'restock_screen.dart';
 import 'login_screen.dart';
@@ -31,7 +30,6 @@ class PosScreen extends StatefulWidget {
 }
 
 class _PosScreenState extends State<PosScreen> {
-  final TextEditingController _searchController = TextEditingController();
   final BluetoothPrinterService _printerService =
       BluetoothPrinterService.instance;
   String? _selectedItemId;
@@ -51,7 +49,6 @@ class _PosScreenState extends State<PosScreen> {
     widget.controller.removeListener(_onControllerChange);
     widget.controller.syncService.removeListener(_onControllerChange);
     _printerService.removeListener(_onControllerChange);
-    _searchController.dispose();
     super.dispose();
   }
 
@@ -60,23 +57,22 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Future<void> _contactSupport() async {
-    final uri = Uri(
-      scheme: 'mailto',
-      path: 'hello@synorra.com',
-    );
+    final uri = Uri(scheme: 'mailto', path: 'hello@synorra.com');
     try {
       final launched = await launchUrl(uri);
       if (!launched && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text('No email app is available on this device.')),
+            content: Text('No email app is available on this device.'),
+          ),
         );
       }
     } on PlatformException {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text('No email app is available on this device.')),
+            content: Text('No email app is available on this device.'),
+          ),
         );
       }
     }
@@ -343,14 +339,6 @@ class _PosScreenState extends State<PosScreen> {
                   Navigator.pop(ctx);
                   await _handleProceedOrder();
                 },
-                onVoid: () {
-                  Navigator.pop(ctx);
-                  _openVoidDialog();
-                },
-                onPrint: () {
-                  Navigator.pop(ctx);
-                  _openReceiptDialog();
-                },
               ),
             ),
           ],
@@ -370,6 +358,8 @@ class _PosScreenState extends State<PosScreen> {
         builder: (_) => StockScreen(
           controller: widget.controller,
           drawerBuilder: _buildPosDrawer,
+          onPrint: _openReceiptDialog,
+          onVoid: _openVoidDialog,
         ),
       ),
     );
@@ -382,6 +372,8 @@ class _PosScreenState extends State<PosScreen> {
         builder: (_) => RestockScreen(
           controller: widget.controller,
           drawerBuilder: _buildPosDrawer,
+          onPrint: _openReceiptDialog,
+          onVoid: _openVoidDialog,
         ),
       ),
     );
@@ -411,6 +403,7 @@ class _PosScreenState extends State<PosScreen> {
       onConnectReceipt: () => _openPrinterPicker(PrinterRole.receipt),
       onSync: () => controller.syncService.syncAll(),
       onLogout: _handleLogout,
+      onContactSupport: _contactSupport,
     );
   }
 
@@ -440,9 +433,6 @@ class _PosScreenState extends State<PosScreen> {
     final sync = controller.syncService;
     final filteredItems = controller.filteredMenu;
     final currency = NumberFormat('#,##0', 'en_PH');
-    final canLogout = controller.cart.isEmpty &&
-        !controller.isVoidRequestPending &&
-        !_isLoggingOut;
     final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
 
     final syncStatusLabel = sync.isOnline ? 'Online' : 'Offline';
@@ -451,291 +441,15 @@ class _PosScreenState extends State<PosScreen> {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        elevation: 0,
-        leading: Builder(
-          builder: (ctx) => IconButton(
-            icon: const Icon(Icons.menu, color: Colors.white, size: 22),
-            onPressed: () => Scaffold.of(ctx).openDrawer(),
-          ),
-        ),
-        titleSpacing: 0,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Image.asset(
-              'lib/src/images/favicon.png',
-              width: 22,
-              height: 22,
-              fit: BoxFit.contain,
-            ),
-            const SizedBox(width: 8),
-            const Text(
-              'commune.',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-                letterSpacing: -0.6,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          InkWell(
-            onTap: () => sync.syncAll(),
-            borderRadius: BorderRadius.circular(16),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: syncDotColor,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    syncStatusLabel,
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-        ],
+      appBar: PosAppBar(
+        isVoidRequestPending: controller.isVoidRequestPending,
+        syncStatus: syncStatusLabel,
+        syncDotColor: syncDotColor,
+        onPrint: _openReceiptDialog,
+        onVoid: _openVoidDialog,
+        onSync: () => sync.syncAll(),
       ),
-
-      // Sidebar Drawer
-      drawer: Drawer(
-        backgroundColor: Colors.white,
-        child: SafeArea(
-          top: false,
-          child: Column(
-            children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(20, 48, 20, 20),
-                color: Colors.black,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'commune.',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: -0.5,
-                            ),
-                          ),
-                          Text(
-                            'Cashier: ${controller.currentUser?.name ?? 'Cashier'}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    TextButton.icon(
-                      onPressed: canLogout ? () => _handleLogout() : null,
-                      icon: const Icon(Icons.logout, size: 18),
-                      label: const Text('Logout'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        disabledForegroundColor: Colors.white54,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: ListView(
-                  padding: EdgeInsets.zero,
-                  children: [
-                    ListTile(
-                      leading:
-                          const Icon(Icons.point_of_sale, color: Colors.black),
-                      title: const Text('POS Terminal',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
-                      selected: true,
-                      selectedTileColor: const Color(0xFFF3F4F6),
-                      onTap: () => Navigator.pop(context),
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
-                      child: Text(
-                        'INVENTORY',
-                        style: TextStyle(
-                          color: CommuneTheme.textMuted,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.inventory_2_outlined,
-                          color: Colors.black87),
-                      title: const Text('Stock inventory'),
-                      onTap: _navigateToStock,
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.add_shopping_cart_outlined,
-                          color: Colors.black87),
-                      title: const Text('Restock inventory'),
-                      onTap: _navigateToRestock,
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
-                      child: Text(
-                        'BARISTA SHIFT',
-                        style: TextStyle(
-                          color: CommuneTheme.textMuted,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.badge_outlined,
-                          color: Colors.black87),
-                      title: const Text('Baristas on shift'),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _openBaristaShiftDialog();
-                      },
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
-                      child: Text(
-                        'PRINTERS',
-                        style: TextStyle(
-                          color: CommuneTheme.textMuted,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.local_cafe_outlined,
-                          color: Colors.black87),
-                      title: const Text('Connect labels'),
-                      subtitle: Text(_printerService
-                          .connectionSummary(PrinterRole.labels)),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _openPrinterPicker(PrinterRole.labels);
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.receipt_long_outlined,
-                          color: Colors.black87),
-                      title: const Text('Connect receipt'),
-                      subtitle: Text(_printerService
-                          .connectionSummary(PrinterRole.receipt)),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _openPrinterPicker(PrinterRole.receipt);
-                      },
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
-                      child: Text(
-                        'SYNC STATUS',
-                        style: TextStyle(
-                          color: CommuneTheme.textMuted,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.sync, color: Colors.black87),
-                      title: const Text('Sync with Admin Database'),
-                      subtitle: Text(syncStatusLabel),
-                      onTap: () {
-                        Navigator.pop(context);
-                        sync.syncAll();
-                      },
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Column(
-                        children: [
-                          Text(
-                            'Powered by Synorra',
-                            style: TextStyle(
-                              color: CommuneTheme.textMuted,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w400,
-                            ),
-                          ),
-                          SizedBox(height: 2),
-                          Text(
-                            'Version 1.0',
-                            style: TextStyle(
-                              color: CommuneTheme.textMuted,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w400,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  children: [
-                    Image.asset(
-                      'lib/src/images/synorra.jpg',
-                      width: 68,
-                      height: 40,
-                      fit: BoxFit.contain,
-                    ),
-                    const SizedBox(width: 12),
-                    InkWell(
-                      onTap: _contactSupport,
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 10),
-                        child: Text(
-                          'Contact Support',
-                          style: TextStyle(
-                            color: Color(0xFF374151),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+      drawer: _buildPosDrawer(PosSection.terminal),
 
       body: LayoutBuilder(
         builder: (context, screenConstraints) {
@@ -749,58 +463,6 @@ class _PosScreenState extends State<PosScreen> {
             color: const Color(0xFFF9FAFB),
             child: Column(
               children: [
-                // Top Search Bar
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-                  child: Center(
-                    child: Container(
-                      constraints: const BoxConstraints(maxWidth: 600),
-                      height: 42,
-                      child: TextField(
-                        controller: _searchController,
-                        style: const TextStyle(fontSize: 13),
-                        decoration: InputDecoration(
-                          hintText: 'Search item...',
-                          hintStyle: const TextStyle(
-                              fontSize: 13, color: Color(0xFF9CA3AF)),
-                          prefixIcon: const Icon(Icons.search,
-                              size: 18, color: Color(0xFF9CA3AF)),
-                          suffixIcon: _searchController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear,
-                                      size: 14, color: Color(0xFF9CA3AF)),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    controller.setSearchQuery('');
-                                  },
-                                )
-                              : null,
-                          filled: true,
-                          fillColor: Colors.white,
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 0),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(24),
-                            borderSide:
-                                const BorderSide(color: Color(0xFFE5E7EB)),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(24),
-                            borderSide:
-                                const BorderSide(color: Color(0xFFE5E7EB)),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(24),
-                            borderSide: const BorderSide(
-                                color: Colors.black, width: 1.2),
-                          ),
-                        ),
-                        onChanged: (val) => controller.setSearchQuery(val),
-                      ),
-                    ),
-                  ),
-                ),
-
                 // Responsive Product Grid
                 Expanded(
                   child: filteredItems.isEmpty
@@ -974,8 +636,6 @@ class _PosScreenState extends State<PosScreen> {
                   controller: controller,
                   isKeyboardOpen: keyboardOpen,
                   onProceedOrder: _handleProceedOrder,
-                  onVoid: _openVoidDialog,
-                  onPrint: () => _openReceiptDialog(),
                 ),
               ),
             ],
