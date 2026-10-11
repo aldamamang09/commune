@@ -769,7 +769,7 @@ class PosController extends ChangeNotifier {
       return staff;
     }
 
-    if (auth['offline'] != true || syncService.isOnline) return null;
+    if (auth['offline'] != true) return null;
 
     final normalizedUsername = username.trim().toLowerCase();
     final staff = localStorage.getStaff().where((cached) {
@@ -787,8 +787,6 @@ class PosController extends ChangeNotifier {
     String username,
     String password,
   ) async {
-    if (syncService.isOnline) return null;
-
     final normalizedUsername = username.trim().toLowerCase();
     final staff = localStorage.getStaff().where((cached) {
       return cached.username.trim().toLowerCase() == normalizedUsername ||

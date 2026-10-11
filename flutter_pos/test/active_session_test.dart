@@ -55,7 +55,7 @@ void main() {
     expect((await SharedPreferences.getInstance()).getKeys(), isEmpty);
   });
 
-  test('legacy cached staff passwords are removed during storage init',
+  test('legacy cached staff passwords migrate to secure storage during init',
       () async {
     SharedPreferences.setMockInitialValues({
       'v2_cache_staff_users':
@@ -71,7 +71,7 @@ void main() {
       (await SharedPreferences.getInstance()).getString('v2_cache_staff_users'),
       isNot(contains('old-secret')),
     );
-    expect(await storage.getOfflineStaffCredential('staff-123'), isNull);
+    expect(await storage.getOfflineStaffCredential('staff-123'), 'old-secret');
   });
 
   test('barista and manager can authenticate offline only for their purposes',
@@ -107,7 +107,6 @@ void main() {
 
     final api = _StubSupabaseService({'ok': false, 'offline': true});
     final sync = SyncService(localStorage: storage, supabaseService: api);
-    sync.isOnline = false;
     final controller = PosController(
       localStorage: storage,
       supabaseService: api,
@@ -184,8 +183,7 @@ void main() {
     sync.dispose();
   });
 
-  test('cached staff password is only accepted when the device is offline',
-      () async {
+  test('cached staff password works when internet is unavailable', () async {
     final credentials = _MemoryOfflineCredentialStore();
     final storage = LocalStorageService(offlineCredentialStore: credentials);
     await storage.init();
@@ -209,14 +207,14 @@ void main() {
 
     sync.isOnline = true;
     expect(
-      await controller.authenticateCachedStaffOffline('rey', '1234'),
-      isNull,
-    );
-
-    sync.isOnline = false;
-    expect(
       (await controller.authenticateCachedStaffOffline('rey', '1234'))?.id,
       staff.id,
+    );
+
+    await storage.saveOfflineStaffCredential(staff.id, 'different');
+    expect(
+      await controller.authenticateCachedStaffOffline('rey', '1234'),
+      isNull,
     );
 
     controller.dispose();

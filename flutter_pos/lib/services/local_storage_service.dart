@@ -58,9 +58,16 @@ class LocalStorageService {
 
   Future<void> _removeLegacyCachedStaffPasswords() async {
     final staff = getStaff();
-    if (staff.any((user) => user.password.isNotEmpty)) {
-      await saveStaff(staff);
+    var containsLegacyPasswords = false;
+    for (final user in staff) {
+      if (user.password.isEmpty) continue;
+      containsLegacyPasswords = true;
+      if (user.id.isNotEmpty &&
+          await getOfflineStaffCredential(user.id) == null) {
+        await saveOfflineStaffCredential(user.id, user.password);
+      }
     }
+    if (containsLegacyPasswords) await saveStaff(staff);
   }
 
   String? getActiveStaffId() => _prefs.getString(_keyActiveStaffId);
