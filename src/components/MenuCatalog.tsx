@@ -271,7 +271,7 @@ export function MenuCatalog({ menu, categories, categoryTypes = {}, inventory = 
                   required
                   value={newCategoryType}
                   onChange={(event) => setNewCategoryType(event.target.value)}
-                  placeholder="e.g. Drinks, Foods, Pastries"
+                  placeholder="e.g. Drinks, Foods"
                   className={field}
                 />
               </label>
