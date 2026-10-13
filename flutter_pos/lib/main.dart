@@ -79,7 +79,7 @@ class CommuneLaunchScreen extends StatelessWidget {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          Image.asset('lib/src/images/hero-wide.jpg', fit: BoxFit.cover),
+          Image.asset('lib/src/images/hero_wide.jpg', fit: BoxFit.cover),
           Container(color: Colors.black26),
         ],
       ),

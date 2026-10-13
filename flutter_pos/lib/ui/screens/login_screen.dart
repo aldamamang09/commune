@@ -138,7 +138,7 @@ class _LoginScreenState extends State<LoginScreen> {
         fit: StackFit.expand,
         children: [
           Image.asset(
-            'lib/src/images/hero-wide.jpg',
+            'lib/src/images/hero_wide.jpg',
             fit: BoxFit.cover,
           ),
           const ColoredBox(color: Color.fromRGBO(0, 0, 0, 0.68)),

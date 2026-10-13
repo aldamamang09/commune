@@ -31,7 +31,7 @@ flutter:
   uses-material-design: true
   assets:
     - lib/src/images/favicon.png
-    - lib/src/images/hero-wide.jpg
+    - lib/src/images/hero_wide.jpg
     - lib/src/images/synorra.jpg
 
 flutter_launcher_icons:
