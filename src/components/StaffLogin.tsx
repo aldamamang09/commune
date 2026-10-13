@@ -11,7 +11,9 @@ export function StaffLogin({ role = "admin" }: { role?: "admin" | "cashier" }) {
       />
       <div className="absolute inset-0 bg-black/75" />
       <div className="relative z-10 flex w-full max-w-md flex-col items-center text-center">
-        <BrandLogo size="md" showTagline />
+        <div className="relative -top-10">
+          <BrandLogo size="md" showTagline />
+        </div>
         <p className="mt-6 mb-10 text-xs tracking-[0.3em] text-neutral-300 uppercase">
           {isCashier ? "Staff POS login" : "Admin login"}
         </p>
