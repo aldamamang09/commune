@@ -26,6 +26,7 @@ class _CartPanelState extends State<CartPanel> {
   final TextEditingController _amountController = TextEditingController();
   final FocusNode _amountFocusNode = FocusNode();
   bool _hasSelectedCashAmount = false;
+  String? _selectedPreset;
 
   @override
   void initState() {
@@ -61,6 +62,7 @@ class _CartPanelState extends State<CartPanel> {
     final currency = NumberFormat('#,##0', 'en_PH');
     final keyboardOpen =
         widget.isKeyboardOpen || MediaQuery.viewInsetsOf(context).bottom > 0;
+    final isCashPayment = controller.paymentMethod == 'cash';
 
     return Container(
       width: widget.isFullWidth ? double.infinity : widget.panelWidth,
@@ -234,61 +236,6 @@ class _CartPanelState extends State<CartPanel> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (!keyboardOpen) ...[
-                  const Text(
-                    'Pay with',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Color(0xFF6B7280),
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                ],
-                Row(
-                  children: [
-                    _buildPaymentButton(
-                      label: 'Cash',
-                      isSelected: controller.paymentMethod == 'cash',
-                      isCompact: keyboardOpen,
-                      onTap: () {
-                        controller.setPaymentMethod('cash');
-                        setState(() {
-                          _hasSelectedCashAmount = false;
-                          _amountController.text = controller.tenderedAmount > 0
-                              ? controller.tenderedAmount.toInt().toString()
-                              : '0';
-                        });
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    _buildPaymentButton(
-                      label: 'GCash',
-                      isSelected: controller.paymentMethod == 'gcash',
-                      isCompact: keyboardOpen,
-                      onTap: () {
-                        controller.setPaymentMethod('gcash');
-                        setState(() {
-                          _amountController.text =
-                              controller.total.toInt().toString();
-                        });
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    _buildPaymentButton(
-                      label: 'Maya',
-                      isSelected: controller.paymentMethod == 'maya',
-                      isCompact: keyboardOpen,
-                      onTap: () {
-                        controller.setPaymentMethod('maya');
-                        setState(() {
-                          _amountController.text =
-                              controller.total.toInt().toString();
-                        });
-                      },
-                    ),
-                  ],
-                ),
-                SizedBox(height: keyboardOpen ? 1 : 4),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -300,9 +247,13 @@ class _CartPanelState extends State<CartPanel> {
                       width: 92,
                       height: keyboardOpen ? 24 : 28,
                       child: TextField(
+                        enabled: isCashPayment,
+                        readOnly: true,
+                        showCursor: false,
+                        onTap: isCashPayment ? _openAmountKeypad : null,
                         controller: _amountController,
                         focusNode: _amountFocusNode,
-                        keyboardType: TextInputType.number,
+                        keyboardType: TextInputType.none,
                         textAlign: TextAlign.right,
                         style: const TextStyle(
                             fontSize: 11, fontWeight: FontWeight.w600),
@@ -325,13 +276,6 @@ class _CartPanelState extends State<CartPanel> {
                                 color: Colors.black, width: 1.5),
                           ),
                         ),
-                        onChanged: (val) {
-                          final parsed = double.tryParse(val) ?? 0;
-                          controller.setTenderedAmount(parsed, notify: false);
-                          setState(() {
-                            _hasSelectedCashAmount = true;
-                          });
-                        },
                       ),
                     ),
                   ],
@@ -342,11 +286,14 @@ class _CartPanelState extends State<CartPanel> {
                   child: Row(
                     children: [
                       _buildPresetPill(
+                        presetId: 'exact',
                         label: 'Exact',
+                        isEnabled: isCashPayment,
                         onTap: () {
                           controller.setTenderedAmount(controller.total);
                           setState(() {
                             _hasSelectedCashAmount = true;
+                            _selectedPreset = 'exact';
                             _amountController.text =
                                 controller.total.toInt().toString();
                           });
@@ -354,39 +301,136 @@ class _CartPanelState extends State<CartPanel> {
                       ),
                       const SizedBox(width: 6),
                       _buildPresetPill(
+                        presetId: '500',
                         label: '₱500',
+                        isEnabled: isCashPayment,
                         onTap: () {
                           controller.setTenderedAmount(500);
                           setState(() {
                             _hasSelectedCashAmount = true;
+                            _selectedPreset = '500';
                             _amountController.text = '500';
                           });
                         },
                       ),
                       const SizedBox(width: 6),
                       _buildPresetPill(
+                        presetId: '1000',
                         label: '₱1,000',
+                        isEnabled: isCashPayment,
                         onTap: () {
                           controller.setTenderedAmount(1000);
                           setState(() {
                             _hasSelectedCashAmount = true;
+                            _selectedPreset = '1000';
                             _amountController.text = '1000';
                           });
                         },
                       ),
                       const SizedBox(width: 6),
                       _buildPresetPill(
+                        presetId: '2000',
                         label: '₱2,000',
+                        isEnabled: isCashPayment,
                         onTap: () {
                           controller.setTenderedAmount(2000);
                           setState(() {
                             _hasSelectedCashAmount = true;
+                            _selectedPreset = '2000';
                             _amountController.text = '2000';
+                          });
+                        },
+                      ),
+                       const SizedBox(width: 6),
+                      _buildPresetPill(
+                        presetId: '3000',
+                        label: '₱3,000',
+                        isEnabled: isCashPayment,
+                        onTap: () {
+                          controller.setTenderedAmount(2000);
+                          setState(() {
+                            _hasSelectedCashAmount = true;
+                            _selectedPreset = '3000';
+                            _amountController.text = '3000';
+                          });
+                        },
+                      ),
+                       const SizedBox(width: 6),
+                      _buildPresetPill(
+                        presetId: '4000',
+                        label: '₱4,000',
+                        isEnabled: isCashPayment,
+                        onTap: () {
+                          controller.setTenderedAmount(4000);
+                          setState(() {
+                            _hasSelectedCashAmount = true;
+                            _selectedPreset = '4000';
+                            _amountController.text = '4000';
                           });
                         },
                       ),
                     ],
                   ),
+                ),
+                if (!keyboardOpen) ...[
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Pay with',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                ],
+                Row(
+                  children: [
+                    _buildPaymentButton(
+                      label: 'Cash',
+                      isSelected: controller.paymentMethod == 'cash',
+                      isCompact: keyboardOpen,
+                      onTap: () {
+                        controller.setPaymentMethod('cash');
+                        setState(() {
+                          _hasSelectedCashAmount = false;
+                          _selectedPreset = null;
+                          _amountController.text = controller.tenderedAmount > 0
+                              ? controller.tenderedAmount.toInt().toString()
+                              : '0';
+                        });
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    _buildPaymentButton(
+                      label: 'GCash',
+                      isSelected: controller.paymentMethod == 'gcash',
+                      isCompact: keyboardOpen,
+                      onTap: () {
+                        _amountFocusNode.unfocus();
+                        controller.setPaymentMethod('gcash');
+                        setState(() {
+                          _selectedPreset = null;
+                          _amountController.text =
+                              controller.total.toInt().toString();
+                        });
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    _buildPaymentButton(
+                      label: 'Maya',
+                      isSelected: controller.paymentMethod == 'maya',
+                      isCompact: keyboardOpen,
+                      onTap: () {
+                        _amountFocusNode.unfocus();
+                        controller.setPaymentMethod('maya');
+                        setState(() {
+                          _selectedPreset = null;
+                          _amountController.text =
+                              controller.total.toInt().toString();
+                        });
+                      },
+                    ),
+                  ],
                 ),
                 SizedBox(height: keyboardOpen ? 2 : 5),
                 if (!keyboardOpen)
@@ -478,6 +522,114 @@ class _CartPanelState extends State<CartPanel> {
     );
   }
 
+  Future<void> _openAmountKeypad() async {
+    final controller = widget.controller;
+    if (controller.paymentMethod != 'cash') return;
+
+    var amount = _amountController.text.replaceAll(RegExp(r'[^0-9]'), '');
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      constraints: const BoxConstraints(maxWidth: 380),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          void updateAmount(String nextAmount) {
+            setSheetState(() => amount = nextAmount);
+            _amountController.value = TextEditingValue(
+              text: amount,
+              selection: TextSelection.collapsed(offset: amount.length),
+            );
+            controller.setTenderedAmount(
+              double.tryParse(amount) ?? 0,
+              notify: false,
+            );
+            if (mounted) {
+              setState(() {
+                _hasSelectedCashAmount = amount.isNotEmpty;
+                _selectedPreset = null;
+              });
+            }
+          }
+
+          Widget digitKey(String digit) => SizedBox(
+                height: 42,
+                child: OutlinedButton(
+                  onPressed: () => updateAmount('$amount$digit'),
+                  child: Text(
+                    digit,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              );
+
+          return ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.72,
+            ),
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Amount: ${amount.isEmpty ? '0' : amount}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    GridView(
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        mainAxisSpacing: 6,
+                        crossAxisSpacing: 6,
+                        mainAxisExtent: 42,
+                      ),
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: [
+                        for (var digit = 1; digit <= 9; digit++)
+                          digitKey('$digit'),
+                        OutlinedButton(
+                          onPressed: () => updateAmount(''),
+                          child: const Text('Clear'),
+                        ),
+                        digitKey('0'),
+                        OutlinedButton(
+                          onPressed: amount.isEmpty
+                              ? null
+                              : () => updateAmount(
+                                    amount.substring(0, amount.length - 1),
+                                  ),
+                          child: const Icon(Icons.backspace_outlined),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 38,
+                      child: FilledButton(
+                        onPressed: () => Navigator.of(sheetContext).pop(),
+                        child: const Text('Done'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildPaymentButton({
     required String label,
     required bool isSelected,
@@ -514,26 +666,43 @@ class _CartPanelState extends State<CartPanel> {
   }
 
   Widget _buildPresetPill({
+    required String presetId,
     required String label,
+    required bool isEnabled,
     required VoidCallback onTap,
   }) {
+    final isSelected = isEnabled && _selectedPreset == presetId;
     return InkWell(
-      onTap: onTap,
+      onTap: isEnabled ? onTap : null,
       borderRadius: BorderRadius.circular(16),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: !isEnabled
+              ? const Color(0xFFF3F4F6)
+              : isSelected
+                  ? Colors.black
+                  : Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFD1D5DB)),
+          border: Border.all(
+            color: !isEnabled
+                ? const Color(0xFFE5E7EB)
+                : isSelected
+                    ? Colors.black
+                    : const Color(0xFFD1D5DB),
+          ),
         ),
         child: Center(
           child: Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 9,
               fontWeight: FontWeight.w500,
-              color: Color(0xFF374151),
+              color: !isEnabled
+                  ? const Color(0xFF9CA3AF)
+                  : isSelected
+                      ? Colors.white
+                      : const Color(0xFF374151),
             ),
           ),
         ),

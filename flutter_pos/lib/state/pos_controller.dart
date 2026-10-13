@@ -66,7 +66,20 @@ class PosController extends ChangeNotifier {
 
   void _refreshFromLocalStorage() {
     menu = localStorage.getMenu();
-    categories = localStorage.getCategories();
+    final syncedCategories = localStorage.getCategories();
+    final savedOrder = localStorage.getCategoryOrder();
+    final availableCategories = syncedCategories.toSet();
+    categories = [
+      'All',
+      ...savedOrder.where(
+        (category) =>
+            category != 'All' && availableCategories.remove(category),
+      ),
+      ...syncedCategories.where(
+        (category) =>
+            category != 'All' && availableCategories.remove(category),
+      ),
+    ];
     if (!categories.contains(selectedCategory)) {
       selectedCategory = 'All';
     }
@@ -372,6 +385,17 @@ class PosController extends ChangeNotifier {
 
   void setCategory(String category) {
     selectedCategory = category;
+    notifyListeners();
+  }
+
+  void reorderCategories(int oldIndex, int newIndex) {
+    if (oldIndex == 0 || newIndex == 0 || oldIndex == newIndex) return;
+    final reordered = List<String>.of(categories);
+    if (newIndex > oldIndex) newIndex--;
+    final category = reordered.removeAt(oldIndex);
+    reordered.insert(newIndex, category);
+    categories = reordered;
+    unawaited(localStorage.saveCategoryOrder(categories));
     notifyListeners();
   }
 

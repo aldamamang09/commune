@@ -524,38 +524,46 @@ class _PosScreenState extends State<PosScreen> {
                         top: BorderSide(color: Color(0xFFE5E7EB)),
                       ),
                     ),
-                    child: ListView.separated(
+                    child: ReorderableListView.builder(
                       scrollDirection: Axis.horizontal,
+                      buildDefaultDragHandles: false,
+                      onReorder: controller.reorderCategories,
                       itemCount: controller.categories.length,
-                      separatorBuilder: (context, index) =>
-                          const SizedBox(width: 8),
                       itemBuilder: (context, index) {
                         final cat = controller.categories[index];
                         final isSelected = controller.selectedCategory == cat;
-                        return InkWell(
-                          onTap: () => controller.setCategory(cat),
-                          borderRadius: BorderRadius.circular(20),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: isSelected ? Colors.black : Colors.white,
+                        return ReorderableDelayedDragStartListener(
+                          key: ValueKey(cat),
+                          index: index,
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: InkWell(
+                              onTap: () => controller.setCategory(cat),
                               borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: isSelected
-                                    ? Colors.black
-                                    : const Color(0xFFD1D5DB),
-                              ),
-                            ),
-                            child: Center(
-                              child: Text(
-                                cat,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.normal,
-                                  color: isSelected
-                                      ? Colors.white
-                                      : const Color(0xFF111827),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color:
+                                      isSelected ? Colors.black : Colors.white,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? Colors.black
+                                        : const Color(0xFFD1D5DB),
+                                  ),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    cat,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.normal,
+                                      color: isSelected
+                                          ? Colors.white
+                                          : const Color(0xFF111827),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),

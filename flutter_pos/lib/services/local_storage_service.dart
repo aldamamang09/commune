@@ -22,6 +22,7 @@ class LocalStorageService {
   // Versioned cache keys so legacy hardcoded seed data is never loaded
   static const String _keyMenu = 'v2_cache_menu_items';
   static const String _keyCategories = 'v2_cache_categories';
+  static const String _keyCategoryOrder = 'v1_pos_category_order';
   static const String _keyInventory = 'v2_cache_inventory';
   static const String _keyOrders = 'v2_cache_orders';
   static const String _keyStaff = 'v2_cache_staff_users';
@@ -236,6 +237,14 @@ class LocalStorageService {
 
   List<String> getCategories() {
     return _prefs.getStringList(_keyCategories) ?? ['All'];
+  }
+
+  Future<void> saveCategoryOrder(List<String> categories) async {
+    await _prefs.setStringList(_keyCategoryOrder, categories);
+  }
+
+  List<String> getCategoryOrder() {
+    return _prefs.getStringList(_keyCategoryOrder) ?? [];
   }
 
   // --- Inventory Cache ---
