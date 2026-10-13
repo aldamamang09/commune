@@ -37,4 +37,8 @@ flutter:
 flutter_launcher_icons:
   android: true
   image_path: lib/src/images/logo.jpg
+  image_path_android: lib/src/images/logo-adaptive-background.png
   min_sdk_android: 21
+  adaptive_icon_background: lib/src/images/logo-adaptive-background.png
+  adaptive_icon_foreground: lib/src/images/logo-adaptive-foreground.png
+  adaptive_icon_foreground_inset: 0
