@@ -241,7 +241,9 @@ export async function POST(req: NextRequest) {
 
       const serviceMode: NonNullable<OrderItem["serviceMode"]> =
         rawOrder.serviceMode === "take-out" ? "take-out" : "dine-in";
-      const orderItems = orderItemsFromApi(rawOrder.items).map((item) => ({ ...item, serviceMode }));
+      const orderItems: OrderItem[] = orderItemsFromApi(rawOrder.items).map(
+        (item): OrderItem => ({ ...item, serviceMode }),
+      );
       const requestedCashierId = String(rawOrder.baristaUserId ?? '').trim();
       const requestedCashier = store.users.find((user) => {
         if (user.id !== requestedCashierId) return false;
