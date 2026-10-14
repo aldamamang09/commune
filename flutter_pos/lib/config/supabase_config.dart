@@ -20,7 +20,7 @@ class SupabaseConfig {
   static String get supabasePublishableKey => publishableKey;
 
   static const String _defaultPosApiUrl =
-      'https://communecoffee.vercel.app/api/sync';
+      'https://www.commune-cafe.com/api/sync';
   static const String _configuredPosApiUrl = String.fromEnvironment(
     'POS_API_URL',
     defaultValue: _defaultPosApiUrl,
