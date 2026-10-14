@@ -49,7 +49,7 @@ class PosController extends ChangeNotifier {
   List<OrderItem> cart = [];
   String paymentMethod = 'cash'; // 'cash', 'gcash', 'maya'
   double tenderedAmount = 0.0;
-  String serviceMode = 'take-in';
+  String serviceMode = 'dine-in';
   String? promoId;
   String? promoLabel;
   double discountAmount = 0.0;
@@ -207,7 +207,7 @@ class PosController extends ChangeNotifier {
         paymentMethod = method as String;
       }
       tenderedAmount = (saved['tenderedAmount'] as num?)?.toDouble() ?? 0;
-      serviceMode = saved['serviceMode'] == 'take-out' ? 'take-out' : 'take-in';
+      serviceMode = saved['serviceMode'] == 'take-out' ? 'take-out' : 'dine-in';
       discountAmount = (saved['discountAmount'] as num?)?.toDouble() ?? 0;
       if (paymentMethod == 'cash' && tenderedAmount == 0 && cart.isNotEmpty) {
         tenderedAmount = total;
@@ -504,7 +504,7 @@ class PosController extends ChangeNotifier {
   }
 
   void setServiceMode(String mode) {
-    serviceMode = mode == 'take-out' ? 'take-out' : 'take-in';
+    serviceMode = mode == 'take-out' ? 'take-out' : 'dine-in';
     _persistActiveCheckout();
     notifyListeners();
   }

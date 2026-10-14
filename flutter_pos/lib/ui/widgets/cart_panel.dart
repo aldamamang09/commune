@@ -239,7 +239,7 @@ class _CartPanelState extends State<CartPanel> {
                 Row(
                   children: [
                     Expanded(
-                      child: _buildServiceModeButton('take-in', 'Dine In'),
+                      child: _buildServiceModeButton('dine-in', 'Dine In'),
                     ),
                     const SizedBox(width: 8),
                     Expanded(

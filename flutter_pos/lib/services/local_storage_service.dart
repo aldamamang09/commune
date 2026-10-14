@@ -164,7 +164,7 @@ class LocalStorageService {
     required List<OrderItem> items,
     required String paymentMethod,
     required double tenderedAmount,
-    String serviceMode = 'take-in',
+    String serviceMode = 'dine-in',
     required double discountAmount,
     String? promoId,
     String? promoLabel,
