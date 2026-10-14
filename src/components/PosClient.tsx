@@ -511,7 +511,7 @@ export function PosClient({
       }
 
       if (!voidUsername || !voidPassword) {
-        setMessage("Manager credentials required to void.");
+        setMessage("Manager or admin credentials required to void.");
         return;
       }
       const auth = await verifyManager(voidUsername, voidPassword);

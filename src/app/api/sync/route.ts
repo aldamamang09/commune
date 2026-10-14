@@ -335,19 +335,24 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error: "Checkout items and void reason are required." }, { status: 400, headers: corsHeaders });
       }
 
-      const voidedBy = claims.userId;
+      let voidedBy = claims.userId;
+      let voidedByName = claims.name;
       const store = await getFreshStore();
       if (claims.role !== "manager" && claims.role !== "admin") {
         const managerUsername = String(body.managerUsername ?? "").trim().toLowerCase();
         const managerPassword = String(body.managerPassword ?? "");
         const manager = store.users.find((user) => user.username.trim().toLowerCase() === managerUsername);
-        const managerRole = manager ? parseRole(String(manager.title ?? manager.role ?? "barista")) : "barista";
+        const managerRole = manager ? parseRole(String(manager.title ?? ""), manager.role) : "barista";
         const validPassword = manager && (manager.password.startsWith("$2")
           ? await bcrypt.compare(managerPassword, manager.password)
           : manager.password === managerPassword);
         if (!manager || !validPassword || (managerRole !== "manager" && managerRole !== "admin")) {
           return NextResponse.json({ ok: false, error: "Manager or Admin credentials required to void." }, { status: 403, headers: corsHeaders });
         }
+        // The cashier token identifies who rang up the order. The manager
+        // whose credentials approved this void is the void actor.
+        voidedBy = manager.id;
+        voidedByName = manager.name;
       }
 
       const orderId = String(rawOrder.id || "").trim();
@@ -394,6 +399,7 @@ export async function POST(req: NextRequest) {
         change: 0,
         voided: true,
         voidedBy,
+        voidedByName,
         voidReason: reason,
       };
       const result = await createOrderAtomic({ order, deductions: [], voidedBy });
@@ -410,7 +416,8 @@ export async function POST(req: NextRequest) {
       const managerUsername = typeof body.managerUsername === "string" ? body.managerUsername.trim().toLowerCase() : "";
       const managerPassword = typeof body.managerPassword === "string" ? body.managerPassword : "";
 
-      const voidedBy = claims.userId;
+      let voidedBy = claims.userId;
+      let voidedByName = claims.name;
       if (claims.role !== "admin" && claims.role !== "manager") {
         if (!managerUsername || !managerPassword) {
           return NextResponse.json(
@@ -420,7 +427,7 @@ export async function POST(req: NextRequest) {
         }
         const store = await getFreshStore();
         const manager = store.users.find((u) => u.username.trim().toLowerCase() === managerUsername);
-        const role = manager ? parseRole(String(manager.title ?? manager.role ?? "barista")) : "barista";
+        const role = manager ? parseRole(String(manager.title ?? ""), manager.role) : "barista";
         if (!manager || (role !== "manager" && role !== "admin")) {
           return NextResponse.json(
             { ok: false, error: "Manager or Admin credentials required to void an order." },
@@ -436,10 +443,16 @@ export async function POST(req: NextRequest) {
             { status: 403, headers: corsHeaders },
           );
         }
+        // Record the approving manager/admin, not the cashier's API token.
+        voidedBy = manager.id;
+        voidedByName = manager.name;
       }
 
       const res = await voidOrderAtomic(orderId, reason, voidedBy);
-      return NextResponse.json(res, { status: res.ok ? 200 : 400, headers: corsHeaders });
+      return NextResponse.json(
+        res.ok ? { ...res, voidedBy, voidedByName } : res,
+        { status: res.ok ? 200 : 400, headers: corsHeaders },
+      );
     }
 
     if (action === "delete_order") {

@@ -351,6 +351,7 @@ export async function createOrder(
     discount: 0,
     total,
     paymentMethod: method,
+    serviceMode: serviceMode === "take-out" ? "take-out" : "dine-in",
     paid: cashIn,
     change: method === "cash" ? cashIn - total : 0,
     voided: false,
@@ -383,13 +384,13 @@ export async function verifyManager(username: string, password: string) {
   const store = await getStore();
   const user = store.users.find(
     (entry) =>
-      entry.role === "manager" &&
+      (entry.role === "manager" || entry.role === "admin") &&
       entry.username === username.trim().toLowerCase() &&
       Boolean(entry.password) &&
       entry.password === password,
   );
   if (!user) {
-    return { error: "Manager credentials required to void." };
+    return { error: "Manager or admin credentials required to void." };
   }
   return { ok: true, name: user.name, id: user.id };
 }
@@ -405,18 +406,16 @@ export async function voidOrder(
     return { error: "Enter a reason for voiding." };
   }
 
-  // Keep the staff member who initiated the void as the displayed actor.
-  // Cashier voids still require manager credentials, but the manager is the
-  // authorizer rather than the person who initiated the action.
+  // Attribute cashier-authorized voids to the manager/admin who approved them.
   let voidedBy: string | null = null;
   if (session.role === "cashier") {
     const auth = await verifyManager(managerUsername ?? "", managerPassword ?? "");
     if ("error" in auth) return auth;
-    voidedBy = session.userId;
-  } else if (session.role === "manager") {
+    voidedBy = auth.id;
+  } else if (session.role === "manager" || session.role === "admin") {
     voidedBy = session.userId;
   } else {
-    return { error: "Only a manager can void a transaction." };
+    return { error: "Only a manager or admin can void a transaction." };
   }
 
   const result = await voidOrderAtomic(orderId, reason.trim(), voidedBy);
@@ -631,7 +630,7 @@ export async function voidCheckout(
 
   // create_order_atomic writes the already-voided order + items atomically:
   // it allocates the ticket on the DB counter, sets voided_at = now(), and
-  // records the staff member who initiated the void in voided_by. No
+  // records the approving manager/admin in voided_by. No
   // deductions - a pre-checkout void never touched inventory.
   const orderId = `ord-${Date.now()}`;
   const createdOrder: Order = {
@@ -646,11 +645,12 @@ export async function voidCheckout(
     paid: 0,
     change: 0,
     voided: true,
-    voidedBy: session.userId,
+    voidedBy: auth.id,
+    voidedByName: auth.name,
     voidReason: reason.trim(),
   };
 
-  const result = await createOrderAtomic({ order: createdOrder, deductions: [], voidedBy: session.userId });
+  const result = await createOrderAtomic({ order: createdOrder, deductions: [], voidedBy: auth.id });
   if (!result.ok) return { error: result.error };
 
   revalidatePath("/pos");

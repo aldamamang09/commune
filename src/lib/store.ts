@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { nextTicketNo } from "@/lib/escpos";
 import type {
   InventoryItem,
   AdminLedgerEntry,
@@ -179,6 +180,7 @@ function normalizeStore(store: StoreData): StoreData {
         paymentMethod: parsePayment(order.paymentMethod),
         voided: Boolean(order.voided),
         voidedBy: typeof order.voidedBy === "string" ? order.voidedBy : undefined,
+        voidedByName: typeof order.voidedByName === "string" ? order.voidedByName : undefined,
         voidReason: typeof order.voidReason === "string" ? order.voidReason : "",
       }))
       .map((order: Order) => ({
@@ -586,12 +588,16 @@ async function readStore(options?: { fresh?: boolean }): Promise<StoreData> {
         promoLabel: row.promo_label ?? undefined,
         total: row.total,
         paymentMethod: parsePayment(row.payment_method),
+        serviceMode: row.service_mode === "dine-in" || row.service_mode === "take-out"
+          ? row.service_mode
+          : items.find((item) => item.order_id === row.id && (item.service_mode === "dine-in" || item.service_mode === "take-out"))?.service_mode,
         ticketNo: row.ticket_no,
         recordType: row.record_type === "Purchase" ? "Purchase" : "Sale",
         paid: row.paid,
         change: row.change,
         voided: row.voided,
         voidedBy: row.voided_by ?? undefined,
+        voidedByName: row.voided_by_name ?? undefined,
         voidReason: row.void_reason ?? undefined,
       })),
       usageLogs: (usageLogs.data ?? []).filter((row) => !row.order_id || activeOrderIds.has(row.order_id)).map((row) => ({ id: row.id, orderId: row.order_id ?? "", orderItemId: row.order_item_id ?? "", inventoryItemId: row.inventory_item_id ?? undefined, date: row.created_at, itemName: row.item_name_snapshot, usedAmount: Number(row.used_amount), unit: row.unit })),
@@ -1012,6 +1018,9 @@ export async function createOrderAtomic(input: {
     if (!isRealSupabaseConfigured()) {
       if (!memoryStore) memoryStore = normalizeStore(emptyStore());
       const { order, deductions } = input;
+      if (order.voided && !order.voidedByName && input.voidedBy) {
+        order.voidedByName = memoryStore.users.find((user) => user.id === input.voidedBy)?.name;
+      }
       for (const deduction of deductions) {
         const item = memoryStore.inventory.find((entry) => entry.id === deduction.inventoryItemId);
         if (item && item.stock < deduction.amount) {
@@ -1019,7 +1028,7 @@ export async function createOrderAtomic(input: {
         }
       }
       if (!order.ticketNo) {
-        order.ticketNo = `#${String(memoryStore.orders.length + 1).padStart(3, "0")}`;
+        order.ticketNo = `#${nextTicketNo(memoryStore.orders, new Date(order.createdAt))}`;
       }
       memoryStore.orders.push(order);
       for (const deduction of deductions) {
@@ -1121,6 +1130,7 @@ export async function voidOrderAtomic(
       order.voided = true;
       order.voidReason = reason;
       order.voidedBy = voidedBy ?? undefined;
+      order.voidedByName = memoryStore.users.find((user) => user.id === voidedBy)?.name;
       const logs = memoryStore.usageLogs.filter((entry) => entry.orderId === orderId);
       for (const log of logs) {
         const item = memoryStore.inventory.find((entry) => entry.id === log.inventoryItemId || entry.name === log.itemName);
@@ -2045,6 +2055,7 @@ export async function approveVoidRequestAtomic(input: {
           order.voided = true;
           order.voidReason = request.reason;
           order.voidedBy = input.approvedById;
+          order.voidedByName = input.approvedByName;
           const logs = memoryStore.usageLogs.filter((entry) => entry.orderId === request.orderId);
           for (const log of logs) {
             const item = memoryStore.inventory.find((entry) => entry.id === log.inventoryItemId || entry.name === log.itemName);
@@ -2063,11 +2074,12 @@ export async function approveVoidRequestAtomic(input: {
           promoLabel: request.promoLabel,
           total: request.total,
           paymentMethod: request.paymentMethod,
-          ticketNo: `#${String(memoryStore.orders.length + 1).padStart(3, "0")}`,
+          ticketNo: `#${nextTicketNo(memoryStore.orders, new Date())}`,
           paid: 0,
           change: 0,
           voided: true,
           voidedBy: input.approvedById,
+          voidedByName: input.approvedByName,
           voidReason: request.reason,
         };
         memoryStore.orders.push(newOrder);

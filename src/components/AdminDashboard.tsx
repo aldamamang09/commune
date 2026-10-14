@@ -12,6 +12,7 @@ import { phDateString, phDateTimeLabel, phPeriodBounds, phTimestamp, type Period
 import { paymentLabel } from "@/lib/payments";
 import { ingredientsForOrderLine } from "@/lib/inventory";
 import { inferMenuCategoryType, menuCategoryTypeLabel, normalizeMenuCategoryType } from "@/lib/menu";
+import { parseRole } from "@/lib/users";
 import {
   bestSellers,
   busiestDay,
@@ -132,17 +133,28 @@ function isVoided(order: Order) {
 
 function voidStatusLabel(order: Order, users: StoreData["users"]) {
   const actor = users.find((user) => user.id === order.voidedBy);
+  const snapshotName = order.voidedByName?.trim();
+  // A stored name can still be a bad legacy snapshot of the cashier's ID.
+  // Never display it unless the linked staff account is a manager or admin.
+  if (actor && !["manager", "admin"].includes(parseRole(actor.title, actor.role))) return "VOID";
   const accountName = actor?.name.trim();
   const username = actor?.username.trim();
   const isRoleLabel = /^(admin|manager|cashier|barista|sale in charge)$/i;
-  const personName = accountName && isRoleLabel.test(accountName) && username
+  const personName = snapshotName || (accountName && isRoleLabel.test(accountName) && username
     ? username
-    : accountName || username;
+    : accountName || username);
   return personName ? `VOID - ${personName.toUpperCase()}` : "VOID";
 }
 
 function orderIdLabel(order: Order) {
   return order.ticketNo != null ? `#${order.ticketNo}` : order.id;
+}
+
+function orderServiceMode(order: Order) {
+  const mode = order.serviceMode ?? order.items.find((item) => item.serviceMode)?.serviceMode;
+  if (mode === "dine-in") return "Dine-in";
+  if (mode === "take-out") return "Take-out";
+  return "—";
 }
 
 function entryInPeriod(dateStr: string, start: Date, end: Date) {
@@ -1158,7 +1170,7 @@ export function AdminDashboard({
             </p>
           ) : (
           <div className="mt-4">
-            <div className="hidden grid-cols-8 gap-x-4 border-b border-neutral-200 pb-2 text-xs text-neutral-500 lg:grid">
+            <div className="hidden grid-cols-9 gap-x-4 border-b border-neutral-200 pb-2 text-xs text-neutral-500 lg:grid">
               <p className="min-w-0">Time</p>
               <p className="min-w-0">Cashier</p>
               <p className="min-w-0">Order ID</p>
@@ -1166,13 +1178,14 @@ export function AdminDashboard({
               <p className="min-w-0">Status</p>
               <p className="min-w-0">Reason</p>
               <p className="min-w-0">Payment</p>
+              <p className="min-w-0">Service</p>
               <p className="min-w-0 text-right">Total</p>
             </div>
             <div className="divide-y divide-neutral-200">
               {latest.map((order: Order, ordIdx: number) => (
                 <div
                   key={`${order.id}-${ordIdx}`}
-                  className="grid grid-cols-1 gap-2 py-3 lg:grid-cols-8 lg:items-start lg:gap-x-4"
+                  className="grid grid-cols-1 gap-2 py-3 lg:grid-cols-9 lg:items-start lg:gap-x-4"
                 >
                   <div className="min-w-0">
                     <p className="text-sm leading-5 text-neutral-700">
@@ -1227,6 +1240,10 @@ export function AdminDashboard({
                   <p className="min-w-0 text-xs text-neutral-500 lg:text-sm">
                     <span className="lg:hidden">Payment: </span>
                     {paymentLabel(order.paymentMethod)}
+                  </p>
+                  <p className="min-w-0 text-xs text-neutral-500 lg:text-sm">
+                    <span className="lg:hidden">Service: </span>
+                    {orderServiceMode(order)}
                   </p>
                   <p className="min-w-0 text-sm font-semibold lg:text-right">
                     <span className="font-normal text-neutral-500 lg:hidden">Total: </span>

@@ -1,8 +1,7 @@
 import { CAFE } from "@/lib/cafe";
-import { ordersOnDay } from "@/lib/analytics";
 import { paymentLabel } from "@/lib/payments";
 import { drinkDisplayName, hydrateOrderLine, orderLineOptionsLabel } from "@/lib/menu";
-import { phDateTimeLabel, phTimestamp } from "@/lib/datetime";
+import { phDateString, phDateTimeLabel, phTimestamp } from "@/lib/datetime";
 import type { MenuItem, Order, OrderItem, PaymentMethod } from "@/lib/types";
 
 export type PaperWidth = 58 | 80;
@@ -49,7 +48,24 @@ export function paperColumns(width: PaperWidth): number {
 }
 
 export function nextTicketNo(orders: Order[], now = new Date()): string {
-  return String(ordersOnDay(orders, now).length + 1).padStart(3, "0");
+  const day = phDateString(now);
+  const dayOrders = orders.filter((order) => phDateString(order.createdAt) === day && !order.deletedAt);
+  const ticketNumber = (order: Order) => {
+    const ticket = Number(String(order.ticketNo ?? "").replace(/^#/, ""));
+    return Number.isInteger(ticket) && ticket > 0 ? ticket : null;
+  };
+  const activeTickets = new Set(
+    dayOrders.filter((order) => !order.voided).map(ticketNumber).filter((ticket): ticket is number => ticket !== null),
+  );
+  const reclaimedTicket = dayOrders
+    .filter((order) => order.voided)
+    .map(ticketNumber)
+    .filter((ticket): ticket is number => ticket !== null && !activeTickets.has(ticket))
+    .sort((a, b) => a - b)[0];
+  if (reclaimedTicket !== undefined) return String(reclaimedTicket).padStart(3, "0");
+
+  const highestTicket = dayOrders.reduce((highest, order) => Math.max(highest, ticketNumber(order) ?? 0), 0);
+  return String(highestTicket + 1).padStart(3, "0");
 }
 
 function sameCalendarDay(a: Date, b: Date) {
