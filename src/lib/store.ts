@@ -1706,9 +1706,8 @@ export async function deleteStaffUserRecord(id: string): Promise<void> {
       .maybeSingle();
     if (staffError) throw new Error(`Unable to read staff user: ${staffError.message}`);
 
-    // The deployed orders.voided_by FK may still use NO ACTION. Preserve the
-    // approver name, then detach the FK before deleting the staff account.
-    // Existing snapshots are kept; only rows missing one use the current name.
+    // The deployed orders.staff FKs may still use NO ACTION. Preserve both
+    // historical names, then detach both references before deleting the user.
     if (staff?.name) {
       const { error: snapshotError } = await supabase
         .from("orders")
@@ -1719,12 +1718,27 @@ export async function deleteStaffUserRecord(id: string): Promise<void> {
         throw new Error(`Unable to preserve void history: ${snapshotError.message}`);
       }
     }
-    const { error: detachError } = await supabase
+    const { error: cashierSnapshotError } = await supabase
+      .from("orders")
+      .update({ barista_name: staff?.name ?? "Deleted staff" })
+      .eq("barista_user_id", id)
+      .is("barista_name", null);
+    if (cashierSnapshotError) {
+      throw new Error(`Unable to preserve cashier history: ${cashierSnapshotError.message}`);
+    }
+    const { error: detachVoiderError } = await supabase
       .from("orders")
       .update({ voided_by: null })
       .eq("voided_by", id);
-    if (detachError) {
-      throw new Error(`Unable to detach staff history: ${detachError.message}`);
+    if (detachVoiderError) {
+      throw new Error(`Unable to detach void history: ${detachVoiderError.message}`);
+    }
+    const { error: detachCashierError } = await supabase
+      .from("orders")
+      .update({ barista_user_id: null })
+      .eq("barista_user_id", id);
+    if (detachCashierError) {
+      throw new Error(`Unable to detach cashier history: ${detachCashierError.message}`);
     }
 
     const { error } = await supabase.from("staff_users").delete().eq("id", id);
