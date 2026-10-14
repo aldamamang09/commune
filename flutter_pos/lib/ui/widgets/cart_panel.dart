@@ -237,6 +237,14 @@ class _CartPanelState extends State<CartPanel> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    _buildServiceModeButton('take-in', 'Take in'),
+                    const SizedBox(width: 6),
+                    _buildServiceModeButton('take-out', 'Take out'),
+                  ],
+                ),
+                Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text(
@@ -659,6 +667,32 @@ class _CartPanelState extends State<CartPanel> {
                 color: isSelected ? Colors.white : const Color(0xFF111827),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildServiceModeButton(String mode, String label) {
+    final isSelected = widget.controller.serviceMode == mode;
+    return InkWell(
+      onTap: () => widget.controller.setServiceMode(mode),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.black : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? Colors.black : const Color(0xFFD1D5DB),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: isSelected ? Colors.white : const Color(0xFF374151),
           ),
         ),
       ),

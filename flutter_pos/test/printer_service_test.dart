@@ -86,7 +86,6 @@ void main() {
     final receipt = PrinterService.formatReceipt(order);
 
     expect(receipt, contains('Order No. A-010'));
-    expect(receipt, contains('Customer Copy'));
     expect(receipt, contains('have a seat, take a sip'));
     expect(receipt, contains('Vanilla Latte'));
     expect(receipt, contains('Add: Oat Milk x1'));

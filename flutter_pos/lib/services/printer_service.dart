@@ -174,7 +174,7 @@ class PrinterService {
 
     _writeLine(
       buffer,
-      _center('CUSTOMER COPY'),
+      _center(''),
       bold: true,
       includePrinterCommands: includePrinterCommands,
     );
@@ -200,6 +200,7 @@ class PrinterService {
         order.baristaName.trim().isNotEmpty ? order.baristaName.trim() : 'N/A';
 
     buffer.writeln(_row('CASHIER', cashier));
+    buffer.writeln(_center(order.serviceMode == 'take-out' ? 'TAKE OUT' : 'TAKE IN'));
 
     buffer.writeln(_doubleLine());
   }

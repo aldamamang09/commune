@@ -11,6 +11,7 @@ class Order {
   final String? promoLabel;
   final double total;
   final String paymentMethod; // 'cash', 'gcash', 'maya'
+  final String serviceMode;
   String ticketNo;
   final double paid;
   final double change;
@@ -30,6 +31,7 @@ class Order {
     this.promoLabel,
     required this.total,
     this.paymentMethod = 'cash',
+    this.serviceMode = 'take-in',
     this.ticketNo = '',
     required this.paid,
     this.change = 0.0,
@@ -59,6 +61,7 @@ class Order {
       promoLabel: json['promoLabel'] as String? ?? json['promo_label'] as String?,
       total: (json['total'] as num?)?.toDouble() ?? 0.0,
       paymentMethod: json['paymentMethod'] as String? ?? json['payment_method'] as String? ?? 'cash',
+      serviceMode: json['serviceMode'] as String? ?? json['service_mode'] as String? ?? (parsedItems.isNotEmpty ? parsedItems.first.serviceMode ?? 'take-in' : 'take-in'),
       ticketNo: json['ticketNo'] as String? ?? json['ticket_no'] as String? ?? '',
       paid: (json['paid'] as num?)?.toDouble() ?? (json['total'] as num?)?.toDouble() ?? 0.0,
       change: (json['change'] as num?)?.toDouble() ?? 0.0,
@@ -80,6 +83,7 @@ class Order {
     if (promoLabel != null) 'promoLabel': promoLabel,
     'total': total,
     'paymentMethod': paymentMethod,
+    'serviceMode': serviceMode,
     'ticketNo': ticketNo,
     'paid': paid,
     'change': change,

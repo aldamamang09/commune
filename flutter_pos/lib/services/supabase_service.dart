@@ -512,6 +512,7 @@ class SupabaseService {
                 'name': i.name,
                 'qty': i.qty,
                 'price': i.price.round(),
+                'serviceMode': order.serviceMode,
                 if (i.style != null) 'style': i.style,
                 'addons': i.addons.map((a) => a.toJson()).toList(),
               })
@@ -530,6 +531,7 @@ class SupabaseService {
           'promoLabel': order.promoLabel,
           'total': order.total.round(),
           'paymentMethod': order.paymentMethod,
+          'serviceMode': order.serviceMode,
           'ticketNo': order.ticketNo,
           'paid': order.paid.round(),
           'change': order.change.round(),
