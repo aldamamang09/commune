@@ -646,6 +646,14 @@ class PosController extends ChangeNotifier {
       return {'ok': false, 'error': 'Order is already voided'};
     }
 
+    final manager = staffUsers.firstWhere(
+      (u) =>
+          u.username.toLowerCase() == managerUsername.trim().toLowerCase() &&
+          u.isManager,
+      orElse: () => const StaffUser(
+          id: '', username: '', password: '', name: '', role: ''),
+    );
+
     // Verify manager/admin credentials against centralized backend first
     final remoteVoid = await supabaseService.voidOrderAtomic(
       orderId,
@@ -658,7 +666,8 @@ class PosController extends ChangeNotifier {
     if (remoteVoid['ok'] == true) {
       order.voided = true;
       order.voidReason = reason;
-      order.voidedBy = managerUsername.trim();
+      order.voidedBy = (remoteVoid['voidedBy'] as String?) ??
+          (manager.id.isNotEmpty ? manager.id : null);
       order.isSynced = true;
       await localStorage.addOrder(order);
       await syncService.syncAll();
@@ -667,13 +676,6 @@ class PosController extends ChangeNotifier {
     }
 
     // Fallback local verification if offline
-    final manager = staffUsers.firstWhere(
-      (u) =>
-          u.username.toLowerCase() == managerUsername.trim().toLowerCase() &&
-          u.isManager,
-      orElse: () => const StaffUser(
-          id: '', username: '', password: '', name: '', role: ''),
-    );
     if (manager.id.isEmpty || manager.password != managerPassword) {
       return {
         'ok': false,
@@ -684,7 +686,7 @@ class PosController extends ChangeNotifier {
 
     order.voided = true;
     order.voidReason = reason;
-    order.voidedBy = manager.name;
+    order.voidedBy = manager.id;
     order.isSynced = false;
     await localStorage.addOrder(order);
     notifyListeners();

@@ -576,6 +576,8 @@ class SupabaseService {
       });
       return {
         'ok': res['ok'] == true,
+        if (res['voidedBy'] != null) 'voidedBy': res['voidedBy'],
+        if (res['voidedByName'] != null) 'voidedByName': res['voidedByName'],
         if (res['error'] != null) 'error': res['error']
       };
     } catch (e) {
