@@ -1,4 +1,5 @@
 import { PAYMENT_METHODS, parsePayment, paymentLabel } from "@/lib/payments";
+import { addonExtra } from "@/lib/menu";
 import type { Order, PaymentMethod } from "@/lib/types";
 
 function getPhDateString(date: Date): string {
@@ -127,7 +128,27 @@ export function productStats(
   }
 
   for (const order of liveOrders(orders)) {
-    for (const line of order.items) {
+    const lineBaseAmounts = order.items.map((line) => line.qty * line.price);
+    const baseSubtotal = lineBaseAmounts.reduce((sum, amount) => sum + amount, 0);
+    const addonSubtotal = order.items.reduce(
+      (sum, line) => sum + addonExtra(line.addons) * line.qty,
+      0,
+    );
+    // Web orders may already have add-ons folded into line.price, while Flutter
+    // orders keep the base price and store add-ons separately. Compare both
+    // representations with the persisted subtotal to include add-ons once.
+    const expectedSubtotal = order.subtotal && order.subtotal > 0
+      ? order.subtotal
+      : order.total + (order.discount ?? 0);
+    const baseOnlyDiff = Math.abs(expectedSubtotal - baseSubtotal);
+    const withAddonsDiff = Math.abs(expectedSubtotal - (baseSubtotal + addonSubtotal));
+    const includeSeparateAddons = withAddonsDiff < baseOnlyDiff;
+    const grossSubtotal = baseSubtotal + (includeSeparateAddons ? addonSubtotal : 0);
+    // Allocate order-level discounts/adjustments proportionally so product
+    // sales sum to the order total shown in revenue metrics.
+    const revenueFactor = grossSubtotal > 0 ? order.total / grossSubtotal : 0;
+
+    for (const [lineIndex, line] of order.items.entries()) {
       const matchingMenuItem = map.get(line.productId) ?? menu.find((item) => item.name.trim().toLowerCase() === line.name.trim().toLowerCase());
       const current = map.get(line.productId) ?? {
         id: line.productId,
@@ -138,7 +159,8 @@ export function productStats(
         sales: 0,
       };
       current.qty += line.qty;
-      current.sales += line.qty * line.price;
+      const separateAddonAmount = includeSeparateAddons ? addonExtra(line.addons) : 0;
+      current.sales += (lineBaseAmounts[lineIndex] + separateAddonAmount * line.qty) * revenueFactor;
       current.name = line.name;
       map.set(line.productId, current);
     }
