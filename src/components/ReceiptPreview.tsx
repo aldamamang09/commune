@@ -98,7 +98,7 @@ function CustomerSlip({ ticket }: { ticket: ReceiptTicket }) {
       <p className="text-center text-base font-bold">Order No. {ticket.ticketNo}</p>
       <p className="text-center">{receiptWhen(ticket.at)}</p>
       <p className="text-center">Cashier: {ticket.barista}</p>
-      {ticket.serviceMode ? <p className="text-center font-semibold">{ticket.serviceMode === "take-out" ? "Take out" : "Take in"}</p> : null}
+      {ticket.serviceMode ? <p className="text-center font-semibold">{ticket.serviceMode === "take-out" ? "Take out" : "Dine in"}</p> : null}
       <Rule />
       <Row left="Item" right="Amount" strong />
       {ticket.items.map((item, index) => (
@@ -193,7 +193,7 @@ function BaristaSlip({ ticket }: { ticket: ReceiptTicket }) {
       <Rule />
       <p className="text-center font-bold">ORDER NO. {ticket.ticketNo}</p>
       <p className="text-center">{receiptWhen(ticket.at)}</p>
-      {ticket.serviceMode ? <p className="text-center font-semibold">{ticket.serviceMode === "take-out" ? "TAKE OUT" : "TAKE IN"}</p> : null}
+      {ticket.serviceMode ? <p className="text-center font-semibold">{ticket.serviceMode === "take-out" ? "TAKE OUT" : "DINE IN"}</p> : null}
       <Rule />
       <p className="flex gap-2 font-semibold text-neutral-500">
         <span className="w-8 shrink-0">Qty</span>
@@ -458,9 +458,6 @@ export function ReceiptPreview({
                     </div>
                   </div>
                   <div className="flex justify-center overflow-x-auto py-2">
-                    <Slip title="Customer copy" paperWidth={receiptPaperWidth}>
-                      <CustomerSlip ticket={ticket} />
-                    </Slip>
                   </div>
                   <div className="mt-3 space-y-2">
                     {receiptJobs.length === 0 ? (

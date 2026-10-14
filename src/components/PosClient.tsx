@@ -1825,21 +1825,6 @@ export function PosClient({
             {/* Scrollable / Compact Bottom Controls */}
             <div className="shrink-0 max-h-[60vh] overflow-y-auto space-y-2 border-t border-neutral-200 px-3 py-3 text-xs">
               <div>
-                <p className="mb-1 text-xs text-neutral-500">Order type</p>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {([{ id: "take-in", label: "Take in" }, { id: "take-out", label: "Take out" }] as const).map((mode) => (
-                    <button
-                      key={mode.id}
-                      type="button"
-                      onClick={() => setServiceMode(mode.id)}
-                      className={`rounded-lg border py-1.5 text-xs transition ${serviceMode === mode.id ? "border-black bg-black text-white" : "border-neutral-300 bg-white hover:border-black"}`}
-                    >
-                      {mode.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
                 <p className="mb-1 text-xs text-neutral-500">Pay with</p>
                 <div className="grid grid-cols-3 gap-1.5">
                   {PAYMENT_METHODS.map((method) => (
@@ -1861,7 +1846,20 @@ export function PosClient({
 
               {isCash ? (
                 <>
-                  <label className="flex items-center justify-between gap-2 text-xs">
+                  <div className="flex justify-end gap-1">
+                    {([{ id: "take-in", label: "dine in" }, { id: "take-out", label: "Take out" }] as const).map((mode) => (
+                      <button
+                        key={mode.id}
+                        type="button"
+                        onClick={() => setServiceMode(mode.id)}
+                        aria-pressed={serviceMode === mode.id}
+                        className={`rounded-md border px-2 py-1.5 text-xs transition ${serviceMode === mode.id ? "border-black bg-black text-white" : "border-neutral-300 bg-white hover:border-black"}`}
+                      >
+                        {mode.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between gap-2 text-xs">
                     <span className="text-neutral-500">Amount</span>
                     <input
                       inputMode="numeric"
@@ -1872,7 +1870,7 @@ export function PosClient({
                       placeholder="0"
                       className="w-24 rounded-md border border-neutral-300 bg-white px-2 py-1 text-right outline-none focus:border-black"
                     />
-                  </label>
+                  </div>
                   <div className="flex flex-wrap gap-1.5">
                     <button
                       type="button"

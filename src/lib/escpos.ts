@@ -222,7 +222,7 @@ export function customerLines(
     { kind: "text", text: `Order No. ${ticket.ticketNo}`, align: 1, size: "tall", bold: true },
     { kind: "text", text: receiptWhen(ticket.at), align: 1 },
     { kind: "text", text: `Cashier: ${ticket.barista}`, align: 1 },
-    ...(ticket.serviceMode ? [{ kind: "text" as const, text: ticket.serviceMode === "take-out" ? "Take out" : "Take in", align: 1 as const }] : []),
+    ...(ticket.serviceMode ? [{ kind: "text" as const, text: ticket.serviceMode === "take-out" ? "Take out" : "Dine in", align: 1 as const }] : []),
     { kind: "rule" },
     { kind: "text", text: padLine("Item", "Amount", width), bold: true },
   ];
@@ -305,7 +305,7 @@ export function baristaLines(ticket: ReceiptTicket): PrintLine[] {
     { kind: "rule" },
     { kind: "text", text: `ORDER NO. ${ticket.ticketNo}`, align: 1, bold: true },
     { kind: "text", text: receiptWhen(ticket.at), align: 1 },
-    ...(ticket.serviceMode ? [{ kind: "text" as const, text: ticket.serviceMode === "take-out" ? "TAKE OUT" : "TAKE IN", align: 1 as const, bold: true }] : []),
+    ...(ticket.serviceMode ? [{ kind: "text" as const, text: ticket.serviceMode === "take-out" ? "TAKE OUT" : "DINE IN", align: 1 as const, bold: true }] : []),
     { kind: "rule" },
     { kind: "text", text: "Qty  Drink", bold: true },
   ];

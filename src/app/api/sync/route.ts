@@ -239,7 +239,8 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const orderItems = orderItemsFromApi(rawOrder.items);
+      const serviceMode = rawOrder.serviceMode === "take-out" ? "take-out" : "take-in";
+      const orderItems = orderItemsFromApi(rawOrder.items).map((item) => ({ ...item, serviceMode }));
       const requestedCashierId = String(rawOrder.baristaUserId ?? '').trim();
       const requestedCashier = store.users.find((user) => {
         if (user.id !== requestedCashierId) return false;
@@ -257,6 +258,7 @@ export async function POST(req: NextRequest) {
         promoLabel: typeof rawOrder.promoLabel === "string" ? rawOrder.promoLabel : undefined,
         total: Number(rawOrder.total) || 0,
         paymentMethod: parsePayment(rawOrder.paymentMethod),
+        serviceMode,
         ticketNo: typeof rawOrder.ticketNo === "string" ? rawOrder.ticketNo : "",
         paid: Number(rawOrder.paid ?? rawOrder.total) || 0,
         change: Number(rawOrder.change) || 0,

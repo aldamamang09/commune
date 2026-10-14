@@ -79,6 +79,7 @@ export type Order = {
   discount?: number;
   promoLabel?: string;
   paymentMethod?: PaymentMethod;
+  serviceMode?: "take-in" | "take-out";
   ticketNo?: string;
   paid?: number;
   change?: number;

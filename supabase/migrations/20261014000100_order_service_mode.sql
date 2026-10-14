@@ -1,4 +1,3 @@
--- Persist Take in / Take out on order lines so receipts and reprints retain the selection.
 
 alter table public.order_items add column if not exists service_mode text;
 
