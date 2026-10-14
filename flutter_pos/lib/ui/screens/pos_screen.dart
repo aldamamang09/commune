@@ -441,6 +441,7 @@ class _PosScreenState extends State<PosScreen> {
 
     return Scaffold(
       backgroundColor: Colors.white,
+      resizeToAvoidBottomInset: false,
       appBar: PosAppBar(
         isVoidRequestPending: controller.isVoidRequestPending,
         syncStatus: syncStatusLabel,

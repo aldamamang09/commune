@@ -267,7 +267,13 @@ class _ReceiptDialogState extends State<ReceiptDialog> {
                                 ],
                               ),
                               const SizedBox(height: 10),
-      
+                              Center(
+                                child: _ThermalSlip(
+                                  title: 'Customer copy',
+                                  content: receiptText,
+                                  width: 260,
+                                ),
+                              ),
                             ],
                           ),
                         ),

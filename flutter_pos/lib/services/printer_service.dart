@@ -572,9 +572,7 @@ class PrinterService {
     );
 
     for (final line in itemLines) {
-      buffer.writeln(
-        _cupCenter(line),
-      );
+      buffer.writeln(line);
     }
 
     // ADD-ONS

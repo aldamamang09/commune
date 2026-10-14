@@ -238,25 +238,25 @@ class _CartPanelState extends State<CartPanel> {
               children: [
                 Row(
                   children: [
-                    _buildServiceModeButton('take-in', 'Dine in'),
-                    const SizedBox(width: 6),
-                    _buildServiceModeButton('take-out', 'Take out'),
-                    const SizedBox(width: 10),
-                    Container(
-                      height: 28,
-                      width: 1,
-                      color: const Color(0xFF6B7280),
+                    Expanded(
+                      child: _buildServiceModeButton('take-in', 'Dine In'),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildServiceModeButton('take-out', 'Take Out'),
+                    ),
+                  ],
+                ),
+                SizedBox(height: keyboardOpen ? 2 : 5),
+                Row(
+                  children: [
                     const Expanded(
                       child: Text(
                         'Amount',
-                        textAlign: TextAlign.center,
                         style: TextStyle(
                             fontSize: 12, color: Color(0xFF374151)),
                       ),
                     ),
-                    const SizedBox(width: 8),
                     SizedBox(
                       width: 92,
                       height: keyboardOpen ? 24 : 28,
@@ -361,7 +361,7 @@ class _CartPanelState extends State<CartPanel> {
                         label: '₱3,000',
                         isEnabled: isCashPayment,
                         onTap: () {
-                          controller.setTenderedAmount(2000);
+                          controller.setTenderedAmount(3000);
                           setState(() {
                             _hasSelectedCashAmount = true;
                             _selectedPreset = '3000';
@@ -447,19 +447,6 @@ class _CartPanelState extends State<CartPanel> {
                   ],
                 ),
                 SizedBox(height: keyboardOpen ? 2 : 5),
-                if (!keyboardOpen)
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Subtotal',
-                          style: TextStyle(
-                              fontSize: 11, color: Color(0xFF4B5563))),
-                      Text('₱${currency.format(controller.subtotal)}',
-                          style: const TextStyle(
-                              fontSize: 11, fontWeight: FontWeight.w600)),
-                    ],
-                  ),
-                if (!keyboardOpen) const SizedBox(height: 2),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -685,7 +672,7 @@ class _CartPanelState extends State<CartPanel> {
       onTap: () => widget.controller.setServiceMode(mode),
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: isSelected ? Colors.black : Colors.white,
           borderRadius: BorderRadius.circular(8),
@@ -696,7 +683,7 @@ class _CartPanelState extends State<CartPanel> {
         child: Text(
           label,
           style: TextStyle(
-            fontSize: 10,
+            fontSize: 12,
             fontWeight: FontWeight.w600,
             color: isSelected ? Colors.white : const Color(0xFF374151),
           ),
