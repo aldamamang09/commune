@@ -1699,9 +1699,34 @@ export async function deleteStaffUserRecord(id: string): Promise<void> {
       return;
     }
     const supabase = supabaseAdmin();
-    // orders.barista_user_id -> staff_users.id is ON DELETE SET NULL, and
-    // orders keeps its own barista_name snapshot, so past orders stay
-    // intact once this staff account is gone.
+    const { data: staff, error: staffError } = await supabase
+      .from("staff_users")
+      .select("name")
+      .eq("id", id)
+      .maybeSingle();
+    if (staffError) throw new Error(`Unable to read staff user: ${staffError.message}`);
+
+    // The deployed orders.voided_by FK may still use NO ACTION. Preserve the
+    // approver name, then detach the FK before deleting the staff account.
+    // Existing snapshots are kept; only rows missing one use the current name.
+    if (staff?.name) {
+      const { error: snapshotError } = await supabase
+        .from("orders")
+        .update({ voided_by_name: staff.name })
+        .eq("voided_by", id)
+        .is("voided_by_name", null);
+      if (snapshotError) {
+        throw new Error(`Unable to preserve void history: ${snapshotError.message}`);
+      }
+    }
+    const { error: detachError } = await supabase
+      .from("orders")
+      .update({ voided_by: null })
+      .eq("voided_by", id);
+    if (detachError) {
+      throw new Error(`Unable to detach staff history: ${detachError.message}`);
+    }
+
     const { error } = await supabase.from("staff_users").delete().eq("id", id);
     if (error) throw new Error(`Unable to delete staff user: ${error.message}`);
     if (memoryStore) {
