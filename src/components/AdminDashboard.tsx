@@ -130,6 +130,17 @@ function isVoided(order: Order) {
   return Boolean(order.voided) || Boolean(order.voidReason?.trim());
 }
 
+function voidStatusLabel(order: Order, users: StoreData["users"]) {
+  const actor = users.find((user) => user.id === order.voidedBy);
+  const accountName = actor?.name.trim();
+  const username = actor?.username.trim();
+  const isRoleLabel = /^(admin|manager|cashier|barista|sale in charge)$/i;
+  const personName = accountName && isRoleLabel.test(accountName) && username
+    ? username
+    : accountName || username;
+  return personName ? `VOID - ${personName.toUpperCase()}` : "VOID";
+}
+
 function orderIdLabel(order: Order) {
   return order.ticketNo != null ? `#${order.ticketNo}` : order.id;
 }
@@ -1206,7 +1217,7 @@ export function AdminDashboard({
                           : "bg-black text-white"
                       }`}
                     >
-                      {isVoided(order) ? "Void" : "Completed"}
+                      {isVoided(order) ? voidStatusLabel(order, store.users) : "Completed"}
                     </span>
                   </div>
                   <p className="min-w-0 break-words text-xs text-neutral-500 lg:text-sm">

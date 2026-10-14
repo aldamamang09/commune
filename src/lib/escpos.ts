@@ -1,7 +1,7 @@
 import { CAFE } from "@/lib/cafe";
 import { ordersOnDay } from "@/lib/analytics";
 import { paymentLabel } from "@/lib/payments";
-import { drinkDisplayName, orderLineOptionsLabel } from "@/lib/menu";
+import { drinkDisplayName, hydrateOrderLine, orderLineOptionsLabel } from "@/lib/menu";
 import { phDateTimeLabel, phTimestamp } from "@/lib/datetime";
 import type { MenuItem, Order, OrderItem, PaymentMethod } from "@/lib/types";
 
@@ -18,7 +18,7 @@ export type ReceiptTicket = {
   promoLabel?: string;
   total: number;
   paymentMethod?: PaymentMethod;
-  serviceMode?: "take-in" | "take-out";
+  serviceMode?: "dine-in" | "take-out";
   paid?: number;
   change?: number;
   at: Date;
@@ -311,15 +311,17 @@ export function baristaLines(ticket: ReceiptTicket): PrintLine[] {
   ];
 
   for (const item of ticket.items) {
-    const qty = `${item.qty}x`;
+    const qty = `${item.qty}X`;
     const name = drinkDisplayName(item).toUpperCase();
-    const options = orderLineOptionsLabel(item);
+    const hydrated = hydrateOrderLine(item);
+    const style = hydrated.style ? `(${hydrated.style.toUpperCase()}) ` : "";
+    const options = orderLineOptionsLabel(item).replace(/^(hot|iced)(,\s*)?/i, "").trim();
     lines.push({
       kind: "text",
-      text: `${qty.padEnd(4, " ")} ${name}`,
+      text: `${style}${qty} ${name}`,
     });
     if (options) {
-      lines.push({ kind: "text", text: `     ${options.toUpperCase()}` });
+      lines.push({ kind: "text", text: `+${options.toUpperCase()}` });
     }
   }
 

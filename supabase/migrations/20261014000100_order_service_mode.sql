@@ -74,7 +74,7 @@ begin
       (v_item->>'price')::integer,
       nullif(v_item->>'style', ''),
       case when jsonb_typeof(v_item->'addons') = 'array' then v_item->'addons' else '[]'::jsonb end,
-      case when v_item->>'serviceMode' in ('take-in', 'take-out') then v_item->>'serviceMode' else null end
+      case when v_item->>'serviceMode' in ('dine-in', 'take-out') then v_item->>'serviceMode' else null end
     );
   end loop;
 

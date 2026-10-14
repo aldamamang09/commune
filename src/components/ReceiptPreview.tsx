@@ -11,7 +11,7 @@ import {
   type PaperWidth,
   type ReceiptTicket,
 } from "@/lib/escpos";
-import { drinkDisplayName, orderLineOptionsLabel } from "@/lib/menu";
+import { drinkDisplayName, hydrateOrderLine, orderLineOptionsLabel } from "@/lib/menu";
 import { paymentLabel } from "@/lib/payments";
 import type { PrintJob } from "@/lib/types";
 
@@ -200,22 +200,28 @@ function BaristaSlip({ ticket }: { ticket: ReceiptTicket }) {
         <span>Drink</span>
       </p>
       <ul className="mt-1">
-        {ticket.items.map((item) => (
-          <li
-            key={item.productId}
-            className="flex items-baseline gap-2 border-b border-dashed border-neutral-200 py-1"
-          >
-            <span className="w-8 shrink-0 font-bold">{item.qty}x</span>
-            <span className="min-w-0 leading-4 uppercase">
-              {drinkDisplayName(item)}
-              {orderLineOptionsLabel(item) ? (
-                <span className="mt-0.5 block text-[10px] font-normal normal-case text-neutral-600">
-                  {orderLineOptionsLabel(item)}
-                </span>
-              ) : null}
-            </span>
-          </li>
-        ))}
+        {ticket.items.map((item) => {
+          const style = hydrateOrderLine(item).style;
+          const options = orderLineOptionsLabel(item)
+            .replace(/^(hot|iced)(,\s*)?/i, "")
+            .trim();
+          return (
+            <li
+              key={item.productId}
+              className="flex items-baseline gap-2 border-b border-dashed border-neutral-200 py-1"
+            >
+              <span className="min-w-0 leading-4 uppercase">
+                {style ? `(${style.toUpperCase()}) ` : ""}
+                {item.qty}X {drinkDisplayName(item)}
+                {options ? (
+                  <span className="mt-0.5 block text-[10px] font-normal normal-case text-neutral-600">
+                    +{options}
+                  </span>
+                ) : null}
+              </span>
+            </li>
+          );
+        })}
       </ul>
       <p className="mt-3 text-center text-[10px] font-semibold">
         {drinks} {drinks === 1 ? "DRINK" : "DRINKS"} TO MAKE

@@ -178,6 +178,7 @@ function normalizeStore(store: StoreData): StoreData {
           : [],
         paymentMethod: parsePayment(order.paymentMethod),
         voided: Boolean(order.voided),
+        voidedBy: typeof order.voidedBy === "string" ? order.voidedBy : undefined,
         voidReason: typeof order.voidReason === "string" ? order.voidReason : "",
       }))
       .map((order: Order) => ({
@@ -578,7 +579,7 @@ async function readStore(options?: { fresh?: boolean }): Promise<StoreData> {
           price: item.price_snapshot,
           style: parseDrinkStyle(item.style),
           addons: parseStoredOrderAddons(item.addons),
-          serviceMode: item.service_mode === "take-out" ? "take-out" : item.service_mode === "take-in" ? "take-in" : undefined,
+          serviceMode: item.service_mode === "take-out" ? "take-out" : item.service_mode === "dine-in" ? "dine-in" : undefined,
         })),
         subtotal: row.subtotal,
         discount: row.discount,
@@ -590,6 +591,7 @@ async function readStore(options?: { fresh?: boolean }): Promise<StoreData> {
         paid: row.paid,
         change: row.change,
         voided: row.voided,
+        voidedBy: row.voided_by ?? undefined,
         voidReason: row.void_reason ?? undefined,
       })),
       usageLogs: (usageLogs.data ?? []).filter((row) => !row.order_id || activeOrderIds.has(row.order_id)).map((row) => ({ id: row.id, orderId: row.order_id ?? "", orderItemId: row.order_item_id ?? "", inventoryItemId: row.inventory_item_id ?? undefined, date: row.created_at, itemName: row.item_name_snapshot, usedAmount: Number(row.used_amount), unit: row.unit })),
@@ -1118,6 +1120,7 @@ export async function voidOrderAtomic(
       if (order.voided) return { ok: false, error: "Ticket is already voided." };
       order.voided = true;
       order.voidReason = reason;
+      order.voidedBy = voidedBy ?? undefined;
       const logs = memoryStore.usageLogs.filter((entry) => entry.orderId === orderId);
       for (const log of logs) {
         const item = memoryStore.inventory.find((entry) => entry.id === log.inventoryItemId || entry.name === log.itemName);
@@ -2041,6 +2044,7 @@ export async function approveVoidRequestAtomic(input: {
         if (order) {
           order.voided = true;
           order.voidReason = request.reason;
+          order.voidedBy = input.approvedById;
           const logs = memoryStore.usageLogs.filter((entry) => entry.orderId === request.orderId);
           for (const log of logs) {
             const item = memoryStore.inventory.find((entry) => entry.id === log.inventoryItemId || entry.name === log.itemName);
@@ -2063,6 +2067,7 @@ export async function approveVoidRequestAtomic(input: {
           paid: 0,
           change: 0,
           voided: true,
+          voidedBy: input.approvedById,
           voidReason: request.reason,
         };
         memoryStore.orders.push(newOrder);

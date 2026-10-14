@@ -272,7 +272,7 @@ export async function createOrder(
   cart: OrderItem[],
   paymentMethod?: string | null,
   tendered?: number | null,
-  serviceMode?: "take-in" | "take-out",
+  serviceMode?: "dine-in" | "take-out",
 ) {
   const session = await requireCashier();
 
@@ -297,7 +297,7 @@ export async function createOrder(
     }
     priced.push({
       ...pricedOrderLine(menuItem, { ...line, qty }),
-      serviceMode: serviceMode === "take-out" ? "take-out" : "take-in",
+      serviceMode: serviceMode === "take-out" ? "take-out" : "dine-in",
     });
   }
 
@@ -405,14 +405,14 @@ export async function voidOrder(
     return { error: "Enter a reason for voiding." };
   }
 
-  // orders.voided_by is an FK to staff_users.id, so the actual manager id is
-  // recorded - the session's own id for a manager void, or the id of the
-  // manager whose credentials authorized a cashier's void.
+  // Keep the staff member who initiated the void as the displayed actor.
+  // Cashier voids still require manager credentials, but the manager is the
+  // authorizer rather than the person who initiated the action.
   let voidedBy: string | null = null;
   if (session.role === "cashier") {
     const auth = await verifyManager(managerUsername ?? "", managerPassword ?? "");
     if ("error" in auth) return auth;
-    voidedBy = auth.id;
+    voidedBy = session.userId;
   } else if (session.role === "manager") {
     voidedBy = session.userId;
   } else {
@@ -631,7 +631,7 @@ export async function voidCheckout(
 
   // create_order_atomic writes the already-voided order + items atomically:
   // it allocates the ticket on the DB counter, sets voided_at = now(), and
-  // records the approving manager's staff_users.id in voided_by. No
+  // records the staff member who initiated the void in voided_by. No
   // deductions - a pre-checkout void never touched inventory.
   const orderId = `ord-${Date.now()}`;
   const createdOrder: Order = {
@@ -646,10 +646,11 @@ export async function voidCheckout(
     paid: 0,
     change: 0,
     voided: true,
+    voidedBy: session.userId,
     voidReason: reason.trim(),
   };
 
-  const result = await createOrderAtomic({ order: createdOrder, deductions: [], voidedBy: auth.id });
+  const result = await createOrderAtomic({ order: createdOrder, deductions: [], voidedBy: session.userId });
   if (!result.ok) return { error: result.error };
 
   revalidatePath("/pos");

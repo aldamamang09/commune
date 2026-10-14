@@ -63,7 +63,7 @@ export type OrderItem = {
   style?: DrinkStyle;
   category?: string;
   addons?: OrderAddon[];
-  serviceMode?: "take-in" | "take-out";
+  serviceMode?: "dine-in" | "take-out";
 };
 
 export type PaymentMethod = "cash" | "gcash" | "maya";
@@ -79,11 +79,12 @@ export type Order = {
   discount?: number;
   promoLabel?: string;
   paymentMethod?: PaymentMethod;
-  serviceMode?: "take-in" | "take-out";
+  serviceMode?: "dine-in" | "take-out";
   ticketNo?: string;
   paid?: number;
   change?: number;
   voided?: boolean;
+  voidedBy?: string;
   voidReason?: string;
   deletedAt?: string;
   recordType?: "Sale" | "Purchase";

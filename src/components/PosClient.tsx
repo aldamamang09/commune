@@ -90,7 +90,7 @@ type SavedCheckout = {
   cart: OrderItem[];
   tendered: string;
   paymentMethod: PaymentMethod;
-  serviceMode: "take-in" | "take-out";
+  serviceMode: "dine-in" | "take-out";
   voidRequestId: string | null;
 };
 
@@ -126,7 +126,7 @@ function readCheckout(userId: string, menu: MenuItem[]): SavedCheckout | null {
       cart,
       tendered: typeof saved.tendered === "string" ? saved.tendered : "",
       paymentMethod: parsePayment(saved.paymentMethod),
-      serviceMode: saved.serviceMode === "take-out" ? "take-out" : "take-in",
+      serviceMode: saved.serviceMode === "take-out" ? "take-out" : "dine-in",
       voidRequestId:
         typeof saved.voidRequestId === "string" ? saved.voidRequestId : null,
     };
@@ -155,7 +155,7 @@ export function PosClient({
   const [category, setCategory] = useState("All");
   const [tendered, setTendered] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
-  const [serviceMode, setServiceMode] = useState<"take-in" | "take-out">("take-in");
+  const [serviceMode, setServiceMode] = useState<"dine-in" | "take-out">("dine-in");
   const [voidModalOpen, setVoidModalOpen] = useState(false);
   const [voidUsername, setVoidUsername] = useState("");
   const [voidPassword, setVoidPassword] = useState("");
@@ -1847,7 +1847,7 @@ export function PosClient({
               {isCash ? (
                 <>
                   <div className="flex justify-end gap-1">
-                    {([{ id: "take-in", label: "dine in" }, { id: "take-out", label: "Take out" }] as const).map((mode) => (
+                    {([{ id: "dine-in", label: "dine in" }, { id: "take-out", label: "Take out" }] as const).map((mode) => (
                       <button
                         key={mode.id}
                         type="button"
@@ -1964,7 +1964,7 @@ export function PosClient({
                     setCart([]);
                     setTendered("");
                     setPaymentMethod("cash");
-                    setServiceMode("take-in");
+                    setServiceMode("dine-in");
                     setMessage(
                       `Paid ${formatMoney(result.total ?? 0)}. Tap Print for labels and receipt.`,
                     );

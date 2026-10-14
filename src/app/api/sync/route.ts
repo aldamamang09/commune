@@ -239,7 +239,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const serviceMode = rawOrder.serviceMode === "take-out" ? "take-out" : "take-in";
+      const serviceMode = rawOrder.serviceMode === "take-out" ? "take-out" : "dine-in";
       const orderItems = orderItemsFromApi(rawOrder.items).map((item) => ({ ...item, serviceMode }));
       const requestedCashierId = String(rawOrder.baristaUserId ?? '').trim();
       const requestedCashier = store.users.find((user) => {
@@ -332,7 +332,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error: "Checkout items and void reason are required." }, { status: 400, headers: corsHeaders });
       }
 
-      let voidedBy = claims.userId;
+      const voidedBy = claims.userId;
       const store = await getFreshStore();
       if (claims.role !== "manager" && claims.role !== "admin") {
         const managerUsername = String(body.managerUsername ?? "").trim().toLowerCase();
@@ -345,7 +345,6 @@ export async function POST(req: NextRequest) {
         if (!manager || !validPassword || (managerRole !== "manager" && managerRole !== "admin")) {
           return NextResponse.json({ ok: false, error: "Manager or Admin credentials required to void." }, { status: 403, headers: corsHeaders });
         }
-        voidedBy = manager.id;
       }
 
       const orderId = String(rawOrder.id || "").trim();
@@ -391,6 +390,7 @@ export async function POST(req: NextRequest) {
         paid: 0,
         change: 0,
         voided: true,
+        voidedBy,
         voidReason: reason,
       };
       const result = await createOrderAtomic({ order, deductions: [], voidedBy });
@@ -407,10 +407,8 @@ export async function POST(req: NextRequest) {
       const managerUsername = typeof body.managerUsername === "string" ? body.managerUsername.trim().toLowerCase() : "";
       const managerPassword = typeof body.managerPassword === "string" ? body.managerPassword : "";
 
-      let voidedBy: string | null = null;
-      if (claims.role === "admin" || claims.role === "manager") {
-        voidedBy = claims.userId;
-      } else {
+      const voidedBy = claims.userId;
+      if (claims.role !== "admin" && claims.role !== "manager") {
         if (!managerUsername || !managerPassword) {
           return NextResponse.json(
             { ok: false, error: "Manager approval required to void an order." },
@@ -435,7 +433,6 @@ export async function POST(req: NextRequest) {
             { status: 403, headers: corsHeaders },
           );
         }
-        voidedBy = manager.id;
       }
 
       const res = await voidOrderAtomic(orderId, reason, voidedBy);
