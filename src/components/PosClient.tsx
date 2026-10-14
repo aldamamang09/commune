@@ -90,6 +90,7 @@ type SavedCheckout = {
   cart: OrderItem[];
   tendered: string;
   paymentMethod: PaymentMethod;
+  serviceMode: "take-in" | "take-out";
   voidRequestId: string | null;
 };
 
@@ -125,6 +126,7 @@ function readCheckout(userId: string, menu: MenuItem[]): SavedCheckout | null {
       cart,
       tendered: typeof saved.tendered === "string" ? saved.tendered : "",
       paymentMethod: parsePayment(saved.paymentMethod),
+      serviceMode: saved.serviceMode === "take-out" ? "take-out" : "take-in",
       voidRequestId:
         typeof saved.voidRequestId === "string" ? saved.voidRequestId : null,
     };
@@ -153,6 +155,7 @@ export function PosClient({
   const [category, setCategory] = useState("All");
   const [tendered, setTendered] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+  const [serviceMode, setServiceMode] = useState<"take-in" | "take-out">("take-in");
   const [voidModalOpen, setVoidModalOpen] = useState(false);
   const [voidUsername, setVoidUsername] = useState("");
   const [voidPassword, setVoidPassword] = useState("");
@@ -261,6 +264,7 @@ export function PosClient({
         setCart(saved.cart);
         setTendered(saved.tendered);
         setPaymentMethod(saved.paymentMethod);
+        setServiceMode(saved.serviceMode);
         setActiveVoidRequestId(saved.voidRequestId);
       }
       setCheckoutReady(true);
@@ -277,9 +281,10 @@ export function PosClient({
       cart,
       tendered,
       paymentMethod,
+      serviceMode,
       voidRequestId: activeVoidRequestId,
     });
-  }, [checkoutReady, session.userId, cart, tendered, paymentMethod, activeVoidRequestId]);
+  }, [checkoutReady, session.userId, cart, tendered, paymentMethod, serviceMode, activeVoidRequestId]);
 
   useEffect(() => {
     document.body.style.overflow = menuOpen ? "hidden" : "";
@@ -1820,6 +1825,21 @@ export function PosClient({
             {/* Scrollable / Compact Bottom Controls */}
             <div className="shrink-0 max-h-[60vh] overflow-y-auto space-y-2 border-t border-neutral-200 px-3 py-3 text-xs">
               <div>
+                <p className="mb-1 text-xs text-neutral-500">Order type</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {([{ id: "take-in", label: "Take in" }, { id: "take-out", label: "Take out" }] as const).map((mode) => (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      onClick={() => setServiceMode(mode.id)}
+                      className={`rounded-lg border py-1.5 text-xs transition ${serviceMode === mode.id ? "border-black bg-black text-white" : "border-neutral-300 bg-white hover:border-black"}`}
+                    >
+                      {mode.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
                 <p className="mb-1 text-xs text-neutral-500">Pay with</p>
                 <div className="grid grid-cols-3 gap-1.5">
                   {PAYMENT_METHODS.map((method) => (
@@ -1927,6 +1947,7 @@ export function PosClient({
                       cart,
                       paymentMethod,
                       paid,
+                      serviceMode,
                     );
                     if (!result.ok) {
                       setMessage(result.error);
@@ -1945,6 +1966,7 @@ export function PosClient({
                     setCart([]);
                     setTendered("");
                     setPaymentMethod("cash");
+                    setServiceMode("take-in");
                     setMessage(
                       `Paid ${formatMoney(result.total ?? 0)}. Tap Print for labels and receipt.`,
                     );

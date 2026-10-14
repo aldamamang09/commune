@@ -578,6 +578,7 @@ async function readStore(options?: { fresh?: boolean }): Promise<StoreData> {
           price: item.price_snapshot,
           style: parseDrinkStyle(item.style),
           addons: parseStoredOrderAddons(item.addons),
+          serviceMode: item.service_mode === "take-out" ? "take-out" : item.service_mode === "take-in" ? "take-in" : undefined,
         })),
         subtotal: row.subtotal,
         discount: row.discount,

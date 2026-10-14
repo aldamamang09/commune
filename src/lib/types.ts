@@ -63,6 +63,7 @@ export type OrderItem = {
   style?: DrinkStyle;
   category?: string;
   addons?: OrderAddon[];
+  serviceMode?: "take-in" | "take-out";
 };
 
 export type PaymentMethod = "cash" | "gcash" | "maya";

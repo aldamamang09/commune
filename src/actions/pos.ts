@@ -272,6 +272,7 @@ export async function createOrder(
   cart: OrderItem[],
   paymentMethod?: string | null,
   tendered?: number | null,
+  serviceMode?: "take-in" | "take-out",
 ) {
   const session = await requireCashier();
 
@@ -294,7 +295,10 @@ export async function createOrder(
     if (!Number.isSafeInteger(qty) || qty < 1 || qty > 99) {
       return { ok: false as const, error: "Each item quantity must be a whole number from 1 to 99." };
     }
-    priced.push(pricedOrderLine(menuItem, { ...line, qty }));
+    priced.push({
+      ...pricedOrderLine(menuItem, { ...line, qty }),
+      serviceMode: serviceMode === "take-out" ? "take-out" : "take-in",
+    });
   }
 
   const subtotal = priced.reduce((sum, item) => sum + item.price * item.qty, 0);
