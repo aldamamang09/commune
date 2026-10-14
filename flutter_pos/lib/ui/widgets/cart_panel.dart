@@ -237,20 +237,26 @@ class _CartPanelState extends State<CartPanel> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    _buildServiceModeButton('take-in', 'Take in'),
+                    _buildServiceModeButton('take-in', 'Dine in'),
                     const SizedBox(width: 6),
                     _buildServiceModeButton('take-out', 'Take out'),
-                  ],
-                ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Amount',
-                      style: TextStyle(fontSize: 12, color: Color(0xFF374151)),
+                    const SizedBox(width: 10),
+                    Container(
+                      height: 28,
+                      width: 1,
+                      color: const Color(0xFF6B7280),
                     ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'Amount',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            fontSize: 12, color: Color(0xFF374151)),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     SizedBox(
                       width: 92,
                       height: keyboardOpen ? 24 : 28,
