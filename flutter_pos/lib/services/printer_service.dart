@@ -554,7 +554,11 @@ class PrinterService {
     buffer.writeln(_cupLine());
 
     buffer.writeln(
-      _cupCenter('ORDER #$ticket'),
+      _row(
+        'ORDER #$ticket',
+        order.serviceMode == 'take-out' ? 'TAKE OUT' : 'DINE IN',
+        width: cupLabelWidth,
+      ),
     );
 
     buffer.writeln(_cupLine());
