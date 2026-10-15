@@ -119,6 +119,7 @@ export type PosState = {
   isOpen: boolean;
   openedAt: string | null;
   openedBy: string | null;
+  inventoryFeaturesEnabled: boolean;
 };
 
 export type StaffUser = {

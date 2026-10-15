@@ -20,6 +20,7 @@ class SyncService extends ChangeNotifier {
 
   SyncStatus status = SyncStatus.idle;
   bool isOnline = true;
+  bool inventoryFeaturesEnabled = true;
   String? lastError;
   DateTime? lastSyncTime;
   int pendingCount = 0;
@@ -265,6 +266,11 @@ class SyncService extends ChangeNotifier {
       // 2. Pull authoritative centralized store from Admin API (/api/sync)
       final fullStore = await supabaseService.fetchFullStore();
       if (fullStore != null) {
+        final posState = fullStore['pos'];
+        if (posState is Map) {
+          inventoryFeaturesEnabled =
+              posState['inventoryFeaturesEnabled'] != false;
+        }
         if (fullStore['menu'] is List) {
           final freshMenu = (fullStore['menu'] as List)
               .whereType<Map>()

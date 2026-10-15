@@ -123,7 +123,7 @@ function emptyStore(): StoreData {
   ) as Record<string, MenuCategoryType>;
 
   return {
-    pos: { isOpen: false, openedAt: null, openedBy: null },
+    pos: { isOpen: false, openedAt: null, openedBy: null, inventoryFeaturesEnabled: true },
     orders: [],
     printJobs: [],
     menu: DEFAULT_MENU.map((item) => ({ ...item })),
@@ -501,7 +501,7 @@ async function readStore(options?: { fresh?: boolean }): Promise<StoreData> {
     const items = orderItems.data ?? [];
     const store = normalizeStore({
       ...base,
-      pos: pos.data ? { isOpen: Boolean(pos.data.is_open), openedAt: pos.data.opened_at, openedBy: pos.data.opened_by_name ?? pos.data.opened_by } : base.pos,
+      pos: pos.data ? { isOpen: Boolean(pos.data.is_open), openedAt: pos.data.opened_at, openedBy: pos.data.opened_by_name ?? pos.data.opened_by, inventoryFeaturesEnabled: pos.data.inventory_features_enabled !== false } : base.pos,
       users: Array.from(
         new Map(
           (users.data ?? []).map((row) => [
@@ -688,7 +688,7 @@ async function writeStore(store: StoreData): Promise<void> {
   }));
 
   const operations = await Promise.all([
-    supabase.from("pos_state").upsert({ id: POS_STATE_ID, is_open: store.pos.isOpen, opened_at: store.pos.openedAt, opened_by_name: store.pos.openedBy, updated_at: new Date().toISOString() }),
+    supabase.from("pos_state").upsert({ id: POS_STATE_ID, is_open: store.pos.isOpen, opened_at: store.pos.openedAt, opened_by_name: store.pos.openedBy, inventory_features_enabled: store.pos.inventoryFeaturesEnabled, updated_at: new Date().toISOString() }),
     supabase.from("login_links").upsert({
       id: POS_STATE_ID,
       admin_path: store.loginGates.admin,

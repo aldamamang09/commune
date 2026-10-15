@@ -62,6 +62,7 @@ import type {
 type PosClientProps = {
   session: Session;
   pos: PosState;
+  inventoryFeaturesEnabled?: boolean;
   menu: MenuItem[];
   categories: string[];
   orders: Order[];
@@ -142,6 +143,7 @@ function writeCheckout(value: SavedCheckout) {
 export function PosClient({
   session,
   pos,
+  inventoryFeaturesEnabled = true,
   menu,
   categories,
   orders,
@@ -189,6 +191,11 @@ export function PosClient({
   const [checkoutReady, setCheckoutReady] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activePanel, setActivePanel] = useState<PosPanel>("pos");
+  useEffect(() => {
+    if (!inventoryFeaturesEnabled && (activePanel === "stock" || activePanel === "restock")) {
+      setActivePanel("pos");
+    }
+  }, [activePanel, inventoryFeaturesEnabled]);
   const availableOrders = useMemo(() => {
     const byId = new Map(
       orders.filter((order) => !order.voided && !order.deletedAt).map((order) => [order.id, order]),
@@ -844,7 +851,7 @@ export function PosClient({
               </button>
             ) : null}
 
-            <div>
+            {inventoryFeaturesEnabled ? <div>
               <p className="px-4 pb-1 text-[11px] font-medium tracking-wide text-neutral-400 uppercase">
                 Inventory
               </p>
@@ -871,7 +878,7 @@ export function PosClient({
                   {label}
                 </button>
               ))}
-            </div>
+            </div> : null}
 
             <div className="mt-4 border-t border-neutral-100 pt-4">
               <button
@@ -1544,7 +1551,7 @@ export function PosClient({
           />
         ) : null}
 
-        {activePanel === "stock" || activePanel === "restock" ? (
+        {inventoryFeaturesEnabled && (activePanel === "stock" || activePanel === "restock") ? (
           <div className="min-h-0 flex-1 overflow-y-auto bg-neutral-100 p-2 sm:p-4">
             <SalePurchaseTransactions
               store={inventoryStore}

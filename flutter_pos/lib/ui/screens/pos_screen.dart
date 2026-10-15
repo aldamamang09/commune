@@ -392,6 +392,8 @@ class _PosScreenState extends State<PosScreen> {
       receiptConnection: _printerService.connectionSummary(PrinterRole.receipt),
       syncStatus: controller.syncService.isOnline ? 'Online' : 'Offline',
       canLogout: canLogout,
+      inventoryFeaturesEnabled:
+          controller.syncService.inventoryFeaturesEnabled,
       logoutDisabledMessage: controller.isVoidRequestPending
           ? 'Wait for void approval first'
           : 'Clear checkout first',

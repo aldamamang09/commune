@@ -11,6 +11,7 @@ class PosNavigationDrawer extends StatelessWidget {
   final String receiptConnection;
   final String syncStatus;
   final bool canLogout;
+  final bool inventoryFeaturesEnabled;
   final String logoutDisabledMessage;
   final VoidCallback onOpenTerminal;
   final VoidCallback onOpenStock;
@@ -30,6 +31,7 @@ class PosNavigationDrawer extends StatelessWidget {
     required this.receiptConnection,
     required this.syncStatus,
     required this.canLogout,
+    required this.inventoryFeaturesEnabled,
     required this.logoutDisabledMessage,
     required this.onOpenTerminal,
     required this.onOpenStock,
@@ -104,7 +106,7 @@ class PosNavigationDrawer extends StatelessWidget {
                     label: 'POS Terminal',
                     onTap: onOpenTerminal,
                   ),
-                  const Padding(
+                  if (inventoryFeaturesEnabled) const Padding(
                     padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
                     child: Text(
                       'INVENTORY',
@@ -116,14 +118,14 @@ class PosNavigationDrawer extends StatelessWidget {
                       ),
                     ),
                   ),
-                  _destination(
+                  if (inventoryFeaturesEnabled) _destination(
                     context,
                     section: PosSection.stock,
                     icon: Icons.inventory_2_outlined,
                     label: 'Stock inventory',
                     onTap: onOpenStock,
                   ),
-                  _destination(
+                  if (inventoryFeaturesEnabled) _destination(
                     context,
                     section: PosSection.restock,
                     icon: Icons.add_shopping_cart_outlined,

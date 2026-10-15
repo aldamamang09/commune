@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useTransition } from "react";
-import { approveVoidRequest } from "@/actions/pos";
+import { approveVoidRequest, setPosInventoryFeaturesEnabled } from "@/actions/pos";
 import {
   createAdminLedgerEntry,
   deleteAdminLedgerEntry,
@@ -183,6 +183,8 @@ export function AdminDashboard({
   const [approvalPending, startApprovalTransition] = useTransition();
   const [drinksOpen, setDrinksOpen] = useState(true);
   const [ordersOpen, setOrdersOpen] = useState(true);
+  const [inventorySettingPending, startInventorySettingTransition] = useTransition();
+  const [inventorySettingError, setInventorySettingError] = useState<string | null>(null);
 
   const expenses = initialExpenses;
   const credits = initialCredits;
@@ -643,6 +645,33 @@ export function AdminDashboard({
           </p>
         </div>
       </div>
+
+      <section className="flex flex-wrap items-center justify-between gap-4 border border-neutral-200 bg-white p-4 sm:p-5">
+        <div>
+          <h2 className="font-semibold">POS stock inventory</h2>
+          <p className="mt-1 text-sm text-neutral-500">Show or hide Stock inventory and Restock in the POS.</p>
+          {inventorySettingError ? <p role="alert" className="mt-2 text-sm text-red-700">{inventorySettingError}</p> : null}
+        </div>
+        <button
+          type="button"
+          disabled={inventorySettingPending}
+          aria-pressed={store.pos.inventoryFeaturesEnabled}
+          onClick={() => {
+            const enabled = !store.pos.inventoryFeaturesEnabled;
+            setInventorySettingError(null);
+            startInventorySettingTransition(async () => {
+              try {
+                await setPosInventoryFeaturesEnabled(enabled);
+              } catch (error) {
+                setInventorySettingError(error instanceof Error ? error.message : "Could not update POS inventory setting.");
+              }
+            });
+          }}
+          className={`rounded-full px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${store.pos.inventoryFeaturesEnabled ? "bg-black" : "bg-neutral-500"}`}
+        >
+          {inventorySettingPending ? "Saving…" : store.pos.inventoryFeaturesEnabled ? "Visible in POS" : "Hidden in POS"}
+        </button>
+      </section>
 
       {pendingVoidRequests.length > 0 ? (
         <section className="border border-neutral-300 bg-white p-4 sm:p-5">

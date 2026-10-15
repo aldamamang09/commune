@@ -175,6 +175,16 @@ export async function saveAdminData(data: {
   return { ok: true };
 }
 
+export async function setPosInventoryFeaturesEnabled(enabled: boolean) {
+  await requireAdmin();
+  await updateStore((store) => {
+    store.pos.inventoryFeaturesEnabled = enabled;
+  });
+  revalidatePath("/pos");
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
 export async function deleteAdminRecord(kind: "order" | "inventory" | "restock" | "usage", id: string) {
   await requireInventoryAccess(kind === "order" || kind === "usage");
 
@@ -246,6 +256,7 @@ export async function openPos() {
   const session = await requirePos();
   await updateStore((store) => {
     store.pos = {
+      ...store.pos,
       isOpen: true,
       openedAt: new Date().toISOString(),
       openedBy: session.name,
@@ -259,6 +270,7 @@ export async function closePos() {
   await requirePos();
   await updateStore((store) => {
     store.pos = {
+      ...store.pos,
       isOpen: false,
       openedAt: null,
       openedBy: null,
