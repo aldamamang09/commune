@@ -38,6 +38,7 @@ export function SiteNav() {
     { href: "/#about", label: "About Us" },
     { href: "/#menu", label: "Menu" },
     { href: "/#contact", label: "Contact Us" },
+    { href: "/follow", label: "Follow Us" },
   ];
 
   return (
