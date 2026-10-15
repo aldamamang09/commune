@@ -6,7 +6,7 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { logout } from "@/actions/auth";
 import type { Session } from "@/lib/types";
 
-export type AdminPanel = "sales" | "menu" | "transactions" | "staff" | "voids";
+export type AdminPanel = "sales" | "menu" | "transactions" | "staff" | "voids" | "pos-settings";
 
 const TABS: { id: AdminPanel; label: string }[] = [
   { id: "sales", label: "Sales" },
@@ -14,6 +14,7 @@ const TABS: { id: AdminPanel; label: string }[] = [
   { id: "transactions", label: "Inventory" },
   { id: "staff", label: "Staff" },
   { id: "voids", label: "Void request approval" },
+  { id: "pos-settings", label: "POS Settings" },
 ];
 
 type StaffHeaderProps = {

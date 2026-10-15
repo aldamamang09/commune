@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { drinkStyleLabelList, formatMoney } from "@/lib/menu";
+import { drinkStyleLabelList, formatMoney, normalizeMenuAddons, normalizeMenuTypes } from "@/lib/menu";
 import type { MenuItem } from "@/lib/types";
 
 type DrinksMenuProps = {
@@ -118,10 +118,40 @@ export function DrinksMenu({ items, categories = [] }: DrinksMenuProps) {
                     <h3 className="font-medium tracking-wide text-white text-base">
                       {item.name}
                     </h3>
+                    {normalizeMenuAddons(item).length > 0 ? (
+                      <div className="mt-4 border-t border-white/5 pt-3">
+                        <p className="text-[10px] uppercase tracking-[0.2em] text-neutral-500">
+                          Add-ons
+                        </p>
+                        <ul className="mt-2 space-y-1.5">
+                          {normalizeMenuAddons(item).map((addon) => (
+                            <li
+                              key={addon.id}
+                              className="flex items-center justify-between gap-3 text-xs text-neutral-300"
+                            >
+                              <span>{addon.name}</span>
+                              <span className="shrink-0 text-neutral-400">
+                                +{formatMoney(addon.price)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
                     {drinkStyleLabelList(item) !== "—" ? (
                       <p className="mt-2 text-[10px] uppercase tracking-[0.2em] text-neutral-500">
                         {drinkStyleLabelList(item)}
                       </p>
+                    ) : null}
+                    {normalizeMenuTypes(item).length > 0 ? (
+                      <div className="mt-4 border-t border-white/5 pt-3">
+                        <p className="text-[10px] uppercase tracking-[0.2em] text-neutral-500">
+                          Types
+                        </p>
+                        <p className="mt-2 text-xs text-neutral-300">
+                          {normalizeMenuTypes(item).join(", ")}
+                        </p>
+                      </div>
                     ) : null}
                     <div className="mt-6 flex items-center justify-between border-t border-white/5 pt-4">
                       <span className="text-[10px] uppercase tracking-[0.2em] text-neutral-500">

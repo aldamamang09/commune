@@ -7,6 +7,7 @@ import { UserManager } from "@/components/UserManager";
 import { SalePurchaseTransactions } from "@/components/SalePurchaseTransactions";
 import { MenuCatalog } from "@/components/MenuCatalog";
 import { VoidRequestApproval } from "@/components/VoidRequestApproval";
+import { PosSettings } from "@/components/PosSettings";
 import type { PublicStaffUser } from "@/lib/users";
 import type { Session, StoreData } from "@/lib/types";
 
@@ -24,6 +25,7 @@ function readSavedPanel(): AdminPanel {
   if (savedPanel === "menu" || savedPanel === "transactions" || savedPanel === "voids") {
     return savedPanel;
   }
+  if (savedPanel === "pos-settings") return savedPanel;
   return "sales";
 }
 
@@ -33,7 +35,7 @@ export function AdminShell({ session, users, store, children }: AdminShellProps)
   const router = useRouter();
 
   useEffect(() => {
-    if (panel !== "transactions" && panel !== "sales" && panel !== "voids" && panel !== "staff") return;
+    if (panel !== "transactions" && panel !== "sales" && panel !== "voids" && panel !== "staff" && panel !== "pos-settings") return;
     const refreshTimer = window.setInterval(() => router.refresh(), 5000);
     return () => window.clearInterval(refreshTimer);
   }, [panel, router]);
@@ -75,6 +77,7 @@ export function AdminShell({ session, users, store, children }: AdminShellProps)
       ) : null}
       {current === "transactions" ? <SalePurchaseTransactions store={store} /> : null}
       {current === "voids" ? <VoidRequestApproval requests={store.voidRequests ?? []} /> : null}
+      {current === "pos-settings" ? <PosSettings store={store} /> : null}
     </>
   );
 }

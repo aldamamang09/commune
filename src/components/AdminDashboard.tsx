@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useTransition } from "react";
-import { approveVoidRequest, setPosInventoryFeaturesEnabled } from "@/actions/pos";
+import { approveVoidRequest } from "@/actions/pos";
 import {
   createAdminLedgerEntry,
   deleteAdminLedgerEntry,
@@ -183,8 +183,6 @@ export function AdminDashboard({
   const [approvalPending, startApprovalTransition] = useTransition();
   const [drinksOpen, setDrinksOpen] = useState(true);
   const [ordersOpen, setOrdersOpen] = useState(true);
-  const [inventorySettingPending, startInventorySettingTransition] = useTransition();
-  const [inventorySettingError, setInventorySettingError] = useState<string | null>(null);
 
   const expenses = initialExpenses;
   const credits = initialCredits;
@@ -633,45 +631,8 @@ export function AdminDashboard({
             Download PDF Sales
           </button>
 
-          <p
-            className={`w-fit rounded-full px-4 py-2 text-sm ${
-              store.pos.isOpen
-                ? "bg-black text-white"
-                : "border border-neutral-300 text-neutral-600"
-            }`}
-          >
-            POS {store.pos.isOpen ? "open" : "closed"}
-            {store.pos.openedBy ? ` · ${store.pos.openedBy}` : ""}
-          </p>
         </div>
       </div>
-
-      <section className="flex flex-wrap items-center justify-between gap-4 border border-neutral-200 bg-white p-4 sm:p-5">
-        <div>
-          <h2 className="font-semibold">POS stock inventory</h2>
-          <p className="mt-1 text-sm text-neutral-500">Show or hide Stock inventory and Restock in the POS.</p>
-          {inventorySettingError ? <p role="alert" className="mt-2 text-sm text-red-700">{inventorySettingError}</p> : null}
-        </div>
-        <button
-          type="button"
-          disabled={inventorySettingPending}
-          aria-pressed={store.pos.inventoryFeaturesEnabled}
-          onClick={() => {
-            const enabled = !store.pos.inventoryFeaturesEnabled;
-            setInventorySettingError(null);
-            startInventorySettingTransition(async () => {
-              try {
-                await setPosInventoryFeaturesEnabled(enabled);
-              } catch (error) {
-                setInventorySettingError(error instanceof Error ? error.message : "Could not update POS inventory setting.");
-              }
-            });
-          }}
-          className={`rounded-full px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${store.pos.inventoryFeaturesEnabled ? "bg-black" : "bg-neutral-500"}`}
-        >
-          {inventorySettingPending ? "Saving…" : store.pos.inventoryFeaturesEnabled ? "Visible in POS" : "Hidden in POS"}
-        </button>
-      </section>
 
       {pendingVoidRequests.length > 0 ? (
         <section className="border border-neutral-300 bg-white p-4 sm:p-5">
@@ -732,6 +693,24 @@ export function AdminDashboard({
           </div>
         </section>
       ) : null}
+
+      <section className="border border-neutral-200 bg-white p-4 sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[10px] tracking-[0.2em] text-neutral-500 uppercase sm:text-xs sm:tracking-[0.25em]">
+              Net Summary (Revenue - Expenses - Credits)
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold sm:text-3xl">
+              {formatMoney(netProfitOrLoss)}
+            </h2>
+          </div>
+          <div className="text-left text-xs text-neutral-500 space-y-1 sm:text-right">
+            <p>Total Revenue: <span className="font-medium text-black">{formatMoney(totalSalesAmount)}</span></p>
+            <p>Total Expenses: <span className="font-medium text-black">{formatMoney(totalExpensesAmount)}</span></p>
+            <p>Total Credits: <span className="font-medium text-black">{formatMoney(totalCreditsAmount)}</span></p>
+          </div>
+        </div>
+      </section>
 
       <section className="space-y-6">
         <div className="border-b border-neutral-200 pb-3">
@@ -810,24 +789,6 @@ export function AdminDashboard({
               value={busy?.label ?? "—"}
             />
           )}
-        </div>
-      </section>
-
-      <section className="border border-neutral-200 bg-white p-4 sm:p-5">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-[10px] tracking-[0.2em] text-neutral-500 uppercase sm:text-xs sm:tracking-[0.25em]">
-              Net Summary (Revenue - Expenses - Credits)
-            </p>
-            <h2 className="mt-2 text-2xl font-semibold sm:text-3xl">
-              {formatMoney(netProfitOrLoss)}
-            </h2>
-          </div>
-          <div className="text-left text-xs text-neutral-500 space-y-1 sm:text-right">
-            <p>Total Revenue: <span className="font-medium text-black">{formatMoney(totalSalesAmount)}</span></p>
-            <p>Total Expenses: <span className="font-medium text-black">{formatMoney(totalExpensesAmount)}</span></p>
-            <p>Total Credits: <span className="font-medium text-black">{formatMoney(totalCreditsAmount)}</span></p>
-          </div>
         </div>
       </section>
 
