@@ -29,8 +29,8 @@ export default function FollowPage() {
       <main className="relative flex min-h-[72vh] flex-col overflow-hidden bg-[radial-gradient(ellipse_at_50%_0%,rgba(120,85,55,0.22),transparent_55%),#0a0a0a] px-5 pb-20 pt-12 text-white sm:px-8 sm:pt-16">
         <div className="mx-auto w-full max-w-5xl flex-1">
           <p className="text-center font-script text-3xl text-amber-100/75 sm:text-4xl">
-              we commune, over coffee
-            </p>
+            we commune, over coffee
+          </p>
           <div className="mx-auto mt-12 max-w-2xl text-center sm:mt-16">
             <h1 className="mt-2 font-serif text-4xl italic sm:text-6xl">
               Follow commune.
@@ -52,9 +52,6 @@ export default function FollowPage() {
                   <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.06] font-serif text-xl text-white">
                     {social.id === "facebook" ? "f" : social.id === "instagram" ? "◎" : "♪"}
                   </span>
-                  <p className="mt-7 text-[10px] tracking-[0.2em] text-neutral-500 uppercase">
-                    {details.eyebrow}
-                  </p>
                   <h2 className="mt-2 font-serif text-2xl">{social.label}</h2>
                   <span className="mt-6 inline-flex items-center gap-2 text-xs text-neutral-300 transition group-hover:text-white">
                     {details.action}
