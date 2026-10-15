@@ -113,7 +113,7 @@ export function receiptFromOrder(
     promoLabel: order.promoLabel,
     total: order.total,
     paymentMethod: order.paymentMethod,
-    serviceMode: order.items[0]?.serviceMode,
+    serviceMode: order.serviceMode ?? order.items[0]?.serviceMode,
     paid,
     change: order.change ?? (digital ? 0 : Math.max(0, paid - order.total)),
     at: new Date(phTimestamp(order.createdAt)),
@@ -320,8 +320,8 @@ export function baristaLines(ticket: ReceiptTicket): PrintLine[] {
     { kind: "text", text: "MAKE THESE DRINKS", align: 1, bold: true },
     { kind: "rule" },
     { kind: "text", text: `ORDER NO. ${ticket.ticketNo}`, align: 1, bold: true },
-    { kind: "text", text: receiptWhen(ticket.at), align: 1 },
     ...(ticket.serviceMode ? [{ kind: "text" as const, text: ticket.serviceMode === "take-out" ? "TAKE OUT" : "DINE IN", align: 1 as const, bold: true }] : []),
+    { kind: "text", text: receiptWhen(ticket.at), align: 1 },
     { kind: "rule" },
     { kind: "text", text: "Qty  Drink", bold: true },
   ];

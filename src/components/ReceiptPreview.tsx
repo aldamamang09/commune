@@ -192,8 +192,8 @@ function BaristaSlip({ ticket }: { ticket: ReceiptTicket }) {
       <p className="text-center text-[10px]">MAKE THESE DRINKS</p>
       <Rule />
       <p className="text-center font-bold">ORDER NO. {ticket.ticketNo}</p>
-      <p className="text-center">{receiptWhen(ticket.at)}</p>
       {ticket.serviceMode ? <p className="text-center font-semibold">{ticket.serviceMode === "take-out" ? "TAKE OUT" : "DINE IN"}</p> : null}
+      <p className="text-center">{receiptWhen(ticket.at)}</p>
       <Rule />
       <p className="flex gap-2 font-semibold text-neutral-500">
         <span className="w-8 shrink-0">Qty</span>
