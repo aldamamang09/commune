@@ -292,19 +292,23 @@ export function LandingPage({
               </div>
             </div>
           </div>
-          <Photo
-            src="/images/open-now.jpg"
-            alt="We're open now at commune"
-            loading="eager"
-            className="min-h-[220px] sm:min-h-[360px] lg:col-span-4 lg:min-h-[560px]"
-            sizes="(max-width: 1024px) 100vw, 33vw"
-          />
-          <Photo
-            src="/images/collage.jpg"
-            alt="commune cafe moments"
-            className="min-h-[220px] sm:min-h-[360px] lg:col-span-3 lg:min-h-[560px]"
-            sizes="(max-width: 1024px) 100vw, 25vw"
-          />
+          <div className="grid min-h-[220px] grid-cols-3 gap-1.5 overflow-hidden bg-black p-1.5 sm:min-h-[360px] sm:gap-3 sm:p-3 lg:col-span-7 lg:min-h-[560px]">
+            {[
+              { src: "/images/shem.jpg", alt: "Shem at commune café" },
+              { src: "/images/yas.jpg", alt: "Mouna at commune café" },
+              { src: "/images/mouna.jpg", alt: "Yas at commune café" },
+            ].map((photo) => (
+              <div key={photo.src} className="group relative min-h-full overflow-hidden bg-neutral-900">
+                <Image
+                  src={photo.src}
+                  alt={photo.alt}
+                  fill
+                  sizes="(max-width: 1024px) 33vw, 20vw"
+                  className="object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+                />
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 

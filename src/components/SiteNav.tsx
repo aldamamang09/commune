@@ -43,7 +43,7 @@ export function SiteNav() {
 
   return (
     <header className="absolute inset-x-0 top-0 z-30 px-4 pt-4 sm:pt-7">
-      <nav className="mx-auto hidden max-w-5xl items-center justify-center md:flex">
+      <nav suppressHydrationWarning className="mx-auto hidden max-w-5xl items-center justify-center md:flex">
         <div className="flex items-center gap-0.5 rounded-full border border-white/25 bg-black/35 p-1 shadow-[0_12px_40px_rgba(0,0,0,0.35)] backdrop-blur-xl">
           <Link
             href="/"
@@ -113,7 +113,7 @@ export function SiteNav() {
               className="fixed inset-0 z-40 bg-black/45"
             />
             <div className="relative z-50 mt-2 overflow-hidden rounded-2xl border border-white/20 bg-black/80 shadow-[0_18px_50px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
-              <nav className="px-3 py-2">
+              <nav suppressHydrationWarning className="px-3 py-2">
                 {links.map((link) => (
                   <Link
                     key={link.href}

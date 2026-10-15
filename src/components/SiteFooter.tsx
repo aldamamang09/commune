@@ -5,7 +5,7 @@ import { SocialLinks } from "@/components/SocialLinks";
 
 export function SiteFooter() {
   return (
-    <footer className="border-t border-white/10 bg-black px-5 py-12 sm:px-6 sm:py-16">
+    <footer suppressHydrationWarning className="border-t border-white/10 bg-black px-5 py-12 sm:px-6 sm:py-16">
       <div className="mx-auto flex max-w-6xl flex-col gap-10 lg:flex-row lg:items-start lg:gap-16">
         <div className="lg:w-52 lg:shrink-0">
           <Link href="/" className="inline-block">

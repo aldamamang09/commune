@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { SiteFooter } from "@/components/SiteFooter";
 import { CAFE } from "@/lib/cafe";
 
