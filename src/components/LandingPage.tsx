@@ -295,8 +295,8 @@ export function LandingPage({
           <div className="grid min-h-[220px] grid-cols-3 gap-1.5 overflow-hidden bg-black p-1.5 sm:min-h-[360px] sm:gap-3 sm:p-3 lg:col-span-7 lg:min-h-[560px]">
             {[
               { src: "/images/shem.jpg", alt: "Shem at commune café" },
-              { src: "/images/yas.jpg", alt: "Mouna at commune café" },
-              { src: "/images/mouna.jpg", alt: "Yas at commune café" },
+              { src: "/images/mouna.jpg", alt: "Mouna at commune café" },
+              { src: "/images/yas.jpg", alt: "Yas at commune café" },
             ].map((photo) => (
               <div key={photo.src} className="group relative min-h-full overflow-hidden bg-neutral-900">
                 <Image
