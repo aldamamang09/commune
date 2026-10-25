@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { nextTicketNo } from "@/lib/escpos";
+import { fetchAllRows } from "@/lib/paginated-read";
 import type {
   InventoryItem,
   AdminLedgerEntry,
@@ -445,9 +446,14 @@ async function readStore(options?: { fresh?: boolean }): Promise<StoreData> {
       supabase.from("menu_categories").select("*").order("name"),
       supabase.from("menu_items").select("*").order("created_at"),
       supabase.from("inventory_items").select("*").order("created_at"),
-      supabase.from("orders").select("*").is("deleted_at", null).order("created_at", { ascending: false }),
-      supabase.from("order_items").select("*").order("created_at"),
-      supabase.from("usage_logs").select("*").order("created_at"),
+      // orders/order_items/usage_logs outgrow PostgREST's 1000-row response cap;
+      // an unpaginated select silently drops the newest rows (see paginated-read.ts).
+      fetchAllRows("orders", (from, to) =>
+        supabase.from("orders").select("*", { count: "exact" }).is("deleted_at", null).order("created_at", { ascending: false }).order("id", { ascending: false }).range(from, to)),
+      fetchAllRows("order_items", (from, to) =>
+        supabase.from("order_items").select("*", { count: "exact" }).order("created_at").order("id").range(from, to)),
+      fetchAllRows("usage_logs", (from, to) =>
+        supabase.from("usage_logs").select("*", { count: "exact" }).order("created_at").order("id").range(from, to)),
       supabase.from("restocks").select("*").order("created_at"),
       supabase.from("recipes").select("*").order("created_at"),
       supabase.from("recipe_costings").select("*").order("created_at"),
