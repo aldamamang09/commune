@@ -1201,6 +1201,9 @@ export function AdminDashboard({
                     )}
                   </p>
                   <ul className="min-w-0 list-disc space-y-1 pl-4 text-xs leading-relaxed text-neutral-600 lg:text-sm">
+                    {order.items.length === 0 ? (
+                      <li className="list-none -ml-4 text-neutral-400">Item details unavailable</li>
+                    ) : null}
                     {order.items.map((item, itemIdx) => (
                       <li key={`${order.id}-${item.productId}-${itemIdx}`} className="break-words">
                         <p>

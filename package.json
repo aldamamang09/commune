@@ -10,7 +10,7 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "cross-env PW_HEADED=1 playwright test --headed --project=chromium",
     "test:e2e:ui": "playwright test --ui",
-    "test:backend": "playwright test tests/backend"
+    "test:backend": "playwright test --config=playwright.backend.config.ts"
   },
   "dependencies": {
     "@supabase/server": "^1.6.1",
