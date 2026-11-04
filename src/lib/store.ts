@@ -361,6 +361,7 @@ function normalizeStore(store: StoreData): StoreData {
       };
     });
 
+    
     store.users = Array.from(
       new Map(normalizedUsers.map((user) => [user.id, user])).values(),
     );
