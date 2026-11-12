@@ -11,6 +11,7 @@ function getPhDateString(date: Date): string {
   }).format(date);
 }
 
+
 function getPhTimeDetails(date: Date) {
   const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Manila",
